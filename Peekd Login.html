@@ -62,6 +62,8 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
 .terms{text-align:center;font-size:12px;line-height:1.6;color:var(--fg-mute);margin:22px 0 0}
 .terms a{color:var(--fg-dim);font-weight:500;text-decoration:underline;text-underline-offset:2px}
 .terms a:hover{color:var(--accent)}
+.config-warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12.5px;line-height:1.5;border-radius:10px;padding:12px 14px;margin:0 0 18px}
+.config-warn code{font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;background:rgba(0,0,0,.05);padding:1px 5px;border-radius:4px}
 .rule{height:1px;background:var(--line);margin:22px 0}
 .sent-ico{width:56px;height:56px;border-radius:15px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin:0 auto 20px}
 .resend-row{display:flex;align-items:center;justify-content:center;gap:8px;font-size:13.5px;flex-wrap:wrap}
@@ -119,9 +121,13 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
           </span>
           <span class="brand-word">Peekd</span>
         </a>
-        <div class="eyebrow">Welcome back</div>
-        <h1>Sign in to Peekd</h1>
-        <p class="lede">Know the moment your emails get read.</p>
+        <div class="eyebrow" id="eyebrow">Welcome back</div>
+        <h1 id="heading">Sign in to Peekd</h1>
+        <p class="lede" id="lede">We'll email you a magic link — no password needed.</p>
+
+        <div class="config-warn" id="configWarn" hidden>
+          Supabase is not connected yet. Add your project URL and <strong>publishable key</strong> to <code>config.js</code> (or set <code>SUPABASE_URL</code> and <code>SUPABASE_PUBLISHABLE_KEY</code> on Netlify).
+        </div>
 
         <form id="magicForm" novalidate>
           <div class="field">
@@ -129,13 +135,13 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
             <input class="input" id="email" type="email" placeholder="you@example.com" autocomplete="email" autofocus>
             <div class="err" id="emailErr"></div>
           </div>
-          <button class="btn-primary" type="submit">Send magic link <span>→</span></button>
+          <button class="btn-primary" type="submit" id="submitBtn">Send magic link <span>→</span></button>
         </form>
 
         <div class="divider">or</div>
 
         <div class="sso">
-          <a class="sso-btn" href="Peekd Dashboard.html">
+          <button type="button" class="sso-btn" id="googleBtn">
             <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true">
               <path d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62Z" fill="#4285F4"></path>
               <path d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.34A9 9 0 0 0 9 18Z" fill="#34A853"></path>
@@ -143,8 +149,8 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
               <path d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.94l3.01 2.34C4.68 5.16 6.66 3.58 9 3.58Z" fill="#EA4335"></path>
             </svg>
             Continue with Google
-          </a>
-          <a class="sso-btn" href="Peekd Dashboard.html">
+          </button>
+          <button type="button" class="sso-btn" id="microsoftBtn">
             <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="2" y="2" width="9.5" height="9.5" fill="#F25022"></rect>
               <rect x="12.5" y="2" width="9.5" height="9.5" fill="#7FBA00"></rect>
@@ -152,9 +158,10 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
               <rect x="12.5" y="12.5" width="9.5" height="9.5" fill="#FFB900"></rect>
             </svg>
             Continue with Microsoft
-          </a>
+          </button>
         </div>
 
+        <p class="swap" id="swapRow">Don't have an account? <button type="button" id="modeToggle">Sign up free</button></p>
         <p class="terms">By continuing, you agree to Peekd's <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</p>
       </div>
 
@@ -163,8 +170,8 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
         <div class="sent-ico">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" stroke-width="1.7"></rect><path d="M4 7l8 5.5L20 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
         </div>
-        <h1>Check your inbox</h1>
-        <p class="lede">We sent a magic link to<br><strong id="sentEmail">you@example.com</strong></p>
+        <h1 id="sentHeading">Check your inbox</h1>
+        <p class="lede" id="sentLede">We sent a magic link to<br><strong id="sentEmail">you@example.com</strong></p>
         <div class="rule"></div>
         <div class="resend-row">
           <span class="muted-text">Didn't receive it?</span>
@@ -178,15 +185,42 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
   <a class="back" href="Peekd.html">← Back to home</a>
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="dash/auth.js"></script>
 <script>
+  const params = new URLSearchParams(window.location.search);
+  let mode = params.get('mode') === 'signup' ? 'signup' : 'signin';
+
   const form = document.getElementById('magicForm');
   const emailInput = document.getElementById('email');
   const emailErr = document.getElementById('emailErr');
   const formState = document.getElementById('formState');
   const sentState = document.getElementById('sentState');
   const sentEmail = document.getElementById('sentEmail');
+  const submitBtn = document.getElementById('submitBtn');
   const valid = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
   let timer;
+  let lastEmail = '';
+
+  function setMode(next) {
+    mode = next;
+    const signup = mode === 'signup';
+    document.title = signup ? 'Peekd — Sign up' : 'Peekd — Sign in';
+    document.getElementById('eyebrow').textContent = signup ? 'Get started' : 'Welcome back';
+    document.getElementById('heading').textContent = signup ? 'Create your Peekd account' : 'Sign in to Peekd';
+    document.getElementById('lede').textContent = signup
+      ? 'We\'ll email you a magic link to create your account — no password needed.'
+      : 'We\'ll email you a magic link to sign in — no password needed.';
+    submitBtn.innerHTML = 'Send magic link <span>→</span>';
+    document.getElementById('swapRow').innerHTML = signup
+      ? 'Already have an account? <button type="button" id="modeToggle">Sign in</button>'
+      : 'Don\'t have an account? <button type="button" id="modeToggle">Sign up free</button>';
+    document.getElementById('modeToggle').addEventListener('click', () => {
+      setMode(mode === 'signup' ? 'signin' : 'signup');
+      history.replaceState(null, '', mode === 'signup' ? '?mode=signup' : 'Peekd Login.html');
+    });
+  }
 
   function startCountdown() {
     const wait = document.getElementById('resendWait');
@@ -201,23 +235,66 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
     }, 1000);
   }
 
-  form.addEventListener('submit', (e) => {
+  async function submitEmail(email) {
+    await window.PeekdAuth.sendMagicLink(email);
+    lastEmail = email;
+    sentEmail.textContent = email;
+    document.getElementById('sentHeading').textContent = mode === 'signup' ? 'Almost there' : 'Check your inbox';
+    document.getElementById('sentLede').innerHTML = (mode === 'signup'
+      ? 'We sent a sign-up link to<br><strong>'
+      : 'We sent a magic link to<br><strong>') + email + '</strong>';
+    formState.hidden = true;
+    sentState.hidden = false;
+    startCountdown();
+  }
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const v = emailInput.value.trim();
     if (!v) { emailErr.textContent = 'Please enter your email address'; emailInput.classList.add('invalid'); emailInput.focus(); return; }
     if (!valid(v)) { emailErr.textContent = 'Please enter a valid email address'; emailInput.classList.add('invalid'); emailInput.focus(); return; }
     emailErr.textContent = ''; emailInput.classList.remove('invalid');
-    sentEmail.textContent = v;
-    formState.hidden = true; sentState.hidden = false;
-    startCountdown();
+    submitBtn.disabled = true;
+    try {
+      await submitEmail(v);
+    } catch (err) {
+      emailErr.textContent = err.message || 'Something went wrong';
+    } finally {
+      submitBtn.disabled = false;
+    }
   });
 
   emailInput.addEventListener('input', () => { emailErr.textContent = ''; emailInput.classList.remove('invalid'); });
-  document.getElementById('resendBtn').addEventListener('click', startCountdown);
+
+  document.getElementById('resendBtn').addEventListener('click', async () => {
+    const v = lastEmail;
+    if (!v) return;
+    try {
+      await window.PeekdAuth.sendMagicLink(v);
+      startCountdown();
+    } catch (err) {
+      emailErr.textContent = err.message || 'Could not resend link';
+      sentState.hidden = true; formState.hidden = false;
+    }
+  });
+
   document.getElementById('diffEmail').addEventListener('click', () => {
     sentState.hidden = true; formState.hidden = false; clearInterval(timer);
     emailInput.value = ''; emailInput.focus();
   });
+
+  document.getElementById('googleBtn').addEventListener('click', () => {
+    window.PeekdAuth.signInWithOAuth('google').catch(err => { emailErr.textContent = err.message; });
+  });
+  document.getElementById('microsoftBtn').addEventListener('click', () => {
+    window.PeekdAuth.signInWithOAuth('azure').catch(err => { emailErr.textContent = err.message; });
+  });
+
+  setMode(mode);
+
+  if (!window.PeekdAuth.ready()) {
+    document.getElementById('configWarn').hidden = false;
+  }
 </script>
 </body>
 </html>
