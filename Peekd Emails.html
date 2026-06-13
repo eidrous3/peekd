@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Peekd — Transactional Emails</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body{ margin:0; padding:0; background:#F9FAFB;
+    font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  table{ border-collapse:collapse; }
+  a{ text-decoration:none; }
+  img{ border:0; display:block; }
+
+  /* Gallery chrome (not part of the emails themselves) */
+  .gallery{ padding:48px 16px 80px; }
+  .gallery-title{ max-width:600px; margin:0 auto 8px; font-size:13px; font-weight:600;
+    color:#111827; letter-spacing:-0.01em; text-align:center; }
+  .gallery-intro{ max-width:600px; margin:0 auto 44px; font-size:13px; color:#9CA3AF; text-align:center; }
+  .caption{ max-width:600px; margin:0 auto 12px; padding:0 4px; }
+  .caption .lbl{ font-size:11px; font-weight:700; color:#3B82F6; letter-spacing:0.07em;
+    text-transform:uppercase; font-family:'Geist Mono',ui-monospace,monospace; }
+  .caption .subj{ font-size:13px; color:#6B7280; margin-top:5px; }
+  .caption .subj b{ color:#374151; font-weight:600; }
+  .email-spacer{ height:56px; }
+
+  /* Email card */
+  .email-card{ max-width:600px; margin:0 auto; background:#ffffff; border-radius:12px;
+    box-shadow:0 1px 2px rgba(16,24,40,0.04), 0 12px 32px -16px rgba(16,24,40,0.16);
+    overflow:hidden; }
+  .email-inner{ padding:40px; }
+
+  /* Shared header */
+  .em-header{ text-align:center; padding:32px 40px 0; }
+  .em-logo{ display:inline-flex; align-items:center; gap:9px; }
+  .em-logo .mark{ width:30px; height:30px; border-radius:8px;
+    background:linear-gradient(135deg,#3B82F6 0%,#1d4ed8 100%);
+    display:inline-flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 12px -4px rgba(59,130,246,0.55); }
+  .em-logo .word{ font-size:18px; font-weight:700; color:#111827; letter-spacing:-0.02em; }
+
+  /* Typography */
+  .h1{ font-size:24px; font-weight:700; color:#111827; letter-spacing:-0.02em; line-height:1.25; margin:0 0 16px; }
+  .lede{ font-size:16px; color:#374151; line-height:1.6; margin:0 0 20px; }
+  .muted{ font-size:14px; color:#9CA3AF; line-height:1.6; }
+  .small{ font-size:13px; color:#9CA3AF; line-height:1.6; }
+
+  /* Buttons */
+  .btn{ display:block; text-align:center; font-size:15px; font-weight:600;
+    padding:14px 20px; border-radius:8px; }
+  .btn-primary{ background:#3B82F6; color:#ffffff; }
+  .btn-outline{ background:#ffffff; color:#3B82F6; border:1px solid #3B82F6; }
+  .btn-inline{ display:inline-block; width:auto; padding:12px 22px; }
+
+  /* Divider */
+  .divider{ height:1px; background:#F3F4F6; border:0; margin:28px 0; }
+  .rule-label{ text-align:center; font-size:11px; font-weight:600; letter-spacing:0.08em;
+    text-transform:uppercase; color:#9CA3AF; font-family:'Geist Mono',ui-monospace,monospace;
+    margin:28px 0 20px; }
+
+  /* Pro badge */
+  .pro-badge{ display:inline-flex; align-items:center; gap:3px; background:#EFF6FF; color:#3B82F6;
+    font-size:11px; font-weight:700; padding:2px 8px; border-radius:99px; vertical-align:middle;
+    letter-spacing:0.02em; }
+
+  /* Feature / list rows */
+  .frow{ }
+  .frow td{ vertical-align:top; padding:11px 0; }
+  .frow .ic{ width:34px; font-size:18px; line-height:1.3; }
+  .frow .ft{ font-size:15px; font-weight:600; color:#111827; }
+  .frow .fd{ font-size:13.5px; color:#6B7280; line-height:1.5; margin-top:3px; }
+
+  .check{ font-size:15px; color:#374151; padding:7px 0; }
+  .check .ck{ color:#3B82F6; font-weight:700; margin-right:10px; }
+  .xmark .ck{ color:#9CA3AF; }
+  .xmark{ color:#6B7280; }
+
+  /* Code link box */
+  .codebox{ background:#F9FAFB; border:1px solid #F3F4F6; border-radius:8px; padding:12px 14px;
+    font-family:'Geist Mono',ui-monospace,monospace; font-size:12px; color:#6B7280;
+    word-break:break-all; line-height:1.5; }
+
+  /* Stat / detail tables */
+  .kv{ width:100%; }
+  .kv td{ padding:7px 0; font-size:15px; }
+  .kv .k{ color:#6B7280; }
+  .kv .v{ color:#111827; font-weight:600; text-align:right; font-variant-numeric:tabular-nums; }
+
+  /* Digest contact card */
+  .contact{ background:#F9FAFB; border:1px solid #F3F4F6; border-radius:10px; padding:14px 16px; margin-bottom:10px; }
+  .contact .nm{ font-size:15px; font-weight:600; color:#111827; }
+  .contact .em{ font-size:13px; color:#9CA3AF; font-family:'Geist Mono',ui-monospace,monospace; }
+  .contact .rate{ font-size:13px; font-weight:600; color:#3B82F6; white-space:nowrap; }
+  .contact .act{ font-size:13px; color:#6B7280; margin-top:6px; }
+
+  .info-box{ background:#F9FAFB; border:1px solid #F3F4F6; border-radius:10px; padding:16px 18px; }
+  .info-box.amber{ background:#FFFBEB; border-color:#FDE68A; }
+
+  /* Footer */
+  .em-footer{ text-align:center; padding:8px 40px 36px; }
+  .em-footer .fl{ font-size:12.5px; color:#9CA3AF; line-height:1.7; }
+  .em-footer a{ color:#9CA3AF; text-decoration:underline; }
+
+  @media (max-width:620px){
+    .email-inner{ padding:24px 16px !important; }
+    .em-header{ padding:24px 16px 0 !important; }
+    .em-footer{ padding:8px 16px 28px !important; }
+    .h1{ font-size:21px !important; }
+    .btn-inline{ display:block !important; width:auto !important; }
+    .resp-stack{ display:block !important; width:100% !important; }
+    .resp-right{ text-align:left !important; padding-top:6px !important; }
+  }
+</style>
+</head>
+<body>
+<div class="gallery">
+  <div class="gallery-title">Peekd · Transactional Emails</div>
+  <div class="gallery-intro">Five emails · shared header &amp; footer · Inter · #3B82F6 · 600px · mobile responsive</div>
+
+  <!-- ══════════════ EMAIL 1 · MAGIC LINK ══════════════ -->
+  <div class="caption">
+    <div class="lbl">Email 1 · Magic Link</div>
+    <div class="subj"><b>Subject:</b> Your Peekd sign-in link</div>
+  </div>
+  <div class="email-card">
+    <div class="em-header">
+      <span class="em-logo">
+        <span class="mark"><svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M2 9s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><circle cx="9" cy="9" r="2.2" fill="#fff"/></svg></span>
+        <span class="word">Peekd</span>
+      </span>
+    </div>
+    <div class="email-inner">
+      <h1 class="h1">Sign in to Peekd</h1>
+      <p class="lede">Hi there,<br><br>Here's your magic link to sign in. It expires in <b style="color:#111827">15 minutes</b> and can only be used once.</p>
+      <a href="#" class="btn btn-primary">Sign in to Peekd →</a>
+      <p class="muted" style="margin-top:20px">If you didn't request this, you can safely ignore this email — no account will be created.</p>
+      <hr class="divider">
+      <p class="small" style="margin:0 0 10px">Having trouble with the button? Copy this link:</p>
+      <div class="codebox">https://getpeekd.com/auth/magic?token=4f9a2c7e1b8d6a3f0e5c9d2b7a14f86c</div>
+    </div>
+    <div class="em-footer">
+      <div class="fl">© 2025 Peekd · <a href="#">getpeekd.com</a><br><a href="#">Unsubscribe</a> · <a href="#">Privacy Policy</a></div>
+    </div>
+  </div>
+
+  <div class="email-spacer"></div>
+
+  <!-- ══════════════ EMAIL 2 · WELCOME ══════════════ -->
+  <div class="caption">
+    <div class="lbl">Email 2 · Welcome</div>
+    <div class="subj"><b>Subject:</b> Welcome to Peekd — you're all set 👁</div>
+  </div>
+  <div class="email-card">
+    <div class="em-header">
+      <span class="em-logo">
+        <span class="mark"><svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M2 9s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><circle cx="9" cy="9" r="2.2" fill="#fff"/></svg></span>
+        <span class="word">Peekd</span>
+      </span>
+    </div>
+    <div class="email-inner">
+      <h1 class="h1">Welcome to Peekd, Hannah.</h1>
+      <p class="lede">You're one step away from knowing exactly who reads your emails.</p>
+
+      <div class="rule-label">Connect your email to start tracking</div>
+      <a href="#" class="btn btn-primary" style="margin-bottom:10px">Connect Gmail →</a>
+      <a href="#" class="btn btn-outline">Connect Outlook →</a>
+
+      <hr class="divider">
+      <p class="lede" style="font-weight:600;color:#111827;margin-bottom:6px">Here's what you can do with Peekd:</p>
+
+      <table class="frow" width="100%">
+        <tr>
+          <td class="ic">👁</td>
+          <td><div class="ft">See when emails are opened</div><div class="fd">Get notified the moment a recipient reads your email.</div></td>
+        </tr>
+        <tr>
+          <td class="ic">🔗</td>
+          <td><div class="ft">Track link clicks &nbsp;<span class="pro-badge">⚡ Pro</span></div><div class="fd">Know which links they clicked and how many times.</div></td>
+        </tr>
+        <tr>
+          <td class="ic">💡</td>
+          <td><div class="ft">AI follow-up suggestions &nbsp;<span class="pro-badge">⚡ Pro</span></div><div class="fd">Get AI-written follow-ups when people don't reply.</div></td>
+        </tr>
+        <tr>
+          <td class="ic">📋</td>
+          <td><div class="ft">Campaigns &amp; sequences &nbsp;<span class="pro-badge">⚡ Pro</span></div><div class="fd">Automate follow-ups that pause when someone replies.</div></td>
+        </tr>
+      </table>
+
+      <hr class="divider">
+      <a href="#" class="btn btn-primary">Go to your inbox →</a>
+      <p class="muted" style="margin-top:20px;text-align:center">Questions? Reply to this email — we read everything.</p>
+    </div>
+    <div class="em-footer">
+      <div class="fl">© 2025 Peekd · <a href="#">getpeekd.com</a><br><a href="#">Unsubscribe</a> · <a href="#">Privacy Policy</a></div>
+    </div>
+  </div>
+
+  <div class="email-spacer"></div>
+
+  <!-- ══════════════ EMAIL 3 · DAILY DIGEST ══════════════ -->
+  <div class="caption">
+    <div class="lbl">Email 3 · Daily Digest</div>
+    <div class="subj"><b>Subject:</b> Your Peekd digest — June 2</div>
+  </div>
+  <div class="email-card">
+    <div class="em-header">
+      <span class="em-logo">
+        <span class="mark"><svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M2 9s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><circle cx="9" cy="9" r="2.2" fill="#fff"/></svg></span>
+        <span class="word">Peekd</span>
+      </span>
+    </div>
+    <div class="email-inner">
+      <h1 class="h1">Good morning, Hannah.</h1>
+      <p class="lede">Here's what happened with your emails yesterday.</p>
+
+      <div class="rule-label">Yesterday's activity</div>
+      <div class="info-box">
+        <table class="kv" width="100%">
+          <tr><td class="k">Emails tracked</td><td class="v">12</td></tr>
+          <tr><td class="k">Total opens</td><td class="v">28</td></tr>
+          <tr><td class="k">Replies received</td><td class="v">4</td></tr>
+          <tr><td class="k">Links clicked</td><td class="v">9</td></tr>
+        </table>
+      </div>
+
+      <div class="rule-label">🔥 &nbsp;Most engaged</div>
+      <div class="contact">
+        <table width="100%"><tr>
+          <td><div class="nm">Sarah Mitchell</div><div class="em">sarah@acmecorp.com</div></td>
+          <td align="right" class="rate">83% open rate</td>
+        </tr></table>
+        <div class="act">Opened 5× · Clicked 3 links · <span style="color:#15803d;font-weight:600">Replied</span></div>
+      </div>
+      <div class="contact" style="margin-bottom:0">
+        <table width="100%"><tr>
+          <td><div class="nm">Carlos Rivera</div><div class="em">carlos@startupx.co</div></td>
+          <td align="right" class="rate">44% open rate</td>
+        </tr></table>
+        <div class="act">Opened 2× · No reply yet</div>
+      </div>
+
+      <div class="rule-label">💡 &nbsp;Needs follow-up</div>
+      <div class="info-box amber">
+        <p style="margin:0 0 4px;font-size:15px;color:#111827;line-height:1.55"><b>James Okafor</b> opened your email <b>3 times</b> but hasn't replied.</p>
+        <p style="margin:0 0 14px;font-size:13px;color:#92400E">Sent 3 days ago · Subject: "Q2 Proposal"</p>
+        <a href="#" class="btn btn-primary btn-inline">Send AI follow-up →</a>
+      </div>
+
+      <hr class="divider">
+      <a href="#" class="btn btn-outline">View full analytics →</a>
+    </div>
+    <div class="em-footer">
+      <div class="fl">You're receiving this because daily digests are on.<br>© 2025 Peekd · <a href="#">getpeekd.com</a> · <a href="#">Unsubscribe</a> · <a href="#">Digest settings</a></div>
+    </div>
+  </div>
+
+  <div class="email-spacer"></div>
+
+  <!-- ══════════════ EMAIL 4 · UPGRADE CONFIRMATION ══════════════ -->
+  <div class="caption">
+    <div class="lbl">Email 4 · Upgrade Confirmation</div>
+    <div class="subj"><b>Subject:</b> You're now on Peekd Pro ⚡</div>
+  </div>
+  <div class="email-card">
+    <div class="em-header">
+      <span class="em-logo">
+        <span class="mark"><svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M2 9s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><circle cx="9" cy="9" r="2.2" fill="#fff"/></svg></span>
+        <span class="word">Peekd</span>
+      </span>
+    </div>
+    <div class="email-inner">
+      <div style="font-size:34px;line-height:1;margin-bottom:14px">⚡</div>
+      <h1 class="h1">Welcome to Pro, Hannah.</h1>
+      <p class="lede">You now have access to everything Peekd has to offer.</p>
+
+      <div class="rule-label">What's unlocked</div>
+      <div class="check"><span class="ck">✓</span>Campaigns &amp; automated sequences</div>
+      <div class="check"><span class="ck">✓</span>People &amp; Lists</div>
+      <div class="check"><span class="ck">✓</span>Link click tracking</div>
+      <div class="check"><span class="ck">✓</span>AI follow-up suggestions</div>
+      <div class="check"><span class="ck">✓</span>Remove "Tracked by Peekd" branding</div>
+      <div class="check"><span class="ck">✓</span>Advanced analytics</div>
+      <div class="check"><span class="ck">✓</span>Priority support</div>
+
+      <div style="height:26px"></div>
+      <a href="#" class="btn btn-primary">Go to Campaigns →</a>
+
+      <div class="rule-label">Subscription details</div>
+      <div class="info-box">
+        <table class="kv" width="100%">
+          <tr><td class="k">Plan</td><td class="v">Peekd Pro</td></tr>
+          <tr><td class="k">Amount</td><td class="v">$7.00 / month</td></tr>
+          <tr><td class="k">Next bill</td><td class="v">June 7, 2025</td></tr>
+          <tr><td class="k">Manage</td><td class="v"><a href="#" style="color:#3B82F6">Billing settings</a></td></tr>
+        </table>
+      </div>
+
+      <hr class="divider">
+      <p class="muted" style="text-align:center;margin:0">Questions or feedback? Reply to this email.<br>We're a small team and we read every message.</p>
+    </div>
+    <div class="em-footer">
+      <div class="fl">© 2025 Peekd · <a href="#">getpeekd.com</a><br><a href="#">Unsubscribe</a> · <a href="#">Privacy Policy</a></div>
+    </div>
+  </div>
+
+  <div class="email-spacer"></div>
+
+  <!-- ══════════════ EMAIL 5 · CANCELLATION ══════════════ -->
+  <div class="caption">
+    <div class="lbl">Email 5 · Downgrade / Cancellation</div>
+    <div class="subj"><b>Subject:</b> Your Peekd Pro subscription has been cancelled</div>
+  </div>
+  <div class="email-card">
+    <div class="em-header">
+      <span class="em-logo">
+        <span class="mark"><svg width="17" height="17" viewBox="0 0 18 18" fill="none"><path d="M2 9s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><circle cx="9" cy="9" r="2.2" fill="#fff"/></svg></span>
+        <span class="word">Peekd</span>
+      </span>
+    </div>
+    <div class="email-inner">
+      <h1 class="h1">Your Pro subscription has been cancelled</h1>
+      <p class="lede">Hi Hannah,<br><br>You'll keep Pro access until <b style="color:#111827">June 7, 2025</b>. After that, your account moves to the Free plan.<br><br>Your data, tracked emails, and history are safe — <b style="color:#111827">nothing is deleted</b>.</p>
+
+      <div class="rule-label">What changes on Free</div>
+      <table width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td class="resp-stack" width="50%" style="vertical-align:top;padding-right:10px">
+          <div class="small" style="font-weight:600;color:#6B7280;margin-bottom:8px">You'll lose access to</div>
+          <div class="check xmark"><span class="ck">✗</span>Campaigns &amp; sequences</div>
+          <div class="check xmark"><span class="ck">✗</span>People Lists</div>
+          <div class="check xmark"><span class="ck">✗</span>Link click tracking</div>
+          <div class="check xmark"><span class="ck">✗</span>AI follow-up suggestions</div>
+          <div class="check xmark"><span class="ck">✗</span>Branding removal</div>
+        </td>
+        <td class="resp-stack" width="50%" style="vertical-align:top;padding-left:10px">
+          <div class="small" style="font-weight:600;color:#6B7280;margin-bottom:8px">You'll keep</div>
+          <div class="check"><span class="ck">✓</span>Unlimited tracking</div>
+          <div class="check"><span class="ck">✓</span>Open &amp; reply alerts</div>
+          <div class="check"><span class="ck">✓</span>Activity timeline</div>
+          <div class="check"><span class="ck">✓</span>Gmail &amp; Outlook</div>
+        </td>
+      </tr></table>
+
+      <hr class="divider">
+      <p class="lede" style="font-weight:600;color:#111827;text-align:center;margin-bottom:16px">Changed your mind?</p>
+      <a href="#" class="btn btn-primary">Reactivate Pro →</a>
+
+      <p class="muted" style="text-align:center;margin-top:24px">We'd love to know why you cancelled.<br><a href="#" style="color:#3B82F6;font-weight:500">Share feedback →</a></p>
+    </div>
+    <div class="em-footer">
+      <div class="fl">© 2025 Peekd · <a href="#">getpeekd.com</a><br><a href="#">Unsubscribe</a> · <a href="#">Privacy Policy</a></div>
+    </div>
+  </div>
+
+</div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="20" fill="#3B82F6"/>
+    <rect x="24" y="34" width="52" height="36" rx="5" fill="#fff"/>
+    <path d="M24 39l26 18 26-18" fill="none" stroke="#3B82F6" stroke-width="3.5" stroke-linejoin="round"/>
+  </svg>
+</template>
+
+</body>
+</html>

@@ -1,0 +1,226 @@
+/* Peekd dashboard — responsive layer.
+   Desktop (>1024px) is untouched: every rule lives inside a max-width media query.
+   Tablet  = 768–1024px  · Mobile = <768px */
+
+/* Hidden by default (desktop). Shown only in mobile media query. */
+.mobile-bottom-nav{display:none}
+.mobile-back{display:none}
+.row-kebab{display:none}
+
+/* ══════════════════════════════════════════════════════════════
+   TABLET — 768px to 1024px : collapse sidebar to icons, narrow inbox
+   ══════════════════════════════════════════════════════════════ */
+@media (min-width:768px) and (max-width:1024px){
+  .app,.app.collapsed{grid-template-columns:60px 1fr}
+
+  /* Icon-only sidebar */
+  .side .ni-label,.side .nav-badge,.ws-chip,.brand span:not(.logo),
+  .nav-group-label,.collapse-btn span,
+  .nav-theme .ni-label,.nav-theme .switch,
+  .plan-card,.plan-mini{display:none}
+
+  .side-top{justify-content:center;padding:16px 8px 8px}
+  .side-scroll{padding:8px 8px}
+  .side .nav-item,.nav-theme{justify-content:center;padding:0}
+  .side-scroll > div + div{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .side-foot{flex-direction:column-reverse;gap:12px;justify-content:center;padding:10px 8px}
+  .collapse-btn{justify-content:center;width:100%}
+  .side-foot .avatar-menu-wrap{margin-left:0}
+
+  /* Inbox: still split, but a narrower list */
+  .inbox{grid-template-columns:240px 1fr}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE — below 768px
+   ══════════════════════════════════════════════════════════════ */
+@media (max-width:767px){
+  /* ── Shell ─────────────────────────────────────────────── */
+  .app,.app.collapsed{grid-template-columns:1fr}
+  .side{display:none}
+
+  /* Bottom nav */
+  .mobile-bottom-nav{
+    display:flex;position:fixed;bottom:0;left:0;right:0;height:60px;z-index:100;
+    background:var(--bg);border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom,0);
+  }
+  .m-nav-item{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    font-size:10px;font-weight:500;color:var(--fg-mute);min-width:0;height:60px;
+  }
+  .m-nav-item.active{color:var(--accent)}
+  .m-nav-ico{position:relative;display:grid;place-items:center}
+  .m-nav-badge{
+    position:absolute;top:-5px;right:-9px;background:var(--danger);color:#fff;
+    font-size:9px;font-weight:700;line-height:1;min-width:16px;height:16px;padding:0 4px;
+    border-radius:8px;display:grid;place-items:center;border:2px solid var(--bg);
+  }
+  .m-nav-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ── More bottom sheet ─────────────────────────────────── */
+  .m-sheet-bg{
+    position:fixed;inset:0;z-index:130;background:rgba(8,11,18,.45);
+    display:flex;align-items:flex-end;animation:fade .15s ease;
+  }
+  :root.dark .m-sheet-bg{background:rgba(0,0,0,.6)}
+  .m-sheet{
+    width:100%;background:var(--card);border-top-left-radius:20px;border-top-right-radius:20px;
+    padding:8px 16px calc(20px + env(safe-area-inset-bottom,0));
+    box-shadow:var(--shadow-lg);animation:sheetUp .26s cubic-bezier(.2,.8,.3,1);
+  }
+  @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  .m-sheet-grip{width:38px;height:4px;border-radius:3px;background:var(--line-2);margin:4px auto 14px}
+  .m-sheet-head{display:flex;align-items:center;gap:12px;padding:0 4px 14px;border-bottom:1px solid var(--line)}
+  .m-sheet-name{font-size:15px;font-weight:600}
+  .m-sheet-email{font-size:12.5px;color:var(--fg-mute);margin-top:1px}
+  .m-sheet-list{display:flex;flex-direction:column;padding:8px 0}
+  .m-sheet-row,.m-sheet-toggle{
+    display:flex;align-items:center;gap:14px;width:100%;text-align:left;
+    padding:13px 8px;border-radius:10px;font-size:15px;color:var(--fg);min-height:48px;
+  }
+  .m-sheet-row:active,.m-sheet-toggle:active{background:var(--bg-2)}
+  .m-sheet-row.active{color:var(--accent)}
+  .m-sheet-ico{display:grid;place-items:center;color:var(--fg-dim);flex:0 0 auto}
+  .m-sheet-row.active .m-sheet-ico{color:var(--accent)}
+  .m-sheet-label{flex:1}
+  .m-sheet-arrow{color:var(--fg-mute);flex:0 0 auto}
+  .m-sheet-logout{
+    display:flex;align-items:center;justify-content:center;gap:9px;width:100%;
+    margin-top:8px;height:48px;border-radius:11px;border:1px solid var(--line);
+    background:var(--bg);color:var(--danger);font-size:15px;font-weight:550;
+  }
+  .m-sheet-logout:active{background:var(--danger-soft)}
+
+  /* ── Header ────────────────────────────────────────────── */
+  .header{height:56px;padding:0 16px;gap:10px}
+  .header h1{font-size:18px;flex:0 0 auto}
+  .header-actions{gap:8px;min-width:0}
+  .acct-trigger-label{max-width:84px}
+  /* Header CTA buttons shrink to icon-friendly size */
+  .header-actions .btn{padding:0 12px}
+
+  /* ── Page padding (clear the bottom nav) ───────────────── */
+  .page-pad{padding:16px;padding-bottom:80px}
+  .toast-wrap{bottom:76px}
+  /* Overlays sit above the bottom nav */
+  .backdrop,.drawer-wrap{z-index:130}
+  .drawer{width:100vw}
+
+  /* ── Inbox : single column + full-screen detail ────────── */
+  .inbox{grid-template-columns:1fr}
+  .inbox-list{border-right:none}
+  .inbox-rows{padding-bottom:76px}
+  .inbox-list-head{padding:12px 14px}
+
+  .detail{
+    position:fixed;inset:0;z-index:95;background:var(--bg-1);
+    transform:translateX(100%);transition:transform .26s cubic-bezier(.2,.8,.3,1);
+    will-change:transform;
+  }
+  .detail.mobile-open{transform:translateX(0)}
+  .detail-actions{padding:10px 14px;gap:8px;overflow-x:auto}
+  .detail-actions::-webkit-scrollbar{display:none}
+  .detail-actions .icon-btn{display:none}        /* hide split/full toggle */
+  .mobile-back{display:inline-flex !important}
+  .mobile-back ~ :last-child{margin-left:auto}
+  .detail-scroll{padding:16px;padding-bottom:80px}
+  .detail-head h2{font-size:17px}
+  .engage-grid{grid-template-columns:repeat(2,1fr)}
+  .ai-actions .btn{flex:1 1 auto}
+
+  /* ── Analytics ─────────────────────────────────────────── */
+  .stat-grid{grid-template-columns:repeat(2,1fr);gap:12px}
+  .stat-card .sc-value{font-size:24px}
+  .analytics-cols{grid-template-columns:1fr}
+  .analytics-head{align-items:flex-start;flex-direction:column}
+  .big-chart{height:180px}
+  /* Tables scroll horizontally */
+  .link-perf-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .link-perf{min-width:460px}
+
+  /* ── Campaigns ─────────────────────────────────────────── */
+  .camp-card{padding:16px}
+  .camp-head{flex-wrap:wrap;gap:10px}
+  .camp-stats{grid-template-columns:1fr 1fr;gap:14px}
+  .camp-grid{grid-template-columns:1fr 1fr;gap:14px}
+  .cd-head{flex-direction:column}
+  .cd-head .flex.gap8{width:100%}
+  .section-head,.analytics-head{gap:10px}
+
+  /* ── People : table → card list ────────────────────────── */
+  .people-toolbar{flex-direction:column;align-items:stretch;gap:12px}
+  .people-toolbar-right{flex-direction:column;align-items:stretch;gap:10px}
+  .people-toolbar .people-search,
+  .people-toolbar-right .people-search{flex:1 1 auto;width:100%;max-width:none}
+  .people-tabs{width:100% !important}
+  .people-tabs .tab{flex:1}
+
+  .ptable thead{display:none}
+  .ptable,.ptable tbody{display:block;width:auto}
+  .ptable tr{
+    display:flex;align-items:center;gap:12px;width:auto;
+    padding:10px 14px;border:0;border-bottom:1px solid var(--line);border-radius:0;margin:0;
+    background:var(--card);
+  }
+  .ptable tbody tr:last-child{border-bottom:none}
+  .ptable tbody tr:hover{background:var(--card)}
+  /* Only the identity cell + flagged meta cell(s) show; the rest collapse. */
+  .ptable td{display:none}
+  .ptable td.pcell-primary{
+    display:flex;flex:1 1 auto;min-width:0;padding:0;border:0;margin:0;text-align:left;
+  }
+  .ptable td.pcell-primary .pcell-name{justify-content:flex-start;min-width:0}
+  .ptable .pcell-name .pn-main{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ptable .pcell-name .pn-email{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60vw}
+  .ptable td.pcell-meta{
+    display:flex;align-items:center;gap:7px;flex:0 0 auto;padding:0;border:0;margin:0;
+    font-size:13px;font-weight:600;white-space:nowrap;
+  }
+  .ptable td.pcell-meta::before{display:none}
+  /* Per-row actions → kebab menu on the right */
+  .ptable td.pcell-actions{display:flex;flex:0 0 auto;align-items:center;padding:0;border:0;margin:0}
+  .ptable td.pcell-actions::before{display:none}
+  .ptable .pcell-actions .row-actions{opacity:1}
+  .ptable .row-act-hover{display:none}
+  .ptable .row-kebab{display:grid;width:34px;height:34px;border:none;color:var(--fg-mute)}
+  .ptable .row-kebab:active{background:var(--bg-2)}
+  /* Empty-state / full-width rows */
+  .ptable td[colspan]{display:block;flex:1 1 auto;text-align:center;padding:22px 0}
+  .ptable tr.list-confirm-row{display:block;padding:0}
+  .list-confirm{flex-direction:column;align-items:stretch;gap:10px;text-align:left}
+
+  /* ── Settings : sub-nav → scrollable top tabs ──────────── */
+  .settings{grid-template-columns:1fr;gap:18px;max-width:none}
+  .set-nav{
+    flex-direction:row;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    border-bottom:1px solid var(--line);padding-bottom:8px;
+  }
+  .set-nav::-webkit-scrollbar{display:none}
+  .set-nav button{flex:0 0 auto;white-space:nowrap}
+  .profile-row{flex-wrap:wrap;max-width:none}
+  .profile-row .btn-upgrade{width:100% !important}
+
+  /* ── Help & docs already stacks (<880px). Tighten support card. */
+  .support-card{padding:18px}
+
+  /* ── Modals : full-screen for the big forms (Compose etc.) */
+  .backdrop{padding:0}
+  .modal.wide{
+    width:100vw !important;max-width:100vw;height:100dvh;max-height:100dvh;
+    border-radius:0;border-left:none;border-right:none;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  .modal.wide .modal-head{flex:0 0 auto}
+  .modal.wide .modal-body{flex:1 1 auto;min-height:0;overflow-y:auto}
+  .modal.wide .modal-foot{flex:0 0 auto;flex-wrap:wrap}
+
+  /* Step indicator / sequence breathing room */
+  .seq-step{padding:12px}
+}
+
+/* Very small phones */
+@media (max-width:360px){
+  .m-nav-label{font-size:9px}
+  .header h1{font-size:16px}
+}
