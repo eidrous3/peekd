@@ -19,7 +19,7 @@
 
   async function sendMagicLink(email) {
     const sb = client();
-    if (!sb) throw new Error('Supabase is not configured. Add your credentials to config.js.');
+    if (!sb) throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in Netlify.');
     const redirectTo = new URL('Peekd Dashboard.html', window.location.href).href;
     const { error } = await sb.auth.signInWithOtp({
       email,
@@ -30,7 +30,7 @@
 
   async function signInWithOAuth(provider) {
     const sb = client();
-    if (!sb) throw new Error('Supabase is not configured. Add your credentials to config.js.');
+    if (!sb) throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in Netlify.');
     const redirectTo = new URL('Peekd Dashboard.html', window.location.href).href;
     const { error } = await sb.auth.signInWithOAuth({ provider, options: { redirectTo } });
     if (error) throw error;
