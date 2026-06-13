@@ -132,7 +132,7 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
         <form id="magicForm" novalidate>
           <div class="field">
             <label for="email">Email</label>
-            <input class="input" id="email" type="email" placeholder="you@example.com" autocomplete="email" autofocus>
+            <input class="input" id="email" type="email" name="email" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="254" autofocus>
             <div class="err" id="emailErr"></div>
           </div>
           <button class="btn-primary" type="submit" id="submitBtn">Send magic link <span>→</span></button>
@@ -187,6 +187,7 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
+<script src="dash/sanitize.js"></script>
 <script src="dash/auth.js"></script>
 <script>
   const params = new URLSearchParams(window.location.search);
@@ -199,9 +200,30 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
   const sentState = document.getElementById('sentState');
   const sentEmail = document.getElementById('sentEmail');
   const submitBtn = document.getElementById('submitBtn');
-  const valid = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
   let timer;
   let lastEmail = '';
+  let submitting = false;
+
+  function showEmailError(message) {
+    emailErr.textContent = message;
+    emailInput.classList.add('invalid');
+  }
+
+  function clearEmailError() {
+    emailErr.textContent = '';
+    emailInput.classList.remove('invalid');
+  }
+
+  function validateInput() {
+    const result = window.PeekdSanitize.sanitizeEmail(emailInput.value);
+    if (!result.ok) {
+      showEmailError(result.error);
+      return null;
+    }
+    emailInput.value = result.email;
+    clearEmailError();
+    return result.email;
+  }
 
   function setMode(next) {
     mode = next;
@@ -236,13 +258,14 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
   }
 
   async function submitEmail(email) {
-    await window.PeekdAuth.sendMagicLink(email);
-    lastEmail = email;
-    sentEmail.textContent = email;
+    const clean = await window.PeekdAuth.sendMagicLink(email, { signup: mode === 'signup' });
+    lastEmail = clean;
+    sentEmail.textContent = clean;
     document.getElementById('sentHeading').textContent = mode === 'signup' ? 'Almost there' : 'Check your inbox';
+    const safe = window.PeekdSanitize.escapeHtml(clean);
     document.getElementById('sentLede').innerHTML = (mode === 'signup'
       ? 'We sent a sign-up link to<br><strong>'
-      : 'We sent a magic link to<br><strong>') + email + '</strong>';
+      : 'We sent a magic link to<br><strong>') + safe + '</strong>';
     formState.hidden = true;
     sentState.hidden = false;
     startCountdown();
@@ -250,31 +273,39 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const v = emailInput.value.trim();
-    if (!v) { emailErr.textContent = 'Please enter your email address'; emailInput.classList.add('invalid'); emailInput.focus(); return; }
-    if (!valid(v)) { emailErr.textContent = 'Please enter a valid email address'; emailInput.classList.add('invalid'); emailInput.focus(); return; }
-    emailErr.textContent = ''; emailInput.classList.remove('invalid');
+    if (submitting) return;
+    const email = validateInput();
+    if (!email) { emailInput.focus(); return; }
+    submitting = true;
     submitBtn.disabled = true;
     try {
-      await submitEmail(v);
+      await submitEmail(email);
     } catch (err) {
-      emailErr.textContent = err.message || 'Something went wrong';
+      showEmailError(err.message || 'Something went wrong');
     } finally {
+      submitting = false;
       submitBtn.disabled = false;
     }
   });
 
-  emailInput.addEventListener('input', () => { emailErr.textContent = ''; emailInput.classList.remove('invalid'); });
+  emailInput.addEventListener('input', clearEmailError);
+  emailInput.addEventListener('blur', () => {
+    if (!emailInput.value.trim()) return;
+    validateInput();
+  });
 
   document.getElementById('resendBtn').addEventListener('click', async () => {
     const v = lastEmail;
-    if (!v) return;
+    if (!v || submitting) return;
+    submitting = true;
     try {
-      await window.PeekdAuth.sendMagicLink(v);
+      await window.PeekdAuth.sendMagicLink(v, { signup: mode === 'signup' });
       startCountdown();
     } catch (err) {
-      emailErr.textContent = err.message || 'Could not resend link';
+      showEmailError(err.message || 'Could not resend link');
       sentState.hidden = true; formState.hidden = false;
+    } finally {
+      submitting = false;
     }
   });
 
@@ -284,10 +315,12 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
   });
 
   document.getElementById('googleBtn').addEventListener('click', () => {
-    window.PeekdAuth.signInWithOAuth('google').catch(err => { emailErr.textContent = err.message; });
+    clearEmailError();
+    window.PeekdAuth.signInWithOAuth('google').catch(err => showEmailError(err.message));
   });
   document.getElementById('microsoftBtn').addEventListener('click', () => {
-    window.PeekdAuth.signInWithOAuth('azure').catch(err => { emailErr.textContent = err.message; });
+    clearEmailError();
+    window.PeekdAuth.signInWithOAuth('azure').catch(err => showEmailError(err.message));
   });
 
   setMode(mode);

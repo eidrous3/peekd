@@ -17,23 +17,45 @@
     return window.__peekdSupabase;
   }
 
-  async function sendMagicLink(email) {
+  function cleanEmail(raw) {
+    const S = window.PeekdSanitize;
+    const result = S.sanitizeEmail(raw);
+    if (!result.ok) {
+      const err = new Error(result.error);
+      err.code = 'invalid_email';
+      throw err;
+    }
+    return result.email;
+  }
+
+  function wrapError(err) {
+    const wrapped = new Error(window.PeekdSanitize.formatAuthError(err));
+    wrapped.code = err.code;
+    return wrapped;
+  }
+
+  async function sendMagicLink(email, { signup = false } = {}) {
     const sb = client();
     if (!sb) throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in Netlify.');
+
+    const clean = cleanEmail(email);
     const redirectTo = new URL('Peekd Dashboard.html', window.location.href).href;
     const { error } = await sb.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirectTo, shouldCreateUser: true },
+      email: clean,
+      options: { emailRedirectTo: redirectTo, shouldCreateUser: signup },
     });
-    if (error) throw error;
+    if (error) throw wrapError(error);
+    return clean;
   }
 
   async function signInWithOAuth(provider) {
     const sb = client();
     if (!sb) throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in Netlify.');
+    const allowed = ['google', 'azure'];
+    if (!allowed.includes(provider)) throw new Error('Unsupported sign-in provider.');
     const redirectTo = new URL('Peekd Dashboard.html', window.location.href).href;
     const { error } = await sb.auth.signInWithOAuth({ provider, options: { redirectTo } });
-    if (error) throw error;
+    if (error) throw wrapError(error);
   }
 
   async function getSession() {
