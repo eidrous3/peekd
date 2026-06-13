@@ -1,2 +1,5 @@
 # Generated at Netlify build from env vars
 config.js
+
+node_modules/
+package-lock.json

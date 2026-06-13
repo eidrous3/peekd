@@ -4,11 +4,14 @@ const path = require('path');
 const url = process.env.SUPABASE_URL || '';
 const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
-const out = `// Auto-generated at build time — do not commit. Set Netlify env vars:
-// SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY
+const out = `// Auto-generated at build time — do not commit.
+// Netlify env vars:
+//   SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY  — auth
+//   RESEND_FROM_EMAIL                       — sender address (e.g. noreply@mail.yourdomain.com)
 window.PeekdConfig = {
   supabaseUrl: ${JSON.stringify(url)},
   supabasePublishableKey: ${JSON.stringify(key)},
+  resendFromEmail: ${JSON.stringify(process.env.RESEND_FROM_EMAIL || '')},
 };
 `;
 
