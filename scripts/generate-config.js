@@ -7,6 +7,7 @@ const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KE
 const out = `// Auto-generated at build time — do not commit.
 // Netlify env vars:
 //   SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY  — auth
+//   SUPABASE_SERVICE_ROLE_KEY               — signup existing-user check (server only)
 //   RESEND_FROM_EMAIL                       — sender address (e.g. noreply@mail.yourdomain.com)
 window.PeekdConfig = {
   supabaseUrl: ${JSON.stringify(url)},

@@ -64,6 +64,9 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
 .terms a:hover{color:var(--accent)}
 .config-warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12.5px;line-height:1.5;border-radius:10px;padding:12px 14px;margin:0 0 18px}
 .config-warn code{font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;background:rgba(0,0,0,.05);padding:1px 5px;border-radius:4px}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(16px);max-width:min(420px,calc(100vw - 32px));padding:12px 16px;border-radius:12px;background:#0e1320;color:#fff;font-size:13.5px;line-height:1.45;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:1000}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.warn{background:#9a3412}
 .rule{height:1px;background:var(--line);margin:22px 0}
 .sent-ico{width:56px;height:56px;border-radius:15px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin:0 auto 20px}
 .resend-row{display:flex;align-items:center;justify-content:center;gap:8px;font-size:13.5px;flex-wrap:wrap}
@@ -185,6 +188,8 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
   <a class="back" href="Peekd.html">← Back to home</a>
 </main>
 
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script src="dash/sanitize.js"></script>
@@ -203,6 +208,16 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
   let timer;
   let lastEmail = '';
   let submitting = false;
+  let toastTimer;
+
+  function showToast(message, { warn = false } = {}) {
+    const el = document.getElementById('toast');
+    el.textContent = message;
+    el.classList.toggle('warn', warn);
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 5000);
+  }
 
   function showEmailError(message) {
     emailErr.textContent = message;
@@ -258,14 +273,25 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
   }
 
   async function submitEmail(email) {
-    const clean = await window.PeekdAuth.sendMagicLink(email, { signup: mode === 'signup' });
+    const result = await window.PeekdAuth.sendMagicLink(email, { signup: mode === 'signup' });
+    const clean = result.email;
+    const existingUser = result.existingUser;
+
+    if (mode === 'signup' && existingUser) {
+      showToast('You\'re already signed up. A login link will be sent to your email.', { warn: true });
+    }
+
     lastEmail = clean;
     sentEmail.textContent = clean;
-    document.getElementById('sentHeading').textContent = mode === 'signup' ? 'Almost there' : 'Check your inbox';
+    document.getElementById('sentHeading').textContent = existingUser
+      ? 'Check your inbox'
+      : (mode === 'signup' ? 'Almost there' : 'Check your inbox');
     const safe = window.PeekdSanitize.escapeHtml(clean);
-    document.getElementById('sentLede').innerHTML = (mode === 'signup'
-      ? 'We sent a sign-up link to<br><strong>'
-      : 'We sent a magic link to<br><strong>') + safe + '</strong>';
+    document.getElementById('sentLede').innerHTML = existingUser
+      ? 'You already have an account. We sent a login link to<br><strong>' + safe + '</strong>'
+      : ((mode === 'signup'
+        ? 'We sent a sign-up link to<br><strong>'
+        : 'We sent a magic link to<br><strong>') + safe + '</strong>');
     formState.hidden = true;
     sentState.hidden = false;
     startCountdown();
@@ -299,7 +325,10 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
     if (!v || submitting) return;
     submitting = true;
     try {
-      await window.PeekdAuth.sendMagicLink(v, { signup: mode === 'signup' });
+      const result = await window.PeekdAuth.sendMagicLink(v, { signup: mode === 'signup' });
+      if (mode === 'signup' && result.existingUser) {
+        showToast('You\'re already signed up. A login link will be sent to your email.', { warn: true });
+      }
       startCountdown();
     } catch (err) {
       showEmailError(err.message || 'Could not resend link');

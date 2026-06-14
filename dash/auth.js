@@ -34,18 +34,41 @@
     return wrapped;
   }
 
+  async function checkEmailExists(email) {
+    try {
+      const res = await fetch('/.netlify/functions/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      return data.exists === true;
+    } catch {
+      return false;
+    }
+  }
+
   async function sendMagicLink(email, { signup = false } = {}) {
     const sb = client();
     if (!sb) throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in Netlify.');
 
     const clean = cleanEmail(email);
     const redirectTo = new URL('Peekd Dashboard.html', window.location.href).href;
+    let existingUser = false;
+    let shouldCreateUser = signup;
+
+    if (signup) {
+      existingUser = await checkEmailExists(clean);
+      if (existingUser) shouldCreateUser = false;
+    }
+
     const { error } = await sb.auth.signInWithOtp({
       email: clean,
-      options: { emailRedirectTo: redirectTo, shouldCreateUser: signup },
+      options: { emailRedirectTo: redirectTo, shouldCreateUser },
     });
     if (error) throw wrapError(error);
-    return clean;
+    return { email: clean, existingUser };
   }
 
   async function signInWithOAuth(provider) {
