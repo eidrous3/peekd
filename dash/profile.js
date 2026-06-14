@@ -97,13 +97,27 @@
     const sb = Auth.client();
     if (!sb) return { ok: false, error: 'not_configured' };
 
-    const { error } = await sb
+    const userId = session.user.id;
+
+    const { error: rpcError } = await sb.rpc('soft_delete_profile');
+    if (!rpcError) return { ok: true };
+
+    const { error: updateError } = await sb
       .from('profiles')
-      .upsert({ id: session.user.id, is_deleted: true }, { onConflict: 'id' });
+      .update({ is_deleted: true })
+      .eq('id', userId);
 
-    if (error) return { ok: false, error: error.message };
+    if (!updateError) return { ok: true };
 
-    return { ok: true };
+    const { error: insertError } = await sb
+      .from('profiles')
+      .insert({ id: userId, is_deleted: true });
+
+    if (!insertError) return { ok: true };
+
+    const msg = insertError?.message || updateError?.message || rpcError?.message || 'delete_failed';
+    console.error('[Peekd] soft delete failed:', { rpcError, updateError, insertError });
+    return { ok: false, error: msg };
   }
 
   window.PeekdProfile = { fetchProfile, updateProfile, softDeleteProfile, initials };
