@@ -129,5 +129,11 @@
     });
   }
 
-  window.PeekdAuth = { ready, client, sendMagicLink, signInWithOAuth, getSession, ensureSession };
+  async function signOut() {
+    const sb = client();
+    if (!sb) return;
+    await sb.auth.signOut();
+  }
+
+  window.PeekdAuth = { ready, client, sendMagicLink, signInWithOAuth, getSession, ensureSession, signOut };
 })();

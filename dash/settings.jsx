@@ -67,10 +67,33 @@
         React.createElement('span', { className: 'store-bottom' }, bottom)));
   }
 
+  function DeleteAccountModal({ onClose, onConfirm, deleting }) {
+    React.useEffect(() => {
+      const k = (e) => e.key === 'Escape' && !deleting && onClose();
+      document.addEventListener('keydown', k);
+      return () => document.removeEventListener('keydown', k);
+    }, [deleting, onClose]);
+
+    return React.createElement('div', { className: 'backdrop', onMouseDown: deleting ? undefined : onClose },
+      React.createElement('div', { className: 'modal', style: { width: 'min(440px, calc(100vw - 40px))' }, onMouseDown: e => e.stopPropagation() },
+        React.createElement('div', { className: 'modal-head' }, React.createElement('h3', null, 'Delete account'),
+          React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose, disabled: deleting }, React.createElement(Icon, { name: 'x', size: 16 }))),
+        React.createElement('div', { className: 'modal-body' },
+          React.createElement('p', { style: { lineHeight: 1.65, margin: 0 } }, 'Your profile will be marked as deleted and you will be signed out. You can sign up again later with the same email.')),
+        React.createElement('div', { className: 'modal-foot' },
+          React.createElement('button', { className: 'btn btn-ghost', onClick: onClose, disabled: deleting }, 'Cancel'),
+          React.createElement('button', { className: 'btn btn-danger', onClick: onConfirm, disabled: deleting }, deleting ? 'Deleting…' : 'Delete account'),
+        ),
+      ),
+    );
+  }
+
   function AccountTab({ onUpgrade, toast, pro, profileStatus, profile, setProfile }) {
     const [draftName, setDraftName] = useState('');
     const [draftTimezone, setDraftTimezone] = useState('America/New_York');
     const [saving, setSaving] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
       if (!profile) return;
@@ -107,6 +130,19 @@
       toast('Profile saved ✓');
     }
 
+    async function handleDeleteAccount() {
+      if (deleting) return;
+      setDeleting(true);
+      const res = await window.PeekdProfile.softDeleteProfile();
+      if (!res.ok) {
+        setDeleting(false);
+        toast('Could not delete account. Try again.');
+        return;
+      }
+      await window.PeekdAuth.signOut();
+      window.location.href = 'Peekd Login.html';
+    }
+
     return React.createElement('div', null,
       React.createElement('h2', null, 'Account'),
       React.createElement('div', { className: 'sp-sub' }, 'Your profile and workspace'),
@@ -136,7 +172,17 @@
         onClick: handleSave,
         disabled: saving,
       }, saving ? 'Saving…' : 'Save changes'),
-      React.createElement('button', { className: 'btn btn-ghost', style: { color: 'var(--danger)', borderColor: 'var(--line)' } }, 'Delete account'),
+      React.createElement('button', {
+        className: 'btn btn-ghost',
+        style: { color: 'var(--danger)', borderColor: 'var(--line)' },
+        onClick: () => setConfirmDelete(true),
+        disabled: profileStatus !== 'ready' || deleting,
+      }, 'Delete account'),
+      confirmDelete && React.createElement(DeleteAccountModal, {
+        onClose: () => setConfirmDelete(false),
+        onConfirm: handleDeleteAccount,
+        deleting,
+      }),
     );
   }
 
