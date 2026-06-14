@@ -72,7 +72,33 @@
     const [notif, setNotif] = useState({ opens: true, links: true, reply: true, desktop: true, sound: false, mobile: true, digest: true });
     const [appInstalled] = useState(false);
     const [connect, setConnect] = useState(null);
+    const [profileStatus, setProfileStatus] = useState('loading');
+    const [profile, setProfile] = useState(null);
     const tabs = [['account', 'Account'], ['notifications', 'Notifications'], ['integrations', 'Integrations'], ['privacy', 'Privacy']];
+
+    useEffect(() => {
+      if (tab !== 'account') return;
+      let cancelled = false;
+      setProfileStatus('loading');
+      (async () => {
+        const res = await window.PeekdProfile.fetchProfile();
+        if (cancelled) return;
+        if (!res.ok) {
+          setProfile(null);
+          setProfileStatus(res.error === 'no_session' ? 'no_session' : 'error');
+          return;
+        }
+        setProfile(res.profile);
+        setProfileStatus('ready');
+      })();
+      return () => { cancelled = true; };
+    }, [tab]);
+
+    const displayName = profileStatus === 'ready'
+      ? (profile.name || profile.email.split('@')[0] || 'Account')
+      : '…';
+    const displayEmail = profileStatus === 'ready' ? profile.email : '…';
+    const displayInitials = profileStatus === 'ready' ? profile.initials : '…';
 
     return React.createElement('div', { className: 'page-pad' },
       React.createElement('div', { className: 'settings' },
@@ -82,16 +108,20 @@
           tab === 'account' && React.createElement('div', null,
             React.createElement('h2', null, 'Account'),
             React.createElement('div', { className: 'sp-sub' }, 'Your profile and workspace'),
+            profileStatus === 'no_session' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Sign in to load your account.'),
+            profileStatus === 'error' && React.createElement('p', { className: 'dim', style: { marginBottom: 16, color: 'var(--danger)' } }, 'Could not load your profile. Try refreshing.'),
             React.createElement('div', { className: 'profile-row' },
-              React.createElement(Avatar, { initials: 'HM', size: 56, fontSize: 20 }),
+              React.createElement(Avatar, { initials: displayInitials, size: 56, fontSize: 20 }),
               React.createElement('div', { style: { flex: 1 } },
-                React.createElement('div', { className: 'pr-name' }, 'Hannah Mitchell',
+                React.createElement('div', { className: 'pr-name' }, displayName,
                   pro && React.createElement('span', { className: 'pro-badge' }, React.createElement(Icon, { name: 'bolt', size: 12, fill: 'currentColor', stroke: 0 }), 'Pro')),
-                React.createElement('div', { className: 'pr-email' }, 'hannah@peekd.app'),
+                React.createElement('div', { className: 'pr-email' }, displayEmail),
                 React.createElement('div', { className: 'pr-plan' + (pro ? ' pr-plan-pro' : '') }, pro ? 'PRO PLAN · all features unlocked' : 'FREE PLAN · limited tracking')),
               !pro && React.createElement('button', { className: 'btn btn-upgrade', style: { width: 'auto', padding: '0 16px' }, onClick: onUpgrade }, React.createElement(Icon, { name: 'bolt', size: 14, fill: 'currentColor', stroke: 0 }), 'Upgrade to Premium')),
-            React.createElement('div', { className: 'field', style: { maxWidth: 360, marginBottom: 16 } }, React.createElement('label', { className: 'field-label' }, 'DISPLAY NAME'), React.createElement('input', { className: 'input', defaultValue: 'Hannah Mitchell' })),
-            React.createElement(TimeZoneSelect, { toast }),
+            React.createElement('div', { className: 'field', style: { maxWidth: 360, marginBottom: 16 } },
+              React.createElement('label', { className: 'field-label' }, 'DISPLAY NAME'),
+              React.createElement('input', { className: 'input', value: profileStatus === 'ready' ? (profile.name || '') : '', readOnly: true, placeholder: profileStatus === 'loading' ? 'Loading…' : '' })),
+            React.createElement(TimeZoneSelect, { toast, value: profile?.timezone, readOnly: true }),
             React.createElement('button', { className: 'btn btn-ghost', style: { color: 'var(--danger)', borderColor: 'var(--line)' } }, 'Delete account'),
           ),
           tab === 'notifications' && React.createElement('div', null,
@@ -205,12 +235,16 @@
     return (m[1] === '-' ? -1 : 1) * (parseInt(m[2], 10) * 60 + (m[3] ? parseInt(m[3], 10) : 0));
   }
 
-  function TimeZoneSelect({ toast }) {
+  function TimeZoneSelect({ toast, value: valueProp, readOnly }) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
-    const [value, setValue] = useState('America/New_York');
+    const [value, setValue] = useState(valueProp || 'America/New_York');
     const ref = useRef(null);
     const inputRef = useRef(null);
+
+    useEffect(() => {
+      if (valueProp) setValue(valueProp);
+    }, [valueProp]);
 
     useEffect(() => {
       if (!open) return;
@@ -254,7 +288,12 @@
 
     return React.createElement('div', { className: 'field tz-field', style: { maxWidth: 360, marginBottom: 28 }, ref },
       React.createElement('label', { className: 'field-label' }, 'TIME ZONE'),
-      React.createElement('button', { className: 'select' + (open ? ' tz-open' : ''), style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, onClick: () => setOpen(o => !o) },
+      React.createElement('button', {
+        className: 'select' + (open ? ' tz-open' : ''),
+        style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+        onClick: readOnly ? undefined : () => setOpen(o => !o),
+        disabled: readOnly,
+      },
         React.createElement('span', null, value.replace(/_/g, ' ') + ' (' + curOff + ')'),
         React.createElement(Icon, { name: 'chevDown', size: 14 })),
       open && React.createElement('div', { className: 'tz-menu' },
@@ -269,7 +308,12 @@
                 g.zones.map(tz => React.createElement('button', {
                   key: tz,
                   className: 'tz-opt' + (tz === value ? ' sel' : ''),
-                  onClick: () => { setValue(tz); setOpen(false); setQuery(''); toast && toast('Time zone updated ✓'); },
+                  onClick: () => {
+                    setValue(tz);
+                    setOpen(false);
+                    setQuery('');
+                    if (!readOnly && toast) toast('Time zone updated ✓');
+                  },
                 },
                   React.createElement('span', { className: 'tz-name' }, sub(tz)),
                   React.createElement('span', { className: 'tz-off' }, meta[tz].off))),

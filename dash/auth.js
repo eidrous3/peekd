@@ -108,5 +108,5 @@
     return data.session;
   }
 
-  window.PeekdAuth = { ready, sendMagicLink, signInWithOAuth, getSession };
+  window.PeekdAuth = { ready, client, sendMagicLink, signInWithOAuth, getSession };
 })();
