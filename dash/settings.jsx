@@ -265,9 +265,144 @@
     );
   }
 
-  function SettingsPage({ onUpgrade, toast, pro }) {
-    const [tab, setTab] = useState('account');
+  function IntegrationsTab({ toast }) {
+    const I = window.PeekdIntegrations;
+    const [accounts, setAccounts] = useState([]);
+    const [status, setStatus] = useState('loading');
     const [connect, setConnect] = useState(null);
+    const [connecting, setConnecting] = useState(false);
+
+    async function loadAccounts() {
+      if (!I) {
+        setStatus('error');
+        return;
+      }
+      setStatus('loading');
+      const res = await I.fetchGmailAccounts();
+      if (!res.ok) {
+        setAccounts([]);
+        setStatus(res.error === 'no_session' ? 'no_session' : 'error');
+        return;
+      }
+      setAccounts(res.accounts || []);
+      setStatus('ready');
+    }
+
+    useEffect(() => {
+      loadAccounts();
+      const params = new URLSearchParams(window.location.search);
+      const gmail = params.get('gmail');
+      if (gmail === 'connected') toast('Gmail connected ✓');
+      else if (gmail === 'error') toast('Could not connect Gmail. Try again.');
+      if (params.get('settings') === 'integrations' || gmail) {
+        params.delete('settings');
+        params.delete('gmail');
+        const qs = params.toString();
+        const next = window.location.pathname + (qs ? `?${qs}` : '');
+        window.history.replaceState({}, '', next);
+      }
+    }, []);
+
+    async function handleConnectGmail() {
+      if (!I || connecting) return;
+      setConnecting(true);
+      const res = await I.startGmailConnect();
+      if (!res.ok) {
+        setConnecting(false);
+        toast(res.error === 'missing_google_config' ? 'Gmail is not configured yet.' : 'Could not start Gmail connection.');
+      }
+    }
+
+    async function handleDisconnect(accountId) {
+      if (!I) return;
+      const res = await I.disconnectAccount(accountId);
+      if (!res.ok) {
+        toast('Could not disconnect account.');
+        return;
+      }
+      await loadAccounts();
+      toast('Account disconnected');
+    }
+
+    async function handleSetPrimary(accountId) {
+      if (!I) return;
+      const res = await I.setPrimaryAccount(accountId);
+      if (!res.ok) {
+        toast('Could not set primary account.');
+        return;
+      }
+      await loadAccounts();
+      toast('Primary account updated ✓');
+    }
+
+    const gmailConnected = accounts.length > 0;
+    const outlookIg = D.integrations.find((ig) => ig.name === 'Outlook') || { name: 'Outlook', desc: 'Send and track from Outlook web', status: 'connect' };
+
+    return React.createElement('div', null,
+      React.createElement('h2', null, 'Integrations'),
+      React.createElement('div', { className: 'sp-sub' }, 'Connect your email and tools'),
+      status === 'loading' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Loading…'),
+      status === 'no_session' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Sign in to manage integrations.'),
+      status === 'error' && React.createElement('p', { className: 'dim', style: { marginBottom: 16, color: 'var(--danger)' } }, 'Could not load integrations. Try refreshing.'),
+      status === 'ready' && React.createElement('div', { className: 'integ-card' },
+        React.createElement('span', { className: 'integ-ico' }, React.createElement(BrandLogo, { name: 'Gmail' })),
+        React.createElement('div', { className: 'integ-body' },
+          React.createElement('div', { className: 'integ-name' }, 'Gmail',
+            gmailConnected && React.createElement('span', { className: 'status-chip sc-connected' }, accounts.length + ' CONNECTED')),
+          React.createElement('div', { className: 'integ-desc' }, 'Send and track from Gmail web'),
+          gmailConnected
+            ? accounts.map((a) => React.createElement('div', { key: a.id, className: 'acct-line' },
+                React.createElement('button', {
+                  className: 'icon-btn',
+                  style: { width: 24, height: 24, flex: '0 0 auto' },
+                  onClick: () => handleDisconnect(a.id),
+                  title: 'Disconnect',
+                }, React.createElement(Icon, { name: 'x', size: 12 })),
+                React.createElement('span', { className: 'ac-dot' }),
+                React.createElement('button', {
+                  className: 'btn btn-ghost btn-sm',
+                  style: { padding: 0, minHeight: 0, height: 'auto', border: 'none', background: 'transparent', font: 'inherit', color: 'inherit' },
+                  onClick: () => !a.is_primary && handleSetPrimary(a.id),
+                  title: a.is_primary ? 'Primary account' : 'Set as primary',
+                }, a.email),
+                a.is_primary && React.createElement('span', { className: 'pill-tag' }, 'PRIMARY')))
+            : React.createElement('div', { className: 'acct-line' }, 'No accounts connected yet.')),
+        React.createElement('div', { style: { flex: '0 0 auto', alignSelf: 'center' } },
+          gmailConnected
+            ? React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setConnect({ name: 'Gmail' }) }, React.createElement(Icon, { name: 'plus', size: 13 }), 'Add')
+            : React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setConnect({ name: 'Gmail' }) }, 'Connect')),
+      ),
+      status === 'ready' && React.createElement('div', { className: 'integ-card', style: { marginTop: 12 } },
+        React.createElement('span', { className: 'integ-ico' }, React.createElement(BrandLogo, { name: 'Outlook' })),
+        React.createElement('div', { className: 'integ-body' },
+          React.createElement('div', { className: 'integ-name' }, outlookIg.name),
+          React.createElement('div', { className: 'integ-desc' }, outlookIg.desc),
+          React.createElement('div', { className: 'acct-line' }, 'No accounts connected yet.')),
+        React.createElement('div', { style: { flex: '0 0 auto', alignSelf: 'center' } },
+          React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => toast('Outlook coming soon') }, 'Connect')),
+      ),
+      React.createElement('div', { className: 'divider', style: { margin: '20px 0 16px' } }),
+      React.createElement('div', { className: 'field-label', style: { marginBottom: 10 } }, 'OTHER EMAIL PROVIDERS · COMING SOON'),
+      React.createElement('div', { className: 'integ-card', style: { opacity: .8 } },
+        React.createElement('span', { className: 'integ-ico' }, React.createElement(BrandLogo, { name: 'Custom' })),
+        React.createElement('div', { className: 'integ-body' },
+          React.createElement('div', { className: 'integ-name' }, 'Custom Email (IMAP/SMTP)', React.createElement('span', { className: 'status-chip sc-soon' }, 'COMING SOON')),
+          React.createElement('div', { className: 'integ-desc' }, 'Connect any email — cPanel, Zoho, Fastmail, Yahoo, any SMTP'),
+          React.createElement('button', { className: 'btn btn-ghost btn-sm', style: { marginTop: 10 }, onClick: () => toast("We'll let you know!") }, React.createElement(Icon, { name: 'bell', size: 13 }), "Notify me when it's ready"))),
+      connect && React.createElement(ConnectModal, {
+        ig: connect,
+        busy: connecting,
+        onClose: () => !connecting && setConnect(null),
+        onDone: handleConnectGmail,
+      }),
+    );
+  }
+
+  function SettingsPage({ onUpgrade, toast, pro }) {
+    const [tab, setTab] = useState(() => {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('settings') === 'integrations' ? 'integrations' : 'account';
+    });
     const [profileStatus, setProfileStatus] = useState('loading');
     const [profile, setProfile] = useState(null);
     const tabs = [['account', 'Account'], ['notifications', 'Notifications'], ['integrations', 'Integrations'], ['privacy', 'Privacy']];
@@ -297,38 +432,7 @@
         React.createElement('div', { className: 'set-panel' },
           tab === 'account' && React.createElement(AccountTab, { onUpgrade, toast, pro, profileStatus, profile, setProfile }),
           tab === 'notifications' && React.createElement(NotificationsTab, { toast }),
-          tab === 'integrations' && React.createElement('div', null,
-            React.createElement('h2', null, 'Integrations'),
-            React.createElement('div', { className: 'sp-sub' }, 'Connect your email and tools'),
-            D.integrations.map((ig, i) => React.createElement('div', { key: i, className: 'integ-card' },
-              React.createElement('span', { className: 'integ-ico' }, React.createElement(BrandLogo, { name: ig.name })),
-              React.createElement('div', { className: 'integ-body' },
-                React.createElement('div', { className: 'integ-name' }, ig.name, ig.status === 'connected' && React.createElement('span', { className: 'status-chip sc-connected' }, ig.count ? ig.count + ' CONNECTED' : 'CONNECTED')),
-                React.createElement('div', { className: 'integ-desc' }, ig.desc),
-                ig.name === 'Gmail' && React.createElement('div', null, D.accounts.map((a, j) => React.createElement('div', { key: j, className: 'acct-line' },
-                  React.createElement('button', { className: 'icon-btn', style: { width: 24, height: 24, flex: '0 0 auto' } }, React.createElement(Icon, { name: 'x', size: 12 })),
-                  React.createElement('span', { className: 'ac-dot' }), a.email, a.primary && React.createElement('span', { className: 'pill-tag' }, 'PRIMARY')))),
-                ig.name === 'Outlook' && React.createElement('div', { className: 'acct-line' }, 'No accounts connected yet.'),
-              ),
-              React.createElement('div', { style: { flex: '0 0 auto', alignSelf: 'center' } },
-                ig.status === 'connect'
-                  ? React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setConnect(ig) }, 'Connect')
-                  : ig.name === 'Gmail'
-                    ? React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setConnect(ig) }, React.createElement(Icon, { name: 'plus', size: 13 }), 'Add')
-                    : ig.name === 'Outlook'
-                      ? React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setConnect(ig) }, 'Connect')
-                      : null),
-            )),
-            React.createElement('div', { className: 'divider', style: { margin: '20px 0 16px' } }),
-            React.createElement('div', { className: 'field-label', style: { marginBottom: 10 } }, 'OTHER EMAIL PROVIDERS · COMING SOON'),
-            React.createElement('div', { className: 'integ-card', style: { opacity: .8 } },
-              React.createElement('span', { className: 'integ-ico' }, React.createElement(BrandLogo, { name: 'Custom' })),
-              React.createElement('div', { className: 'integ-body' },
-                React.createElement('div', { className: 'integ-name' }, 'Custom Email (IMAP/SMTP)', React.createElement('span', { className: 'status-chip sc-soon' }, 'COMING SOON')),
-                React.createElement('div', { className: 'integ-desc' }, 'Connect any email — cPanel, Zoho, Fastmail, Yahoo, any SMTP'),
-                React.createElement('button', { className: 'btn btn-ghost btn-sm', style: { marginTop: 10 }, onClick: () => toast("We'll let you know!") }, React.createElement(Icon, { name: 'bell', size: 13 }), "Notify me when it's ready")),
-            ),
-          ),
+          tab === 'integrations' && React.createElement(IntegrationsTab, { toast }),
           tab === 'privacy' && React.createElement('div', null,
             React.createElement('h2', null, 'Privacy'),
             React.createElement('div', { className: 'sp-sub' }, 'How your data is handled'),
@@ -339,13 +443,12 @@
           ),
         ),
       ),
-      connect && React.createElement(ConnectModal, { ig: connect, onClose: () => setConnect(null), onDone: () => { setConnect(null); toast('Connected ✓'); } }),
     );
   }
 
-  function ConnectModal({ ig, onClose, onDone }) {
-    React.useEffect(() => { const k = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, []);
-    return React.createElement('div', { className: 'backdrop', onMouseDown: onClose },
+  function ConnectModal({ ig, onClose, onDone, busy }) {
+    React.useEffect(() => { const k = e => e.key === 'Escape' && !busy && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [busy, onClose]);
+    return React.createElement('div', { className: 'backdrop', onMouseDown: busy ? undefined : onClose },
       React.createElement('div', { className: 'modal', style: { width: 'min(440px, calc(100vw - 40px))' }, onMouseDown: e => e.stopPropagation() },
         React.createElement('div', { className: 'modal-head' }, React.createElement('h3', null, 'Connect ' + ig.name),
           React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose }, React.createElement(Icon, { name: 'x', size: 16 }))),
@@ -358,8 +461,8 @@
           React.createElement('div', { className: 'locked-row', style: { marginTop: 16, justifyContent: 'center' } }, React.createElement(Icon, { name: 'lock', size: 14 }), 'We never read or store your email content.'),
         ),
         React.createElement('div', { className: 'modal-foot' },
-          React.createElement('button', { className: 'btn btn-ghost', onClick: onClose }, 'Cancel'),
-          React.createElement('button', { className: 'btn btn-primary', onClick: onDone }, 'Connect with ' + ig.name, React.createElement(Icon, { name: 'arrowRight', size: 15 })),
+          React.createElement('button', { className: 'btn btn-ghost', onClick: onClose, disabled: busy }, 'Cancel'),
+          React.createElement('button', { className: 'btn btn-primary', onClick: onDone, disabled: busy }, busy ? 'Redirecting…' : 'Connect with ' + ig.name, !busy && React.createElement(Icon, { name: 'arrowRight', size: 15 })),
         ),
       ),
     );
