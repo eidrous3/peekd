@@ -98,6 +98,25 @@
     if (!sb) return { ok: false, error: 'not_configured' };
 
     const userId = session.user.id;
+    const token = session.access_token;
+
+    try {
+      const res = await fetch('/.netlify/functions/delete-account', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) return { ok: true };
+      if (data.reason !== 'missing_config' && res.status !== 404) {
+        console.error('[Peekd] delete-account function failed:', { status: res.status, data });
+        if (data.error) return { ok: false, error: data.error };
+      }
+    } catch (err) {
+      console.error('[Peekd] delete-account function unreachable:', err);
+    }
 
     const { error: rpcError } = await sb.rpc('soft_delete_profile');
     if (!rpcError) return { ok: true };

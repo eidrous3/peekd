@@ -11,32 +11,15 @@ create policy "Profiles: soft delete own"
 
 create or replace function public.soft_delete_profile()
 returns void
-language plpgsql
+language sql
 security definer
 set search_path = public
 as $$
-declare
-  uid uuid := auth.uid();
-begin
-  if uid is null then
-    raise exception 'not authenticated';
-  end if;
-
-  update public.profiles
-  set is_deleted = true,
-      updated_at = now()
-  where id = uid
-    and not is_deleted;
-
-  if not found then
-    insert into public.profiles (id, is_deleted)
-    values (uid, true)
-    on conflict (id) do update
-      set is_deleted = true,
-          updated_at = now()
-    where public.profiles.is_deleted = false;
-  end if;
-end;
+  insert into public.profiles (id, is_deleted)
+  values (auth.uid(), true)
+  on conflict (id) do update
+    set is_deleted = true,
+        updated_at = now();
 $$;
 
 revoke all on function public.soft_delete_profile() from public;
