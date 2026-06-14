@@ -45,5 +45,47 @@
     };
   }
 
-  window.PeekdProfile = { fetchProfile, initials };
+  async function updateProfile({ name, timezone } = {}) {
+    const Auth = window.PeekdAuth;
+    if (!Auth?.ready()) return { ok: false, error: 'not_configured' };
+
+    const session = await Auth.getSession();
+    if (!session?.user) return { ok: false, error: 'no_session' };
+
+    const email = session.user.email || '';
+    const sb = Auth.client();
+    if (!sb) return { ok: false, error: 'not_configured' };
+
+    const payload = { id: session.user.id };
+    if (name !== undefined) payload.name = String(name).trim();
+    if (timezone !== undefined) {
+      const tz = String(timezone).trim();
+      payload.timezone = tz || 'America/New_York';
+    }
+
+    const { data, error } = await sb
+      .from('profiles')
+      .upsert(payload, { onConflict: 'id' })
+      .select('id, name, timezone, is_deleted')
+      .single();
+
+    if (error) return { ok: false, error: error.message };
+
+    const savedName = (data?.name || '').trim();
+    const savedTimezone = data?.timezone || 'America/New_York';
+
+    return {
+      ok: true,
+      profile: {
+        id: session.user.id,
+        name: savedName,
+        email,
+        timezone: savedTimezone,
+        initials: initials(savedName, email),
+        isDeleted: !!data?.is_deleted,
+      },
+    };
+  }
+
+  window.PeekdProfile = { fetchProfile, updateProfile, initials };
 })();

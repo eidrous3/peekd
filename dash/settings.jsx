@@ -67,6 +67,79 @@
         React.createElement('span', { className: 'store-bottom' }, bottom)));
   }
 
+  function AccountTab({ onUpgrade, toast, pro, profileStatus, profile, setProfile }) {
+    const [draftName, setDraftName] = useState('');
+    const [draftTimezone, setDraftTimezone] = useState('America/New_York');
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+      if (!profile) return;
+      setDraftName(profile.name || '');
+      setDraftTimezone(profile.timezone || 'America/New_York');
+    }, [profile]);
+
+    const dirty = !!profile && (
+      draftName.trim() !== (profile.name || '').trim() ||
+      draftTimezone !== profile.timezone
+    );
+
+    const displayName = profileStatus === 'ready' && profile
+      ? (draftName.trim() || profile.email.split('@')[0] || 'Account')
+      : '…';
+    const displayEmail = profileStatus === 'ready' && profile ? profile.email : '…';
+    const displayInitials = profileStatus === 'ready' && profile
+      ? window.PeekdProfile.initials(draftName.trim(), profile.email)
+      : '…';
+
+    async function handleSave() {
+      if (!dirty || saving || !profile) return;
+      setSaving(true);
+      const res = await window.PeekdProfile.updateProfile({
+        name: draftName.trim(),
+        timezone: draftTimezone,
+      });
+      setSaving(false);
+      if (!res.ok) {
+        toast('Could not save profile. Try again.');
+        return;
+      }
+      setProfile(res.profile);
+      toast('Profile saved ✓');
+    }
+
+    return React.createElement('div', null,
+      React.createElement('h2', null, 'Account'),
+      React.createElement('div', { className: 'sp-sub' }, 'Your profile and workspace'),
+      profileStatus === 'no_session' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Sign in to load your account.'),
+      profileStatus === 'error' && React.createElement('p', { className: 'dim', style: { marginBottom: 16, color: 'var(--danger)' } }, 'Could not load your profile. Try refreshing.'),
+      React.createElement('div', { className: 'profile-row' },
+        React.createElement(Avatar, { initials: displayInitials, size: 56, fontSize: 20 }),
+        React.createElement('div', { style: { flex: 1 } },
+          React.createElement('div', { className: 'pr-name' }, displayName,
+            pro && React.createElement('span', { className: 'pro-badge' }, React.createElement(Icon, { name: 'bolt', size: 12, fill: 'currentColor', stroke: 0 }), 'Pro')),
+          React.createElement('div', { className: 'pr-email' }, displayEmail),
+          React.createElement('div', { className: 'pr-plan' + (pro ? ' pr-plan-pro' : '') }, pro ? 'PRO PLAN · all features unlocked' : 'FREE PLAN · limited tracking')),
+        !pro && React.createElement('button', { className: 'btn btn-upgrade', style: { width: 'auto', padding: '0 16px' }, onClick: onUpgrade }, React.createElement(Icon, { name: 'bolt', size: 14, fill: 'currentColor', stroke: 0 }), 'Upgrade to Premium')),
+      React.createElement('div', { className: 'field', style: { maxWidth: 360, marginBottom: 16 } },
+        React.createElement('label', { className: 'field-label' }, 'DISPLAY NAME'),
+        React.createElement('input', {
+          className: 'input',
+          value: profileStatus === 'ready' ? draftName : '',
+          onChange: (e) => setDraftName(e.target.value),
+          disabled: profileStatus !== 'ready',
+          placeholder: profileStatus === 'loading' ? 'Loading…' : 'Add your display name',
+        })),
+      React.createElement(TimeZoneSelect, { value: draftTimezone, onChange: setDraftTimezone, disabled: profileStatus !== 'ready' }),
+      dirty && React.createElement('button', {
+        className: 'btn btn-primary',
+        style: { marginBottom: 20 },
+        onClick: handleSave,
+        disabled: saving,
+      }, saving ? 'Saving…' : 'Save changes'),
+      React.createElement('button', { className: 'btn btn-ghost', style: { color: 'var(--danger)', borderColor: 'var(--line)' } }, 'Delete account'),
+    );
+  }
+
   function SettingsPage({ onUpgrade, toast, pro }) {
     const [tab, setTab] = useState('account');
     const [notif, setNotif] = useState({ opens: true, links: true, reply: true, desktop: true, sound: false, mobile: true, digest: true });
@@ -94,36 +167,12 @@
       return () => { cancelled = true; };
     }, [tab]);
 
-    const displayName = profileStatus === 'ready'
-      ? (profile.name || profile.email.split('@')[0] || 'Account')
-      : '…';
-    const displayEmail = profileStatus === 'ready' ? profile.email : '…';
-    const displayInitials = profileStatus === 'ready' ? profile.initials : '…';
-
     return React.createElement('div', { className: 'page-pad' },
       React.createElement('div', { className: 'settings' },
         React.createElement('div', { className: 'set-nav' },
           tabs.map(([id, label]) => React.createElement('button', { key: id, className: tab === id ? 'active' : '', onClick: () => setTab(id) }, label))),
         React.createElement('div', { className: 'set-panel' },
-          tab === 'account' && React.createElement('div', null,
-            React.createElement('h2', null, 'Account'),
-            React.createElement('div', { className: 'sp-sub' }, 'Your profile and workspace'),
-            profileStatus === 'no_session' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Sign in to load your account.'),
-            profileStatus === 'error' && React.createElement('p', { className: 'dim', style: { marginBottom: 16, color: 'var(--danger)' } }, 'Could not load your profile. Try refreshing.'),
-            React.createElement('div', { className: 'profile-row' },
-              React.createElement(Avatar, { initials: displayInitials, size: 56, fontSize: 20 }),
-              React.createElement('div', { style: { flex: 1 } },
-                React.createElement('div', { className: 'pr-name' }, displayName,
-                  pro && React.createElement('span', { className: 'pro-badge' }, React.createElement(Icon, { name: 'bolt', size: 12, fill: 'currentColor', stroke: 0 }), 'Pro')),
-                React.createElement('div', { className: 'pr-email' }, displayEmail),
-                React.createElement('div', { className: 'pr-plan' + (pro ? ' pr-plan-pro' : '') }, pro ? 'PRO PLAN · all features unlocked' : 'FREE PLAN · limited tracking')),
-              !pro && React.createElement('button', { className: 'btn btn-upgrade', style: { width: 'auto', padding: '0 16px' }, onClick: onUpgrade }, React.createElement(Icon, { name: 'bolt', size: 14, fill: 'currentColor', stroke: 0 }), 'Upgrade to Premium')),
-            React.createElement('div', { className: 'field', style: { maxWidth: 360, marginBottom: 16 } },
-              React.createElement('label', { className: 'field-label' }, 'DISPLAY NAME'),
-              React.createElement('input', { className: 'input', value: profileStatus === 'ready' ? (profile.name || '') : '', readOnly: true, placeholder: profileStatus === 'loading' ? 'Loading…' : '' })),
-            React.createElement(TimeZoneSelect, { toast, value: profile?.timezone, readOnly: true }),
-            React.createElement('button', { className: 'btn btn-ghost', style: { color: 'var(--danger)', borderColor: 'var(--line)' } }, 'Delete account'),
-          ),
+          tab === 'account' && React.createElement(AccountTab, { onUpgrade, toast, pro, profileStatus, profile, setProfile }),
           tab === 'notifications' && React.createElement('div', null,
             React.createElement('h2', null, 'Notifications'),
             React.createElement('div', { className: 'sp-sub' }, 'Choose what Peekd alerts you about'),
@@ -235,7 +284,8 @@
     return (m[1] === '-' ? -1 : 1) * (parseInt(m[2], 10) * 60 + (m[3] ? parseInt(m[3], 10) : 0));
   }
 
-  function TimeZoneSelect({ toast, value: valueProp, readOnly }) {
+  function TimeZoneSelect({ toast, value: valueProp, onChange, disabled, readOnly }) {
+    const locked = disabled || readOnly;
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [value, setValue] = useState(valueProp || 'America/New_York');
@@ -243,7 +293,7 @@
     const inputRef = useRef(null);
 
     useEffect(() => {
-      if (valueProp) setValue(valueProp);
+      if (valueProp !== undefined) setValue(valueProp);
     }, [valueProp]);
 
     useEffect(() => {
@@ -291,8 +341,8 @@
       React.createElement('button', {
         className: 'select' + (open ? ' tz-open' : ''),
         style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-        onClick: readOnly ? undefined : () => setOpen(o => !o),
-        disabled: readOnly,
+        onClick: locked ? undefined : () => setOpen(o => !o),
+        disabled: locked,
       },
         React.createElement('span', null, value.replace(/_/g, ' ') + ' (' + curOff + ')'),
         React.createElement(Icon, { name: 'chevDown', size: 14 })),
@@ -310,9 +360,10 @@
                   className: 'tz-opt' + (tz === value ? ' sel' : ''),
                   onClick: () => {
                     setValue(tz);
+                    onChange && onChange(tz);
                     setOpen(false);
                     setQuery('');
-                    if (!readOnly && toast) toast('Time zone updated ✓');
+                    if (!onChange && !locked && toast) toast('Time zone updated ✓');
                   },
                 },
                   React.createElement('span', { className: 'tz-name' }, sub(tz)),
