@@ -49,7 +49,6 @@
     }
   }
 
-  // Supabase returns an empty identities array when the email is already registered.
   async function probeExistingViaSignUp(email) {
     const sb = client();
     if (!sb) return false;
@@ -57,9 +56,17 @@
       email,
       password: `Pk${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}1!`,
     });
-    if (data?.user?.identities?.length === 0) return true;
+    const identities = data?.user?.identities;
+    if (Array.isArray(identities) && identities.length === 0) return true;
     if (error && /already|registered|exists/i.test(error.message || '')) return true;
     return false;
+  }
+
+  async function isExistingUser(email) {
+    const check = await checkEmailExists(email);
+    if (check.exists) return true;
+    if (check.checked) return false;
+    return probeExistingViaSignUp(email);
   }
 
   async function sendMagicLink(email, { signup = false } = {}) {
@@ -72,9 +79,7 @@
     let shouldCreateUser = signup;
 
     if (signup) {
-      const check = await checkEmailExists(clean);
-      existingUser = check.exists;
-      if (!check.checked) existingUser = await probeExistingViaSignUp(clean);
+      existingUser = await isExistingUser(clean);
       if (existingUser) shouldCreateUser = false;
     }
 
