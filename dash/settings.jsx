@@ -132,7 +132,7 @@
       React.createElement(TimeZoneSelect, { value: draftTimezone, onChange: setDraftTimezone, disabled: profileStatus !== 'ready' }),
       dirty && React.createElement('button', {
         className: 'btn btn-primary',
-        style: { marginBottom: 20 },
+        style: { marginBottom: 20, paddingRight: 15, marginRight: 15 },
         onClick: handleSave,
         disabled: saving,
       }, saving ? 'Saving…' : 'Save changes'),
