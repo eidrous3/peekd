@@ -97,21 +97,11 @@
     const sb = Auth.client();
     if (!sb) return { ok: false, error: 'not_configured' };
 
-    const { data, error } = await sb
+    const { error } = await sb
       .from('profiles')
-      .update({ is_deleted: true })
-      .eq('id', session.user.id)
-      .select('id')
-      .maybeSingle();
+      .upsert({ id: session.user.id, is_deleted: true }, { onConflict: 'id' });
 
     if (error) return { ok: false, error: error.message };
-
-    if (!data) {
-      const ins = await sb
-        .from('profiles')
-        .insert({ id: session.user.id, is_deleted: true });
-      if (ins.error) return { ok: false, error: ins.error.message };
-    }
 
     return { ok: true };
   }
