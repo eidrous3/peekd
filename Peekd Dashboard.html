@@ -16,14 +16,8 @@
 <script src="dash/profile.js"></script>
 <script src="dash/notifications.js"></script>
 <script>
-  // Completes magic-link sign-in; restores soft-deleted profiles on return.
-  if (window.PeekdAuth.ready()) {
-    window.PeekdAuth.ensureSession().then(function (session) {
-      if (session?.user && window.PeekdProfile?.restoreProfile) {
-        window.PeekdProfile.restoreProfile();
-      }
-    });
-  }
+  // Completes magic-link sign-in when Supabase redirects here with tokens in the URL.
+  if (window.PeekdAuth.ready()) window.PeekdAuth.ensureSession();
 </script>
 </head>
 <body>

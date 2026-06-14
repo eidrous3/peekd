@@ -1,4 +1,4 @@
--- Restore soft-deleted profile when a user signs back in
+-- Restore soft-deleted profile when a user signs back in (returns true if reactivated)
 
 drop policy if exists "Profiles: restore own" on public.profiles;
 create policy "Profiles: restore own"
@@ -7,17 +7,28 @@ create policy "Profiles: restore own"
   with check (auth.uid() = id and not is_deleted);
 
 create or replace function public.restore_profile()
-returns void
-language sql
+returns boolean
+language plpgsql
 security definer
 set search_path = public
 as $$
-  insert into public.profiles (id, is_deleted)
-  values (auth.uid(), false)
-  on conflict (id) do update
-    set is_deleted = false,
-        updated_at = now()
-    where public.profiles.is_deleted = true;
+declare
+  uid uuid := auth.uid();
+  rows_updated integer;
+begin
+  if uid is null then
+    raise exception 'not authenticated';
+  end if;
+
+  update public.profiles
+  set is_deleted = false,
+      updated_at = now()
+  where id = uid
+    and is_deleted = true;
+
+  get diagnostics rows_updated = row_count;
+  return rows_updated > 0;
+end;
 $$;
 
 revoke all on function public.restore_profile() from public;

@@ -26,6 +26,16 @@
     useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem('peekd_dark', dark ? '1' : '0'); }, [dark]);
     useEffect(() => { localStorage.setItem('peekd_page', page); }, [page]);
 
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        if (!window.PeekdProfile?.restoreProfile) return;
+        const res = await window.PeekdProfile.restoreProfile();
+        if (!cancelled && res.ok && res.restored) toast('Your account is activated');
+      })();
+      return () => { cancelled = true; };
+    }, []);
+
     const toast = (msg) => { setToastMsg(msg); clearTimeout(window.__toastT); window.__toastT = setTimeout(() => setToastMsg(''), 3000); };
     const unread = notifs.filter(n => n.unread).length;
     const openCompose = (body) => { setComposeBody(typeof body === 'string' ? body : ''); setCompose(true); };

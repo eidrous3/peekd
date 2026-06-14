@@ -22,23 +22,25 @@
 
     const userId = session.user.id;
 
-    const { error: rpcError } = await sb.rpc('restore_profile');
-    if (!rpcError) return { ok: true };
+    const { data, error: rpcError } = await sb.rpc('restore_profile');
+    if (!rpcError) return { ok: true, restored: data === true };
 
-    const { error: updateError } = await sb
+    const { error: updateError, count } = await sb
       .from('profiles')
       .update({ is_deleted: false })
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('id', { count: 'exact', head: true });
 
-    if (!updateError) return { ok: true };
+    if (!updateError && (count || 0) > 0) return { ok: true, restored: true };
+    if (!updateError) return { ok: true, restored: false };
 
     const { error: insertError } = await sb
       .from('profiles')
       .insert({ id: userId, is_deleted: false });
 
-    if (!insertError) return { ok: true };
+    if (!insertError) return { ok: true, restored: false };
 
-    return { ok: false, error: insertError?.message || updateError?.message || rpcError?.message };
+    return { ok: false, restored: false, error: insertError?.message || updateError?.message || rpcError?.message };
   }
 
   async function fetchProfile() {
@@ -47,8 +49,6 @@
 
     const session = await Auth.ensureSession();
     if (!session?.user) return { ok: false, error: 'no_session' };
-
-    await restoreProfile();
 
     const email = session.user.email || '';
     const sb = Auth.client();
