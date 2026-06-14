@@ -10,12 +10,45 @@
     return e ? e.slice(0, 2).toUpperCase() : '?';
   }
 
+  async function restoreProfile() {
+    const Auth = window.PeekdAuth;
+    if (!Auth?.ready()) return { ok: false, error: 'not_configured' };
+
+    const session = await Auth.ensureSession();
+    if (!session?.user) return { ok: false, error: 'no_session' };
+
+    const sb = Auth.client();
+    if (!sb) return { ok: false, error: 'not_configured' };
+
+    const userId = session.user.id;
+
+    const { error: rpcError } = await sb.rpc('restore_profile');
+    if (!rpcError) return { ok: true };
+
+    const { error: updateError } = await sb
+      .from('profiles')
+      .update({ is_deleted: false })
+      .eq('id', userId);
+
+    if (!updateError) return { ok: true };
+
+    const { error: insertError } = await sb
+      .from('profiles')
+      .insert({ id: userId, is_deleted: false });
+
+    if (!insertError) return { ok: true };
+
+    return { ok: false, error: insertError?.message || updateError?.message || rpcError?.message };
+  }
+
   async function fetchProfile() {
     const Auth = window.PeekdAuth;
     if (!Auth?.ready()) return { ok: false, error: 'not_configured' };
 
     const session = await Auth.ensureSession();
     if (!session?.user) return { ok: false, error: 'no_session' };
+
+    await restoreProfile();
 
     const email = session.user.email || '';
     const sb = Auth.client();
@@ -139,5 +172,5 @@
     return { ok: false, error: msg };
   }
 
-  window.PeekdProfile = { fetchProfile, updateProfile, softDeleteProfile, initials };
+  window.PeekdProfile = { fetchProfile, updateProfile, restoreProfile, softDeleteProfile, initials };
 })();
