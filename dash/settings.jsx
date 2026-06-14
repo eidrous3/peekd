@@ -141,27 +141,51 @@
   }
 
   function NotificationsTab({ toast }) {
+    const N = window.PeekdNotifications;
     const [notifStatus, setNotifStatus] = useState('loading');
-    const [notif, setNotif] = useState(() => ({ ...window.PeekdNotifications.DEFAULTS }));
+    const [savedNotif, setSavedNotif] = useState(null);
+    const [notif, setNotif] = useState(() => ({ ...N.DEFAULTS }));
+    const [saving, setSaving] = useState(false);
     const [appInstalled] = useState(false);
 
     useEffect(() => {
+      if (!N) {
+        setNotifStatus('error');
+        return;
+      }
       let cancelled = false;
       setNotifStatus('loading');
       (async () => {
-        const res = await window.PeekdNotifications.fetchNotificationSettings();
+        const res = await N.fetchNotificationSettings();
         if (cancelled) return;
         if (!res.ok) {
+          setSavedNotif(null);
           setNotifStatus(res.error === 'no_session' ? 'no_session' : 'error');
           return;
         }
+        setSavedNotif(res.settings);
         setNotif(res.settings);
         setNotifStatus('ready');
       })();
       return () => { cancelled = true; };
     }, []);
 
+    const dirty = savedNotif && N && !N.settingsEqual(notif, savedNotif);
     const ready = notifStatus === 'ready';
+
+    async function handleSave() {
+      if (!dirty || saving || !N) return;
+      setSaving(true);
+      const res = await N.updateNotificationSettings(notif);
+      setSaving(false);
+      if (!res.ok) {
+        toast('Could not save notification settings. Try again.');
+        return;
+      }
+      setSavedNotif(res.settings);
+      setNotif(res.settings);
+      toast('Notification settings saved ✓');
+    }
 
     return React.createElement('div', null,
       React.createElement('h2', null, 'Notifications'),
@@ -185,6 +209,12 @@
         React.createElement(ToggleRow, { title: 'Mobile push', desc: 'Push notifications to your phone', on: notif.mobile, disabled: !appInstalled, tip: 'Install the app first', onToggle: () => setNotif({ ...notif, mobile: !notif.mobile }) }),
         React.createElement(SetSection, { label: 'Digest' }),
         React.createElement(ToggleRow, { title: 'Daily digest', desc: "Morning summary of yesterday's activity", on: notif.digest, onToggle: () => setNotif({ ...notif, digest: !notif.digest }) }),
+        dirty && React.createElement('button', {
+          className: 'btn btn-primary',
+          style: { marginTop: 4, paddingRight: 15, marginRight: 15 },
+          onClick: handleSave,
+          disabled: saving,
+        }, saving ? 'Saving…' : 'Save changes'),
       ),
     );
   }

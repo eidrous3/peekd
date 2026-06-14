@@ -14,7 +14,7 @@
     const Auth = window.PeekdAuth;
     if (!Auth?.ready()) return { ok: false, error: 'not_configured' };
 
-    const session = await Auth.getSession();
+    const session = await Auth.ensureSession();
     if (!session?.user) return { ok: false, error: 'no_session' };
 
     const email = session.user.email || '';
@@ -49,7 +49,7 @@
     const Auth = window.PeekdAuth;
     if (!Auth?.ready()) return { ok: false, error: 'not_configured' };
 
-    const session = await Auth.getSession();
+    const session = await Auth.ensureSession();
     if (!session?.user) return { ok: false, error: 'no_session' };
 
     const email = session.user.email || '';

@@ -108,5 +108,26 @@
     return data.session;
   }
 
-  window.PeekdAuth = { ready, client, sendMagicLink, signInWithOAuth, getSession };
+  async function ensureSession() {
+    const sb = client();
+    if (!sb) return null;
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) return session;
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (s) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        sub?.unsubscribe();
+        resolve(s);
+      };
+      const timer = setTimeout(() => finish(null), 4000);
+      const { data: { subscription: sub } } = sb.auth.onAuthStateChange((_event, s) => {
+        if (s) finish(s);
+      });
+    });
+  }
+
+  window.PeekdAuth = { ready, client, sendMagicLink, signInWithOAuth, getSession, ensureSession };
 })();

@@ -17,7 +17,7 @@
 <script src="dash/notifications.js"></script>
 <script>
   // Completes magic-link sign-in when Supabase redirects here with tokens in the URL.
-  if (window.PeekdAuth.ready()) window.PeekdAuth.getSession();
+  if (window.PeekdAuth.ready()) window.PeekdAuth.ensureSession();
 </script>
 </head>
 <body>
