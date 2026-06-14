@@ -41,12 +41,25 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      if (!res.ok) return false;
-      const data = await res.json();
-      return data.exists === true;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { exists: false, checked: false };
+      return { exists: data.exists === true, checked: true };
     } catch {
-      return false;
+      return { exists: false, checked: false };
     }
+  }
+
+  // Supabase returns an empty identities array when the email is already registered.
+  async function probeExistingViaSignUp(email) {
+    const sb = client();
+    if (!sb) return false;
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password: `Pk${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}1!`,
+    });
+    if (data?.user?.identities?.length === 0) return true;
+    if (error && /already|registered|exists/i.test(error.message || '')) return true;
+    return false;
   }
 
   async function sendMagicLink(email, { signup = false } = {}) {
@@ -59,7 +72,9 @@
     let shouldCreateUser = signup;
 
     if (signup) {
-      existingUser = await checkEmailExists(clean);
+      const check = await checkEmailExists(clean);
+      existingUser = check.exists;
+      if (!check.checked) existingUser = await probeExistingViaSignUp(clean);
       if (existingUser) shouldCreateUser = false;
     }
 
@@ -68,7 +83,7 @@
       options: { emailRedirectTo: redirectTo, shouldCreateUser },
     });
     if (error) throw wrapError(error);
-    return { email: clean, existingUser };
+    return { email: clean, existingUser: !!existingUser };
   }
 
   async function signInWithOAuth(provider) {

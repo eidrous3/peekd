@@ -21,32 +21,57 @@ function sanitizeEmail(raw) {
   return email;
 }
 
-async function userExists(email) {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return false;
+function serviceKey() {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY
+    || process.env.SUPABASE_SECRET_KEY
+    || process.env.SUPABASE_SERVICE_KEY
+    || '';
+}
 
+async function userExists(email) {
+  const url = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+  const key = serviceKey();
+  if (!url || !key) return { exists: false, reason: 'missing_config' };
+
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+  };
+
+  // Preferred: GoTrue email filter
+  const filter = `email.eq.${email}`;
+  const filtered = await fetch(
+    `${url}/auth/v1/admin/users?${new URLSearchParams({ page: '1', per_page: '1', filter })}`,
+    { headers },
+  );
+
+  if (filtered.ok) {
+    const data = await filtered.json();
+    const users = data.users || [];
+    if (users.some((u) => (u.email || '').toLowerCase() === email)) {
+      return { exists: true };
+    }
+    if (users.length > 0) return { exists: true };
+    if (data.total != null && data.total > 0) return { exists: true };
+  }
+
+  // Fallback: paginate users (small projects)
   let page = 1;
   const perPage = 200;
-
   while (page <= 10) {
-    const res = await fetch(`${url}/auth/v1/admin/users?page=${page}&per_page=${perPage}`, {
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-      },
-    });
-
-    if (!res.ok) return false;
-
+    const res = await fetch(
+      `${url}/auth/v1/admin/users?${new URLSearchParams({ page: String(page), per_page: String(perPage) })}`,
+      { headers },
+    );
+    if (!res.ok) return { exists: false, reason: 'admin_api_error', status: res.status };
     const data = await res.json();
     const users = data.users || [];
-    if (users.some((u) => (u.email || '').toLowerCase() === email)) return true;
+    if (users.some((u) => (u.email || '').toLowerCase() === email)) return { exists: true };
     if (users.length < perPage) break;
     page += 1;
   }
 
-  return false;
+  return { exists: false };
 }
 
 export default async (req) => {
@@ -63,6 +88,6 @@ export default async (req) => {
   const email = sanitizeEmail(body.email);
   if (!email) return json({ error: 'Invalid email' }, 400);
 
-  const exists = await userExists(email);
-  return json({ exists });
+  const result = await userExists(email);
+  return json({ exists: result.exists === true, reason: result.reason || null });
 };

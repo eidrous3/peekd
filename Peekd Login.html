@@ -64,9 +64,10 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
 .terms a:hover{color:var(--accent)}
 .config-warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12.5px;line-height:1.5;border-radius:10px;padding:12px 14px;margin:0 0 18px}
 .config-warn code{font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;background:rgba(0,0,0,.05);padding:1px 5px;border-radius:4px}
-.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(16px);max-width:min(420px,calc(100vw - 32px));padding:12px 16px;border-radius:12px;background:#0e1320;color:#fff;font-size:13.5px;line-height:1.45;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:1000}
-.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(16px);max-width:min(420px,calc(100vw - 32px));padding:12px 16px;border-radius:12px;background:#0e1320;color:#fff;font-size:13.5px;line-height:1.45;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:9999}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
 .toast.warn{background:#9a3412}
+.existing-notice{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:13px;line-height:1.5;border-radius:10px;padding:12px 14px;margin:0 0 18px;text-align:center}
 .rule{height:1px;background:var(--line);margin:22px 0}
 .sent-ico{width:56px;height:56px;border-radius:15px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin:0 auto 20px}
 .resend-row{display:flex;align-items:center;justify-content:center;gap:8px;font-size:13.5px;flex-wrap:wrap}
@@ -170,6 +171,9 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
 
       <!-- CONFIRMATION STATE -->
       <div id="sentState" hidden>
+        <div class="existing-notice" id="existingNotice" hidden>
+          You're already signed up. A login link will be sent to your email.
+        </div>
         <div class="sent-ico">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" stroke-width="1.7"></rect><path d="M4 7l8 5.5L20 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
         </div>
@@ -272,19 +276,25 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
     }, 1000);
   }
 
+  function showExistingUserNotice(existingUser) {
+    const notice = document.getElementById('existingNotice');
+    if (existingUser) {
+      showToast('You\'re already signed up. A login link will be sent to your email.', { warn: true });
+      notice.hidden = false;
+    } else {
+      notice.hidden = true;
+    }
+  }
+
   async function submitEmail(email) {
     const result = await window.PeekdAuth.sendMagicLink(email, { signup: mode === 'signup' });
     const clean = result.email;
-    const existingUser = result.existingUser;
-
-    if (mode === 'signup' && existingUser) {
-      showToast('You\'re already signed up. A login link will be sent to your email.', { warn: true });
-    }
+    const existingUser = !!result.existingUser;
 
     lastEmail = clean;
     sentEmail.textContent = clean;
     document.getElementById('sentHeading').textContent = existingUser
-      ? 'Check your inbox'
+      ? 'Welcome back'
       : (mode === 'signup' ? 'Almost there' : 'Check your inbox');
     const safe = window.PeekdSanitize.escapeHtml(clean);
     document.getElementById('sentLede').innerHTML = existingUser
@@ -294,6 +304,8 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
         : 'We sent a magic link to<br><strong>') + safe + '</strong>');
     formState.hidden = true;
     sentState.hidden = false;
+    if (mode === 'signup') showExistingUserNotice(existingUser);
+    else document.getElementById('existingNotice').hidden = true;
     startCountdown();
   }
 
@@ -326,9 +338,7 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
     submitting = true;
     try {
       const result = await window.PeekdAuth.sendMagicLink(v, { signup: mode === 'signup' });
-      if (mode === 'signup' && result.existingUser) {
-        showToast('You\'re already signed up. A login link will be sent to your email.', { warn: true });
-      }
+      if (mode === 'signup') showExistingUserNotice(!!result.existingUser);
       startCountdown();
     } catch (err) {
       showEmailError(err.message || 'Could not resend link');
@@ -340,6 +350,7 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
 
   document.getElementById('diffEmail').addEventListener('click', () => {
     sentState.hidden = true; formState.hidden = false; clearInterval(timer);
+    document.getElementById('existingNotice').hidden = true;
     emailInput.value = ''; emailInput.focus();
   });
 
