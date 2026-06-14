@@ -140,10 +140,57 @@
     );
   }
 
+  function NotificationsTab({ toast }) {
+    const [notifStatus, setNotifStatus] = useState('loading');
+    const [notif, setNotif] = useState(() => ({ ...window.PeekdNotifications.DEFAULTS }));
+    const [appInstalled] = useState(false);
+
+    useEffect(() => {
+      let cancelled = false;
+      setNotifStatus('loading');
+      (async () => {
+        const res = await window.PeekdNotifications.fetchNotificationSettings();
+        if (cancelled) return;
+        if (!res.ok) {
+          setNotifStatus(res.error === 'no_session' ? 'no_session' : 'error');
+          return;
+        }
+        setNotif(res.settings);
+        setNotifStatus('ready');
+      })();
+      return () => { cancelled = true; };
+    }, []);
+
+    const ready = notifStatus === 'ready';
+
+    return React.createElement('div', null,
+      React.createElement('h2', null, 'Notifications'),
+      React.createElement('div', { className: 'sp-sub' }, 'Choose what Peekd alerts you about'),
+      notifStatus === 'loading' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Loading…'),
+      notifStatus === 'no_session' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Sign in to load your notification settings.'),
+      notifStatus === 'error' && React.createElement('p', { className: 'dim', style: { marginBottom: 16, color: 'var(--danger)' } }, 'Could not load notification settings. Try refreshing.'),
+      ready && React.createElement('div', null,
+        React.createElement(SetSection, { label: 'Tracking alerts' }),
+        React.createElement(ToggleRow, { title: 'Email opens', desc: 'Push alert when a recipient reads your email', on: notif.opens, onToggle: () => setNotif({ ...notif, opens: !notif.opens }) }),
+        React.createElement(ToggleRow, { title: 'Link clicks', badge: 'NEW', desc: 'Push alert when a recipient clicks a link', on: notif.links, onToggle: () => setNotif({ ...notif, links: !notif.links }) }),
+        React.createElement(ToggleRow, { title: 'Reply read', desc: 'When someone reads a reply you sent', on: notif.reply, onToggle: () => setNotif({ ...notif, reply: !notif.reply }) }),
+        React.createElement(SetSection, { label: 'Delivery channels' }),
+        React.createElement(ToggleRow, { title: 'Desktop (Browser)', desc: 'Native browser popups in the bottom-right', on: notif.desktop, onToggle: () => setNotif({ ...notif, desktop: !notif.desktop }) }),
+        React.createElement(ToggleRow, { title: 'Notification sound', desc: 'Subtle chime on new alert', on: notif.sound, onToggle: () => setNotif({ ...notif, sound: !notif.sound }) }),
+        React.createElement(SetSection, { label: 'Mobile app' }),
+        React.createElement('p', { className: 'mobile-note' }, 'Get Peekd on your phone for instant alerts.'),
+        React.createElement('div', { className: 'store-row' },
+          React.createElement(StoreBtn, { icon: React.createElement(AppleMark, null), top: 'Download on the', bottom: 'App Store', href: 'https://www.apple.com/app-store/' }),
+          React.createElement(StoreBtn, { icon: React.createElement(AndroidMark, null), top: 'GET IT ON', bottom: 'Google Play', href: 'https://play.google.com/store' })),
+        React.createElement(ToggleRow, { title: 'Mobile push', desc: 'Push notifications to your phone', on: notif.mobile, disabled: !appInstalled, tip: 'Install the app first', onToggle: () => setNotif({ ...notif, mobile: !notif.mobile }) }),
+        React.createElement(SetSection, { label: 'Digest' }),
+        React.createElement(ToggleRow, { title: 'Daily digest', desc: "Morning summary of yesterday's activity", on: notif.digest, onToggle: () => setNotif({ ...notif, digest: !notif.digest }) }),
+      ),
+    );
+  }
+
   function SettingsPage({ onUpgrade, toast, pro }) {
     const [tab, setTab] = useState('account');
-    const [notif, setNotif] = useState({ opens: true, links: true, reply: true, desktop: true, sound: false, mobile: true, digest: true });
-    const [appInstalled] = useState(false);
     const [connect, setConnect] = useState(null);
     const [profileStatus, setProfileStatus] = useState('loading');
     const [profile, setProfile] = useState(null);
@@ -173,25 +220,7 @@
           tabs.map(([id, label]) => React.createElement('button', { key: id, className: tab === id ? 'active' : '', onClick: () => setTab(id) }, label))),
         React.createElement('div', { className: 'set-panel' },
           tab === 'account' && React.createElement(AccountTab, { onUpgrade, toast, pro, profileStatus, profile, setProfile }),
-          tab === 'notifications' && React.createElement('div', null,
-            React.createElement('h2', null, 'Notifications'),
-            React.createElement('div', { className: 'sp-sub' }, 'Choose what Peekd alerts you about'),
-            React.createElement(SetSection, { label: 'Tracking alerts' }),
-            React.createElement(ToggleRow, { title: 'Email opens', desc: 'Push alert when a recipient reads your email', on: notif.opens, onToggle: () => setNotif({ ...notif, opens: !notif.opens }) }),
-            React.createElement(ToggleRow, { title: 'Link clicks', badge: 'NEW', desc: 'Push alert when a recipient clicks a link', on: notif.links, onToggle: () => setNotif({ ...notif, links: !notif.links }) }),
-            React.createElement(ToggleRow, { title: 'Reply read', desc: 'When someone reads a reply you sent', on: notif.reply, onToggle: () => setNotif({ ...notif, reply: !notif.reply }) }),
-            React.createElement(SetSection, { label: 'Delivery channels' }),
-            React.createElement(ToggleRow, { title: 'Desktop (Browser)', desc: 'Native browser popups in the bottom-right', on: notif.desktop, onToggle: () => setNotif({ ...notif, desktop: !notif.desktop }) }),
-            React.createElement(ToggleRow, { title: 'Notification sound', desc: 'Subtle chime on new alert', on: notif.sound, onToggle: () => setNotif({ ...notif, sound: !notif.sound }) }),
-            React.createElement(SetSection, { label: 'Mobile app' }),
-            React.createElement('p', { className: 'mobile-note' }, 'Get Peekd on your phone for instant alerts.'),
-            React.createElement('div', { className: 'store-row' },
-              React.createElement(StoreBtn, { icon: React.createElement(AppleMark, null), top: 'Download on the', bottom: 'App Store', href: 'https://www.apple.com/app-store/' }),
-              React.createElement(StoreBtn, { icon: React.createElement(AndroidMark, null), top: 'GET IT ON', bottom: 'Google Play', href: 'https://play.google.com/store' })),
-            React.createElement(ToggleRow, { title: 'Mobile push', desc: 'Push notifications to your phone', on: notif.mobile, disabled: !appInstalled, tip: 'Install the app first', onToggle: () => setNotif({ ...notif, mobile: !notif.mobile }) }),
-            React.createElement(SetSection, { label: 'Digest' }),
-            React.createElement(ToggleRow, { title: 'Daily digest', desc: "Morning summary of yesterday's activity", on: notif.digest, onToggle: () => setNotif({ ...notif, digest: !notif.digest }) }),
-          ),
+          tab === 'notifications' && React.createElement(NotificationsTab, { toast }),
           tab === 'integrations' && React.createElement('div', null,
             React.createElement('h2', null, 'Integrations'),
             React.createElement('div', { className: 'sp-sub' }, 'Connect your email and tools'),
