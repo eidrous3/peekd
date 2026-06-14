@@ -79,7 +79,7 @@
         React.createElement('div', { className: 'modal-head' }, React.createElement('h3', null, 'Delete account'),
           React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose, disabled: deleting }, React.createElement(Icon, { name: 'x', size: 16 }))),
         React.createElement('div', { className: 'modal-body' },
-          React.createElement('p', { style: { lineHeight: 1.65, margin: 0 } }, 'Your profile will be marked as deleted and you will be signed out. You can sign up again later with the same email.')),
+          React.createElement('p', { style: { lineHeight: 1.65, margin: 0 } }, 'Your account will be deleted and you will be signed out. You can sign up again later with the same email.')),
         React.createElement('div', { className: 'modal-foot' },
           React.createElement('button', { className: 'btn btn-ghost', onClick: onClose, disabled: deleting }, 'Cancel'),
           React.createElement('button', { className: 'btn btn-danger', onClick: onConfirm, disabled: deleting }, deleting ? 'Deleting…' : 'Delete account'),
