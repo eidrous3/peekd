@@ -389,25 +389,63 @@ export function encodeRawEmail(raw) {
     .replace(/=+$/, '');
 }
 
-export function buildMimeMessage({ from, to, subject, html }) {
+export function buildMimeMessage({ from, to, subject, html, attachments = [] }) {
   const toLine = to.join(', ');
   const safeSubject = String(subject || '').replace(/\r?\n/g, ' ');
   const bodyHtml = html || '<p></p>';
-
-  return [
+  const headers = [
     `From: ${from}`,
     `To: ${toLine}`,
     `Subject: ${safeSubject}`,
     'MIME-Version: 1.0',
+  ];
+
+  if (!attachments.length) {
+    return [
+      ...headers,
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: 7bit',
+      '',
+      bodyHtml,
+    ].join('\r\n');
+  }
+
+  const boundary = `peekd_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const parts = [
+    `--${boundary}`,
     'Content-Type: text/html; charset=UTF-8',
     'Content-Transfer-Encoding: 7bit',
     '',
     bodyHtml,
+  ];
+
+  for (const att of attachments) {
+    const filename = String(att.filename || att.name || 'attachment').replace(/[\r\n"]/g, '_');
+    const mimeType = att.mimeType || att.contentType || 'application/octet-stream';
+    const data = String(att.data || att.content || '').replace(/\s/g, '');
+    const folded = data.match(/.{1,76}/g)?.join('\r\n') || data;
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${mimeType}; name="${filename}"`,
+      `Content-Disposition: attachment; filename="${filename}"`,
+      'Content-Transfer-Encoding: base64',
+      '',
+      folded,
+    );
+  }
+
+  parts.push(`--${boundary}--`, '');
+
+  return [
+    ...headers,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    ...parts,
   ].join('\r\n');
 }
 
-export async function sendGmailMessage(accessToken, { from, to, subject, html }) {
-  const raw = buildMimeMessage({ from, to, subject, html });
+export async function sendGmailMessage(accessToken, { from, to, subject, html, attachments }) {
+  const raw = buildMimeMessage({ from, to, subject, html, attachments });
   const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     headers: {

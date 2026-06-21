@@ -1,11 +1,29 @@
 // Peekd dashboard — shared overlays: Compose, Upgrade, Notifications drawer.
 (function () {
-  const { useState } = React;
+  const { useState, useRef } = React;
   const Icon = window.Icon;
   const { Avatar } = window;
   const D = window.PeekdData;
 
+  const MAX_FILE_BYTES = 3 * 1024 * 1024;
+  const MAX_TOTAL_BYTES = 3 * 1024 * 1024;
+
   function validEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
+
+  function fmtFileSize(b) {
+    if (b < 1024) return `${b} B`;
+    if (b < 1048576) return `${Math.round(b / 1024)} KB`;
+    return `${(b / 1048576).toFixed(1)} MB`;
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
 
   function Compose({ free, onClose, onUpgrade, toast, initialBody }) {
     const [to, setTo] = useState([]);
@@ -15,8 +33,10 @@
     const [from, setFrom] = useState('');
     const [subject, setSubject] = useState('');
     const [body, setBody] = useState(initialBody || '');
+    const [attachments, setAttachments] = useState([]);
     const [sending, setSending] = useState(false);
     const [accountsLoading, setAccountsLoading] = useState(true);
+    const fileRef = useRef(null);
 
     React.useEffect(() => { const k = e => e.key === 'Escape' && !sending && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [sending, onClose]);
 
@@ -52,7 +72,45 @@
     };
     const bad = draft && !validEmail(draft);
     const allTo = draft.trim() && validEmail(draft.trim()) ? [...to, draft.trim().toLowerCase()] : to;
-    const canSend = from && allTo.length > 0 && subject.trim() && body.replace(/<[^>]+>/g, '').trim();
+    const hasBody = body.replace(/<[^>]+>/g, '').trim();
+    const canSend = from && allTo.length > 0 && subject.trim() && (hasBody || attachments.length > 0);
+
+    async function addFiles(fileList) {
+      if (!fileList?.length || sending) return;
+      const next = [...attachments];
+      let totalSize = next.reduce((sum, file) => sum + file.size, 0);
+
+      for (const file of fileList) {
+        if (file.size > MAX_FILE_BYTES) {
+          toast(`"${file.name}" is too large (max 3 MB)`);
+          continue;
+        }
+        if (totalSize + file.size > MAX_TOTAL_BYTES) {
+          toast('Attachments exceed 3 MB total');
+          break;
+        }
+        try {
+          const data = await readFileAsBase64(file);
+          next.push({
+            id: `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            name: file.name,
+            size: file.size,
+            mimeType: file.type || 'application/octet-stream',
+            data,
+          });
+          totalSize += file.size;
+        } catch {
+          toast(`Could not read "${file.name}"`);
+        }
+      }
+
+      setAttachments(next);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+
+    function removeAttachment(id) {
+      setAttachments(attachments.filter((file) => file.id !== id));
+    }
 
     async function handleSend() {
       if (!canSend || sending || !window.PeekdGmail?.sendEmail) return;
@@ -63,11 +121,17 @@
         subject: subject.trim(),
         html: body,
         addBranding: free,
+        attachments: attachments.map((file) => ({
+          filename: file.name,
+          mimeType: file.mimeType,
+          data: file.data,
+        })),
       });
       setSending(false);
       if (!res.ok) {
         const msg = res.error === 'no_gmail_account' ? 'Connect Gmail in Settings first.'
           : res.error === 'token_refresh_failed' ? 'Gmail session expired. Reconnect in Settings.'
+          : res.error === 'attachment_too_large' || res.error === 'attachments_too_large' ? 'Attachments are too large (max 3 MB).'
           : 'Could not send email. Try again.';
         toast(msg);
         return;
@@ -105,9 +169,37 @@
             React.createElement('input', { className: 'input', placeholder: 'Subject', value: subject, onChange: e => setSubject(e.target.value), disabled: sending })),
           React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'MESSAGE'),
             React.createElement(window.RichEditor, { value: body, onChange: setBody, minHeight: 200, placeholder: 'Write your message…' })),
+          attachments.length > 0 && React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+            attachments.map((file) => React.createElement('div', { key: file.id, className: 'file-chip' },
+              React.createElement('span', { className: 'fc-ico' }, React.createElement(Icon, { name: 'paperclip', size: 16 })),
+              React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+                React.createElement('div', { className: 'fc-name' }, file.name),
+                React.createElement('div', { className: 'fc-size' }, fmtFileSize(file.size))),
+              React.createElement('button', {
+                className: 'row-act',
+                onClick: () => removeAttachment(file.id),
+                disabled: sending,
+                title: 'Remove attachment',
+              }, React.createElement(Icon, { name: 'x', size: 14 })),
+            )),
+          ),
         ),
         React.createElement('div', { className: 'modal-foot', style: { justifyContent: 'space-between' } },
-          React.createElement('button', { className: 'btn btn-ghost btn-sm', disabled: true, title: 'Coming soon' }, React.createElement(Icon, { name: 'paperclip', size: 14 }), 'Attach'),
+          React.createElement('div', { className: 'flex center gap8' },
+            React.createElement('input', {
+              ref: fileRef,
+              type: 'file',
+              multiple: true,
+              style: { display: 'none' },
+              disabled: sending,
+              onChange: (e) => addFiles(Array.from(e.target.files || [])),
+            }),
+            React.createElement('button', {
+              className: 'btn btn-ghost btn-sm',
+              onClick: () => fileRef.current && fileRef.current.click(),
+              disabled: sending,
+            }, React.createElement(Icon, { name: 'paperclip', size: 14 }), 'Attach'),
+          ),
           React.createElement('div', { className: 'flex center gap12' },
             free && React.createElement('button', { className: 'upgrade-inline', style: { marginLeft: 0 }, onClick: onUpgrade }, 'Pro: remove branding ↗'),
             React.createElement('button', { className: 'btn btn-ghost', onClick: onClose, disabled: sending }, 'Cancel'),

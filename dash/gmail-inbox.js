@@ -35,7 +35,7 @@
     };
   }
 
-  async function sendEmail({ fromEmail, to, subject, html, addBranding }) {
+  async function sendEmail({ fromEmail, to, subject, html, addBranding, attachments }) {
     const s = await session();
     if (!s?.access_token) return { ok: false, error: 'no_session' };
 
@@ -55,6 +55,13 @@
         subject: String(subject || '').trim(),
         html: String(html || '').trim(),
         addBranding: !!addBranding,
+        attachments: Array.isArray(attachments)
+          ? attachments.map((a) => ({
+            filename: a.filename || a.name,
+            mimeType: a.mimeType || a.contentType || 'application/octet-stream',
+            data: a.data,
+          }))
+          : [],
       }),
     });
 

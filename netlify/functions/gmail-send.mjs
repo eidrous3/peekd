@@ -22,6 +22,33 @@ function isEmail(s) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim());
 }
 
+const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+
+function parseAttachments(raw) {
+  if (!Array.isArray(raw)) return { ok: true, attachments: [] };
+
+  const attachments = [];
+  let totalBytes = 0;
+
+  for (const item of raw) {
+    const filename = String(item?.filename || item?.name || '').trim();
+    const mimeType = String(item?.mimeType || item?.contentType || 'application/octet-stream').trim();
+    const data = String(item?.data || item?.content || '').replace(/\s/g, '');
+
+    if (!filename || !data) return { ok: false, error: 'invalid_attachment' };
+    if (!/^[A-Za-z0-9+/=]+$/.test(data)) return { ok: false, error: 'invalid_attachment' };
+
+    const bytes = Math.floor((data.length * 3) / 4);
+    if (bytes > MAX_ATTACHMENT_BYTES) return { ok: false, error: 'attachment_too_large' };
+    totalBytes += bytes;
+    if (totalBytes > MAX_ATTACHMENT_BYTES) return { ok: false, error: 'attachments_too_large' };
+
+    attachments.push({ filename, mimeType, data });
+  }
+
+  return { ok: true, attachments };
+}
+
 export default async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -45,11 +72,13 @@ export default async (req) => {
   const subject = String(body.subject || '').trim();
   const html = String(body.html || '').trim();
   const addBranding = body.addBranding === true;
+  const parsedAttachments = parseAttachments(body.attachments);
+  if (!parsedAttachments.ok) return json({ error: parsedAttachments.error }, 400);
 
   if (!fromEmail) return json({ error: 'from_required' }, 400);
   if (!to.length) return json({ error: 'to_required' }, 400);
   if (!subject) return json({ error: 'subject_required' }, 400);
-  if (!html) return json({ error: 'body_required' }, 400);
+  if (!html && !parsedAttachments.attachments.length) return json({ error: 'body_required' }, 400);
 
   const accounts = await getConnectedAccounts(user.id, { email: fromEmail });
   const account = accounts[0];
@@ -58,7 +87,7 @@ export default async (req) => {
   const accessToken = await getValidAccessToken(account);
   if (!accessToken) return json({ error: 'token_refresh_failed' }, 502);
 
-  let finalHtml = html;
+  let finalHtml = html || '<p></p>';
   if (addBranding) {
     finalHtml += '<p style="margin-top:24px;font-size:11px;color:#94a3b8;">Tracked by Peekd</p>';
   }
@@ -68,6 +97,7 @@ export default async (req) => {
     to,
     subject,
     html: finalHtml,
+    attachments: parsedAttachments.attachments,
   });
 
   if (!sent.ok) return json({ ok: false, error: sent.error }, 502);
