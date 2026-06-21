@@ -8,49 +8,114 @@
   function validEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
 
   function Compose({ free, onClose, onUpgrade, toast, initialBody }) {
-    const [to, setTo] = useState(['elena@northwind.co']);
+    const [to, setTo] = useState([]);
     const [draft, setDraft] = useState('');
     const [fromOpen, setFromOpen] = useState(false);
-    const [from, setFrom] = useState('john@gmail.com');
+    const [accounts, setAccounts] = useState([]);
+    const [from, setFrom] = useState('');
+    const [subject, setSubject] = useState('');
     const [body, setBody] = useState(initialBody || '');
-    React.useEffect(() => { const k = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, []);
+    const [sending, setSending] = useState(false);
+    const [accountsLoading, setAccountsLoading] = useState(true);
+
+    React.useEffect(() => { const k = e => e.key === 'Escape' && !sending && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [sending, onClose]);
+
+    React.useEffect(() => {
+      if (initialBody) setBody(initialBody);
+    }, [initialBody]);
+
+    React.useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        if (!window.PeekdIntegrations?.fetchGmailAccounts) {
+          setAccountsLoading(false);
+          return;
+        }
+        const res = await window.PeekdIntegrations.fetchGmailAccounts();
+        if (cancelled) return;
+        const list = res.ok ? (res.accounts || []) : [];
+        setAccounts(list);
+        const primary = list.find((a) => a.is_primary) || list[0];
+        if (primary) setFrom(primary.email);
+        setAccountsLoading(false);
+      })();
+      return () => { cancelled = true; };
+    }, []);
+
     const addEmail = (e) => {
-      if ((e.key === 'Enter' || e.key === ',') && draft.trim()) { e.preventDefault(); setTo([...to, draft.trim()]); setDraft(''); }
+      if ((e.key === 'Enter' || e.key === ',') && draft.trim()) {
+        e.preventDefault();
+        const em = draft.trim().toLowerCase();
+        if (!to.includes(em)) setTo([...to, em]);
+        setDraft('');
+      }
     };
     const bad = draft && !validEmail(draft);
+    const allTo = draft.trim() && validEmail(draft.trim()) ? [...to, draft.trim().toLowerCase()] : to;
+    const canSend = from && allTo.length > 0 && subject.trim() && body.replace(/<[^>]+>/g, '').trim();
 
-    return React.createElement('div', { className: 'backdrop', onMouseDown: onClose },
+    async function handleSend() {
+      if (!canSend || sending || !window.PeekdGmail?.sendEmail) return;
+      setSending(true);
+      const res = await window.PeekdGmail.sendEmail({
+        fromEmail: from,
+        to: allTo,
+        subject: subject.trim(),
+        html: body,
+        addBranding: free,
+      });
+      setSending(false);
+      if (!res.ok) {
+        const msg = res.error === 'no_gmail_account' ? 'Connect Gmail in Settings first.'
+          : res.error === 'token_refresh_failed' ? 'Gmail session expired. Reconnect in Settings.'
+          : 'Could not send email. Try again.';
+        toast(msg);
+        return;
+      }
+      onClose();
+      toast('Email sent & tracking ✓');
+    }
+
+    return React.createElement('div', { className: 'backdrop', onMouseDown: sending ? undefined : onClose },
       React.createElement('div', { className: 'modal wide', onMouseDown: e => e.stopPropagation() },
         React.createElement('div', { className: 'modal-head' }, React.createElement('h3', null, 'New Email'),
-          React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose }, React.createElement(Icon, { name: 'x', size: 16 }))),
+          React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose, disabled: sending }, React.createElement(Icon, { name: 'x', size: 16 }))),
         React.createElement('div', { className: 'modal-body', style: { display: 'flex', flexDirection: 'column', gap: 14 } },
           React.createElement('div', { className: 'field', style: { position: 'relative' } }, React.createElement('label', { className: 'field-label' }, 'FROM'),
-            React.createElement('button', { className: 'select', style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, onClick: () => setFromOpen(!fromOpen) },
-              React.createElement('span', null, React.createElement('span', { className: 'ac-dot', style: { display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--good)', marginRight: 8 } }), from, React.createElement('span', { className: 'muted', style: { marginLeft: 8, fontSize: 12 } }, '(Gmail)')),
+            React.createElement('button', { className: 'select', style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, onClick: () => !accountsLoading && setFromOpen(!fromOpen), disabled: accountsLoading || !accounts.length },
+              React.createElement('span', null,
+                accountsLoading ? 'Loading accounts…'
+                  : accounts.length === 0 ? 'No Gmail connected'
+                  : [React.createElement('span', { key: 'd', className: 'ac-dot', style: { display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--good)', marginRight: 8 } }), from, React.createElement('span', { key: 'k', className: 'muted', style: { marginLeft: 8, fontSize: 12 } }, '(Gmail)')]),
               React.createElement(Icon, { name: 'chevDown', size: 14 })),
-            fromOpen && React.createElement('div', { className: 'card', style: { position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 5, padding: 5, boxShadow: 'var(--shadow-md)' } },
-              D.accounts.map((a, i) => React.createElement('button', { key: i, className: 'check-line', style: { width: '100%' }, onClick: () => { setFrom(a.email); setFromOpen(false); } },
-                React.createElement('span', { className: 'ac-dot', style: { width: 7, height: 7, borderRadius: '50%', background: 'var(--good)' } }), a.email, React.createElement('span', { className: 'muted', style: { fontSize: 12 } }, '(' + a.kind + ')'))),
+            fromOpen && accounts.length > 0 && React.createElement('div', { className: 'card', style: { position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 5, padding: 5, boxShadow: 'var(--shadow-md)' } },
+              accounts.map((a) => React.createElement('button', { key: a.id, className: 'check-line', style: { width: '100%' }, onClick: () => { setFrom(a.email); setFromOpen(false); } },
+                React.createElement('span', { className: 'ac-dot', style: { width: 7, height: 7, borderRadius: '50%', background: 'var(--good)' } }), a.email, React.createElement('span', { className: 'muted', style: { fontSize: 12 } }, '(Gmail)'))),
               React.createElement('div', { className: 'divider', style: { margin: '4px 0' } }),
-              React.createElement('button', { className: 'check-line', style: { width: '100%', color: 'var(--accent)' } }, React.createElement(Icon, { name: 'plus', size: 14 }), 'Connect another account')),
+              React.createElement('button', { className: 'check-line', style: { width: '100%', color: 'var(--accent)' }, onClick: () => { window.location.href = 'Peekd Dashboard.html?settings=integrations'; } }, React.createElement(Icon, { name: 'plus', size: 14 }), 'Connect another account')),
           ),
           React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'TO'),
             React.createElement('div', { className: 'pill-input' },
               to.map((em, i) => React.createElement('span', { key: i, className: 'email-pill' + (validEmail(em) ? '' : ' bad'), title: validEmail(em) ? '' : 'Invalid email' }, em,
                 React.createElement('span', { className: 'pill-x', onClick: () => setTo(to.filter((_, j) => j !== i)) }, React.createElement(Icon, { name: 'x', size: 11 })))),
-              React.createElement('input', { value: draft, placeholder: to.length ? '' : 'name@company.com', onChange: e => setDraft(e.target.value), onKeyDown: addEmail })),
+              React.createElement('input', { value: draft, placeholder: to.length ? '' : 'name@company.com', onChange: e => setDraft(e.target.value), onKeyDown: addEmail, disabled: sending })),
             bad && React.createElement('span', { style: { fontSize: 11.5, color: 'var(--danger)' } }, 'Enter a valid email address'),
           ),
-          React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'SUBJECT'), React.createElement('input', { className: 'input', placeholder: 'Subject' })),
+          React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'SUBJECT'),
+            React.createElement('input', { className: 'input', placeholder: 'Subject', value: subject, onChange: e => setSubject(e.target.value), disabled: sending })),
           React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'MESSAGE'),
-            React.createElement(window.RichEditor, { value: initialBody || '', onChange: setBody, minHeight: 200, placeholder: 'Write your message…' })),
+            React.createElement(window.RichEditor, { value: body, onChange: setBody, minHeight: 200, placeholder: 'Write your message…' })),
         ),
         React.createElement('div', { className: 'modal-foot', style: { justifyContent: 'space-between' } },
-          React.createElement('button', { className: 'btn btn-ghost btn-sm' }, React.createElement(Icon, { name: 'paperclip', size: 14 }), 'Attach'),
+          React.createElement('button', { className: 'btn btn-ghost btn-sm', disabled: true, title: 'Coming soon' }, React.createElement(Icon, { name: 'paperclip', size: 14 }), 'Attach'),
           React.createElement('div', { className: 'flex center gap12' },
             free && React.createElement('button', { className: 'upgrade-inline', style: { marginLeft: 0 }, onClick: onUpgrade }, 'Pro: remove branding ↗'),
-            React.createElement('button', { className: 'btn btn-ghost', onClick: onClose }, 'Cancel'),
-            React.createElement('button', { className: 'btn btn-primary', onClick: () => { onClose(); toast('Email sent & tracking ✓'); } }, 'Send & Track', React.createElement(Icon, { name: 'arrowRight', size: 15 })),
+            React.createElement('button', { className: 'btn btn-ghost', onClick: onClose, disabled: sending }, 'Cancel'),
+            React.createElement('button', {
+              className: 'btn btn-primary',
+              onClick: handleSend,
+              disabled: sending || !canSend || !accounts.length,
+            }, sending ? 'Sending…' : 'Send & Track', !sending && React.createElement(Icon, { name: 'arrowRight', size: 15 })),
           ),
         ),
       ),

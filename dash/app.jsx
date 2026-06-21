@@ -7,7 +7,11 @@
   const TITLES = { inbox: 'Inbox', analytics: 'Analytics', campaigns: 'Campaigns', people: 'People', settings: 'Settings', help: 'Help & docs' };
 
   function App() {
-    const [page, setPage] = useState(() => localStorage.getItem('peekd_page') || 'inbox');
+    const [page, setPage] = useState(() => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('settings') === 'integrations') return 'settings';
+      return localStorage.getItem('peekd_page') || 'inbox';
+    });
     const [collapsed, setCollapsed] = useState(false);
     const [dark, setDark] = useState(() => localStorage.getItem('peekd_dark') === '1');
     const [pro, setPro] = useState(() => localStorage.getItem('peekd_pro') === '1');
@@ -25,6 +29,15 @@
 
     useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem('peekd_dark', dark ? '1' : '0'); }, [dark]);
     useEffect(() => { localStorage.setItem('peekd_page', page); }, [page]);
+
+    useEffect(() => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('settings') !== 'integrations') return;
+      params.delete('settings');
+      const qs = params.toString();
+      const next = window.location.pathname + (qs ? `?${qs}` : '');
+      window.history.replaceState({}, '', next);
+    }, []);
 
     useEffect(() => {
       let cancelled = false;

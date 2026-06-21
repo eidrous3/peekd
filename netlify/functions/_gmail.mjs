@@ -381,6 +381,50 @@ export async function fetchGmailInbox(accessToken, { maxResults = 25, labelIds =
   return { ok: true, messages: messages.filter(Boolean) };
 }
 
+export function encodeRawEmail(raw) {
+  return Buffer.from(raw, 'utf-8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+export function buildMimeMessage({ from, to, subject, html }) {
+  const toLine = to.join(', ');
+  const safeSubject = String(subject || '').replace(/\r?\n/g, ' ');
+  const bodyHtml = html || '<p></p>';
+
+  return [
+    `From: ${from}`,
+    `To: ${toLine}`,
+    `Subject: ${safeSubject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    bodyHtml,
+  ].join('\r\n');
+}
+
+export async function sendGmailMessage(accessToken, { from, to, subject, html }) {
+  const raw = buildMimeMessage({ from, to, subject, html });
+  const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ raw: encodeRawEmail(raw) }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false, error: data.error?.message || 'gmail_send_failed' };
+  }
+
+  return { ok: true, messageId: data.id, threadId: data.threadId };
+}
+
 export {
   GMAIL_SCOPES,
   parseEmailHeader,
