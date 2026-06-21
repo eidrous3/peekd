@@ -147,6 +147,11 @@
           ),
         ),
 
+        e.preview && React.createElement('section', { className: 'd-section' },
+          React.createElement('div', { className: 'd-section-title' }, 'MESSAGE'),
+          React.createElement('p', { className: 'mail-preview', style: { lineHeight: 1.65, fontSize: 14, margin: 0, whiteSpace: 'pre-wrap' } }, e.preview),
+        ),
+
         e.ai && aiOpen && React.createElement('div', { className: 'ai-card' },
           React.createElement('div', { className: 'ai-top' },
             React.createElement('span', { className: 'ai-label' }, React.createElement(Icon, { name: 'sparkles', size: 14 }), 'AI SUGGESTION'),
@@ -226,13 +231,7 @@
     );
   }
 
-  const INBOX_ACCOUNTS = [
-    { email: 'john@gmail.com', kind: 'Gmail' },
-    { email: 'work@company.com', kind: 'Gmail' },
-    { email: 'john@outlook.com', kind: 'Outlook' },
-  ];
-
-  function AccountFilter({ acct, onSelect }) {
+  function AccountFilter({ acct, onSelect, accounts }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
     useEffect(() => {
@@ -242,6 +241,7 @@
       return () => document.removeEventListener('mousedown', h);
     }, [open]);
     const label = acct === 'all' ? 'All accounts' : acct;
+    const list = accounts && accounts.length ? accounts : [];
     return React.createElement('div', { className: 'acct-filter', ref },
       React.createElement('button', { className: 'btn btn-ghost btn-sm acct-trigger', onClick: () => setOpen(!open) },
         React.createElement('span', { className: 'acct-trigger-label' }, label),
@@ -250,17 +250,20 @@
         React.createElement('button', { className: 'acct-row', onClick: () => { onSelect('all'); setOpen(false); } },
           React.createElement('span', { className: 'acct-check' }, acct === 'all' && React.createElement(Icon, { name: 'check', size: 13 })),
           React.createElement('span', { className: 'acct-email' }, 'All accounts')),
-        React.createElement('div', { className: 'divider', style: { margin: '4px 0' } }),
-        INBOX_ACCOUNTS.map((a) => React.createElement('button', { key: a.email, className: 'acct-row', onClick: () => { onSelect(a.email); setOpen(false); } },
+        list.length > 0 && React.createElement('div', { className: 'divider', style: { margin: '4px 0' } }),
+        list.map((a) => React.createElement('button', { key: a.email, className: 'acct-row', onClick: () => { onSelect(a.email); setOpen(false); } },
           React.createElement('span', { className: 'acct-check' }, acct === a.email && React.createElement(Icon, { name: 'check', size: 13 })),
           React.createElement('span', { className: 'acct-email' }, a.email),
-          React.createElement('span', { className: 'acct-kind' }, a.kind))),
+          React.createElement('span', { className: 'acct-kind' }, 'Gmail'))),
       ),
     );
   }
 
   function InboxPage({ free, onUpgrade, onCompose, toast, setHeaderExtra, setHeaderCTA }) {
-    const [sel, setSel] = useState(D.emails[0].id);
+    const [emails, setEmails] = useState([]);
+    const [gmailAccounts, setGmailAccounts] = useState([]);
+    const [inboxStatus, setInboxStatus] = useState('loading');
+    const [sel, setSel] = useState(null);
     const [tab, setTab] = useState('all');
     const [banner, setBanner] = useState(true);
     const [acct, setAcct] = useState('all');
@@ -279,10 +282,37 @@
     const searchRef = useRef(null);
     const filterRef = useRef(null);
 
+    async function loadInbox(accountEmail) {
+      if (!window.PeekdGmail?.fetchInbox) {
+        setInboxStatus('error');
+        return;
+      }
+      setInboxStatus('loading');
+      const res = await window.PeekdGmail.fetchInbox({
+        accountEmail: accountEmail && accountEmail !== 'all' ? accountEmail : undefined,
+        labelIds: 'INBOX',
+        maxResults: 30,
+      });
+      if (!res.ok) {
+        setEmails([]);
+        setGmailAccounts(res.accounts || []);
+        setInboxStatus(res.error === 'no_gmail_account' ? 'no_account' : 'error');
+        if (res.error !== 'no_gmail_account') toast('Could not load Gmail. Try again.');
+        return;
+      }
+      setEmails(res.messages || []);
+      setGmailAccounts(res.accounts || []);
+      setInboxStatus('ready');
+      if (res.messages?.length) setSel(res.messages[0].id);
+      else setSel(null);
+    }
+
+    useEffect(() => { loadInbox(acct); }, []);
+
     useEffect(() => {
-      setHeaderExtra(React.createElement(AccountFilter, { acct, onSelect: setAcct }));
+      setHeaderExtra(React.createElement(AccountFilter, { acct, onSelect: (v) => { setAcct(v); loadInbox(v); }, accounts: gmailAccounts }));
       return () => setHeaderExtra(null);
-    }, [acct]);
+    }, [acct, gmailAccounts]);
 
     useEffect(() => {
       setHeaderCTA(React.createElement('button', { className: 'btn btn-primary', onClick: onCompose },
@@ -327,7 +357,7 @@
       return 0;
     };
 
-    const base = acct === 'all' ? D.emails : D.emails.filter(e => e.from === acct);
+    const base = acct === 'all' ? emails : emails.filter(e => e.accountEmail === acct || e.from === acct);
     const tabs = [['all', 'All', base.length], ['unread', 'Unread', base.filter(e => e.unread).length], ['read', 'Read', base.filter(e => !e.unread).length], ['replied', 'Replied', base.filter(e => e.badge === 'REPLIED').length]];
     let list = base;
     if (tab === 'unread') list = base.filter(e => e.unread);
@@ -348,7 +378,7 @@
       const maxDays = appTime === 'today' ? 0 : appTime === '7days' ? 7 : 30;
       list = list.filter(e => parseDays(e.time) <= maxDays);
     }
-    const email = D.emails.find(e => e.id === sel);
+    const email = emails.find(e => e.id === sel);
 
     return React.createElement('div', { className: 'inbox-wrap' },
       free && banner && React.createElement('div', { className: 'free-banner' },
@@ -393,12 +423,21 @@
               label, React.createElement('span', { className: 'tab-count' }, n))),
           ),
           React.createElement('div', { className: 'flex between center', style: { marginTop: 10 } },
-            React.createElement('span', { className: 'muted', style: { fontSize: 12 } }, list.length + ' threads'),
-            React.createElement('span', { className: 'live' }, React.createElement('span', { className: 'blip' }), 'Live sync'),
+            React.createElement('span', { className: 'muted', style: { fontSize: 12 } },
+              inboxStatus === 'loading' ? 'Loading Gmail…' : list.length + ' threads'),
+            inboxStatus === 'ready' && React.createElement('span', { className: 'live' }, React.createElement('span', { className: 'blip' }), 'Gmail sync'),
           ),
         ),
         React.createElement('div', { className: 'inbox-rows' },
-          list.length === 0
+          inboxStatus === 'no_account'
+            ? React.createElement('div', { className: 'inbox-empty' },
+                React.createElement(Icon, { name: 'mail', size: 30 }),
+                React.createElement('div', { className: 'ie-title' }, 'Connect Gmail to see your inbox'),
+                React.createElement('div', { className: 'ie-sub' }, 'Go to Settings → Integrations and connect your account'))
+            : inboxStatus === 'loading'
+              ? React.createElement('div', { className: 'inbox-empty' },
+                  React.createElement('div', { className: 'ie-sub' }, 'Loading messages from Gmail…'))
+              : list.length === 0
             ? React.createElement('div', { className: 'inbox-empty' },
                 React.createElement(Icon, { name: 'search', size: 30 }),
                 React.createElement('div', { className: 'ie-title' }, query.trim() ? 'No results for "' + query.trim() + '"' : 'No matching emails'),
