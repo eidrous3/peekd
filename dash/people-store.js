@@ -160,11 +160,73 @@
     return { ok: true };
   }
 
+  async function ensurePeopleFromEmails(emails) {
+    const normalized = [...new Set(
+      (Array.isArray(emails) ? emails : [])
+        .map((e) => String(e || '').trim().toLowerCase())
+        .filter(isEmail),
+    )];
+    if (!normalized.length) return { ok: true, added: [], skipped: [] };
+
+    const s = await session();
+    if (!s?.user) return { ok: false, error: 'no_session' };
+
+    const sb = window.PeekdAuth.client();
+    if (!sb) return { ok: false, error: 'not_configured' };
+
+    const added = [];
+    const skipped = [];
+
+    for (const email of normalized) {
+      const { data: existing, error: lookupError } = await sb
+        .from('people')
+        .select('id')
+        .eq('user_id', s.user.id)
+        .eq('email', email)
+        .maybeSingle();
+
+      if (lookupError) return { ok: false, error: lookupError.message, added, skipped };
+      if (existing) {
+        skipped.push(email);
+        continue;
+      }
+
+      const local = email.split('@')[0] || '';
+      const firstName = local.replace(/[._-]+/g, ' ').replace(/\d+/g, '').trim();
+
+      const { data, error } = await sb
+        .from('people')
+        .insert({
+          user_id: s.user.id,
+          first_name: firstName,
+          last_name: '',
+          email,
+          company: null,
+          list_id: null,
+        })
+        .select(PUBLIC_COLUMNS)
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          skipped.push(email);
+          continue;
+        }
+        return { ok: false, error: error.message, added, skipped };
+      }
+
+      added.push(toUiPerson(data));
+    }
+
+    return { ok: true, added, skipped };
+  }
+
   window.PeekdPeople = {
     fetchPeople,
     createPerson,
     updatePerson,
     deletePerson,
+    ensurePeopleFromEmails,
     isEmail,
   };
 })();

@@ -136,6 +136,9 @@
         toast(msg);
         return;
       }
+      if (window.PeekdPeople?.ensurePeopleFromEmails) {
+        await window.PeekdPeople.ensurePeopleFromEmails(allTo);
+      }
       onClose();
       toast('Email sent & tracking ✓');
     }
