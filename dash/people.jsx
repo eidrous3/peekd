@@ -62,6 +62,74 @@
       setListsStatus('ready');
     }
 
+    async function handleCreateList(name) {
+      if (!window.PeekdLists?.createList) {
+        setCreatingList(false);
+        toast('List created ✓');
+        return;
+      }
+      const res = await window.PeekdLists.createList(name);
+      if (!res.ok) {
+        const msg = res.error === 'duplicate_name' ? 'A list with that name already exists.'
+          : res.error === 'name_required' ? 'Enter a list name.'
+          : 'Could not create list.';
+        toast(msg);
+        return;
+      }
+      setCreatingList(false);
+      await loadLists();
+      toast('List created ✓');
+    }
+
+    async function handleUpdateList(id, name) {
+      if (!window.PeekdLists?.updateList) {
+        setLists(lists.map(x => x.id === id ? { ...x, name } : x));
+        setEditingList(null);
+        toast('List updated ✓');
+        return;
+      }
+      const res = await window.PeekdLists.updateList(id, name);
+      if (!res.ok) {
+        const msg = res.error === 'duplicate_name' ? 'A list with that name already exists.' : 'Could not update list.';
+        toast(msg);
+        return;
+      }
+      setEditingList(null);
+      await loadLists();
+      toast('List updated ✓');
+    }
+
+    async function handleDeleteList(id) {
+      if (!window.PeekdLists?.deleteList) {
+        setLists(lists.filter(x => x.id !== id));
+        toast('List deleted ✓');
+        return;
+      }
+      const res = await window.PeekdLists.deleteList(id);
+      if (!res.ok) {
+        toast('Could not delete list.');
+        return;
+      }
+      await loadLists();
+      toast('List deleted ✓');
+    }
+
+    async function handleDuplicateList(l) {
+      const copyName = `${l.name} (copy)`;
+      if (!window.PeekdLists?.createList) {
+        setLists(ls => [{ ...l, id: 'l' + Date.now(), name: copyName, created: 'Today' }, ...ls]);
+        toast('List duplicated ✓');
+        return;
+      }
+      const res = await window.PeekdLists.createList(copyName);
+      if (!res.ok) {
+        toast(res.error === 'duplicate_name' ? 'A copy of this list already exists.' : 'Could not duplicate list.');
+        return;
+      }
+      await loadLists();
+      toast('List duplicated ✓');
+    }
+
     React.useEffect(() => {
       if (free || tab !== 'lists') return;
       loadLists();
@@ -133,18 +201,18 @@
                       : shownLists.map((l) => React.createElement(ListRow, {
                         key: l.id, l, toast,
                         onEdit: () => setEditingList(l),
-                        onDuplicate: () => { setLists(ls => [{ ...l, id: 'l' + Date.now(), name: l.name + ' (copy)', created: 'Today' }, ...ls]); toast('List duplicated ✓'); },
+                        onDuplicate: () => handleDuplicateList(l),
                         onUseInCampaign: () => onUseInCampaign && onUseInCampaign(l),
-                        onDelete: () => { setLists(ls => ls.filter(x => x.id !== l.id)); toast('List deleted ✓'); },
+                        onDelete: () => handleDeleteList(l.id),
                       })),
                   ),
                 ),
               )),
 
       adding && React.createElement(AddPerson, { onClose: () => setAdding(false), onAdd: (p) => { setPeople([{ ...p, sent: 0, rate: 0, dot: 'r', last: 'Never', status: 'ACTIVE' }, ...people]); setAdding(false); toast('Person added ✓'); } }),
-      creatingList && React.createElement(CreateList, { onClose: () => setCreatingList(false), onCreate: () => { setCreatingList(false); toast('List created ✓'); } }),
+      creatingList && React.createElement(CreateList, { onClose: () => setCreatingList(false), onCreate: handleCreateList }),
       editingPerson && React.createElement(EditPerson, { p: editingPerson, lists, onClose: () => setEditingPerson(null), onSave: (upd) => { setPeople(people.map(x => x.email === editingPerson.email ? { ...x, ...upd } : x)); setEditingPerson(null); toast('Changes saved ✓'); } }),
-      editingList && React.createElement(EditList, { l: editingList, onClose: () => setEditingList(null), onSave: (name) => { setLists(lists.map(x => x.id === editingList.id ? { ...x, name } : x)); setEditingList(null); toast('List updated ✓'); } }),
+      editingList && React.createElement(EditList, { l: editingList, onClose: () => setEditingList(null), onSave: (name) => handleUpdateList(editingList.id, name) }),
     );
   }
 
@@ -187,15 +255,25 @@
   function CreateList({ onClose, onCreate }) {
     const [tab, setTab] = useState('select');
     const [sel, setSel] = useState({});
+    const [name, setName] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    async function submit() {
+      if (saving) return;
+      setSaving(true);
+      await onCreate(name);
+      setSaving(false);
+    }
+
     return React.createElement(ModalShell, {
       title: 'New List', onClose,
       foot: [
-        React.createElement('button', { key: 'c', className: 'btn btn-ghost', onClick: onClose }, 'Cancel'),
-        React.createElement('button', { key: 'a', className: 'btn btn-primary', onClick: onCreate }, 'Create List'),
+        React.createElement('button', { key: 'c', className: 'btn btn-ghost', onClick: onClose, disabled: saving }, 'Cancel'),
+        React.createElement('button', { key: 'a', className: 'btn btn-primary', onClick: submit, disabled: saving || !name.trim() }, saving ? 'Creating…' : 'Create List'),
       ],
     },
       React.createElement('div', { className: 'field', style: { marginBottom: 16 } }, React.createElement('label', { className: 'field-label' }, 'LIST NAME'),
-        React.createElement('input', { className: 'input', placeholder: 'Enterprise Leads' })),
+        React.createElement('input', { className: 'input', placeholder: 'Enterprise Leads', value: name, onChange: e => setName(e.target.value), disabled: saving })),
       React.createElement('div', { className: 'field-label', style: { marginBottom: 8 } }, 'ADD PEOPLE'),
       React.createElement('div', { className: 'tabs', style: { width: 'fit-content', marginBottom: 12 } },
         React.createElement('button', { className: 'tab' + (tab === 'select' ? ' active' : ''), onClick: () => setTab('select') }, 'Search & select'),
