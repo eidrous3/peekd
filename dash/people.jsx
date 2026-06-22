@@ -7,6 +7,38 @@
 
   const statusClass = { ACTIVE: 'b-active', REPLIED: 'b-replied', UNRESPONSIVE: 'b-unresp' };
 
+  function personErrorMessage(error) {
+    if (error === 'duplicate_email') return 'A contact with that email already exists.';
+    if (error === 'email_required') return 'Enter an email address.';
+    if (error === 'invalid_email') return 'Enter a valid email address.';
+    return 'Something went wrong. Try again.';
+  }
+
+  function ListPicker({ lists, value, onChange, disabled }) {
+    const [open, setOpen] = useState(false);
+    const selected = (lists || []).find((l) => l.id === value);
+    const label = selected ? selected.name : 'No list';
+    return React.createElement('div', { className: 'field', style: { position: 'relative' } },
+      React.createElement('label', { className: 'field-label' }, 'ADD TO LIST'),
+      React.createElement('button', {
+        type: 'button',
+        className: 'select',
+        style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
+        onClick: () => !disabled && setOpen(!open),
+        disabled,
+      }, label, React.createElement(Icon, { name: 'chevDown', size: 14 })),
+      open && !disabled && React.createElement('div', { className: 'card', style: { position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 5, padding: 5, boxShadow: 'var(--shadow-md)' } },
+        React.createElement('button', { className: 'check-line', style: { width: '100%' }, onClick: () => { onChange(null); setOpen(false); } }, 'No list'),
+        (lists || []).map((l) => React.createElement('button', {
+          key: l.id,
+          className: 'check-line',
+          style: { width: '100%' },
+          onClick: () => { onChange(l.id); setOpen(false); },
+        }, l.name)),
+      ),
+    );
+  }
+
   // Per-row actions: inline edit/delete on desktop (hover), a kebab menu on mobile.
   function PersonActions({ onEdit, onDelete }) {
     const [open, setOpen] = useState(false);
@@ -36,7 +68,8 @@
 
   function PeoplePage({ free, onUpgrade, toast, setHeaderExtra, setHeaderCTA, onUseInCampaign }) {
     const [tab, setTab] = useState('people');
-    const [people, setPeople] = useState(D.people);
+    const [people, setPeople] = useState([]);
+    const [peopleStatus, setPeopleStatus] = useState('idle');
     const [lists, setLists] = useState([]);
     const [listsStatus, setListsStatus] = useState('idle');
     const [adding, setAdding] = useState(false);
@@ -44,6 +77,71 @@
     const [editingPerson, setEditingPerson] = useState(null);
     const [editingList, setEditingList] = useState(null);
     const [query, setQuery] = useState('');
+
+    async function loadPeople() {
+      if (!window.PeekdPeople?.fetchPeople) {
+        setPeople(D.people);
+        setPeopleStatus('ready');
+        return;
+      }
+      setPeopleStatus('loading');
+      const res = await window.PeekdPeople.fetchPeople();
+      if (!res.ok) {
+        setPeople([]);
+        setPeopleStatus(res.error === 'no_session' ? 'no_session' : 'error');
+        return;
+      }
+      setPeople(res.people || []);
+      setPeopleStatus('ready');
+    }
+
+    async function handleCreatePerson(payload) {
+      if (!window.PeekdPeople?.createPerson) {
+        setAdding(false);
+        toast('Person added ✓');
+        return;
+      }
+      const res = await window.PeekdPeople.createPerson(payload);
+      if (!res.ok) {
+        toast(personErrorMessage(res.error));
+        return;
+      }
+      setAdding(false);
+      await loadPeople();
+      toast('Person added ✓');
+    }
+
+    async function handleUpdatePerson(id, payload) {
+      if (!window.PeekdPeople?.updatePerson) {
+        setPeople(people.map((x) => (x.id === id ? { ...x, ...payload } : x)));
+        setEditingPerson(null);
+        toast('Changes saved ✓');
+        return;
+      }
+      const res = await window.PeekdPeople.updatePerson(id, payload);
+      if (!res.ok) {
+        toast(personErrorMessage(res.error));
+        return;
+      }
+      setEditingPerson(null);
+      await loadPeople();
+      toast('Changes saved ✓');
+    }
+
+    async function handleDeletePerson(id) {
+      if (!window.PeekdPeople?.deletePerson) {
+        setPeople(people.filter((x) => x.id !== id));
+        toast('Contact removed');
+        return;
+      }
+      const res = await window.PeekdPeople.deletePerson(id);
+      if (!res.ok) {
+        toast('Could not remove contact.');
+        return;
+      }
+      await loadPeople();
+      toast('Contact removed');
+    }
 
     async function loadLists() {
       if (!window.PeekdLists?.fetchLists) {
@@ -131,6 +229,11 @@
     }
 
     React.useEffect(() => {
+      if (tab === 'people') {
+        loadPeople();
+        loadLists();
+        return;
+      }
       if (free || tab !== 'lists') return;
       loadLists();
     }, [free, tab]);
@@ -161,23 +264,29 @@
       ),
       tab === 'people'
         ? React.createElement('div', { className: 'card', style: { overflow: 'hidden' } },
-            React.createElement('table', { className: 'ptable' },
+            peopleStatus === 'loading' && React.createElement('p', { className: 'dim', style: { padding: '20px 18px' } }, 'Loading people…'),
+            peopleStatus === 'error' && React.createElement('p', { className: 'dim', style: { padding: '20px 18px', color: 'var(--danger)' } }, 'Could not load contacts. Try refreshing.'),
+            peopleStatus === 'no_session' && React.createElement('p', { className: 'dim', style: { padding: '20px 18px' } }, 'Sign in to view your contacts.'),
+            peopleStatus === 'ready' && React.createElement('table', { className: 'ptable' },
               React.createElement('thead', null, React.createElement('tr', null,
                 ['NAME', 'SENT', 'OPEN RATE', 'LAST CONTACT', 'STATUS', ''].map((h, i) => React.createElement('th', { key: i }, h)))),
               React.createElement('tbody', null,
-                shown.map((p, i) => React.createElement('tr', { key: p.email },
-                  React.createElement('td', { className: 'pcell-primary' }, React.createElement('div', { className: 'pcell-name' },
-                    React.createElement(Avatar, { initials: p.initials, size: 34 }),
-                    React.createElement('div', null, React.createElement('div', { className: 'pn-main' }, p.name), React.createElement('div', { className: 'pn-email' }, p.email)))),
-                  React.createElement('td', { 'data-label': 'Sent' }, p.sent),
-                  React.createElement('td', { className: 'pcell-meta', 'data-label': 'Open rate' }, React.createElement('span', { className: 'rate-dot' }, React.createElement('span', { className: 'rd ' + p.dot }), p.rate + '%')),
-                  React.createElement('td', { className: 'muted', 'data-label': 'Last contact' }, p.last),
-                  React.createElement('td', { className: 'pcell-meta', 'data-label': 'Status' }, React.createElement('span', { className: 'badge ' + statusClass[p.status] }, p.status)),
-                  React.createElement('td', { className: 'pcell-actions' }, React.createElement(PersonActions, {
-                    onEdit: () => setEditingPerson(p),
-                    onDelete: () => { setPeople(people.filter(x => x.email !== p.email)); toast('Contact removed'); },
-                  })),
-                )),
+                shown.length === 0
+                  ? React.createElement('tr', null,
+                    React.createElement('td', { colSpan: 6, className: 'muted', style: { padding: '24px 18px', textAlign: 'center' } }, 'No contacts yet. Add someone to get started.'))
+                  : shown.map((p) => React.createElement('tr', { key: p.id },
+                    React.createElement('td', { className: 'pcell-primary' }, React.createElement('div', { className: 'pcell-name' },
+                      React.createElement(Avatar, { initials: p.initials, size: 34 }),
+                      React.createElement('div', null, React.createElement('div', { className: 'pn-main' }, p.name), React.createElement('div', { className: 'pn-email' }, p.email)))),
+                    React.createElement('td', { 'data-label': 'Sent' }, p.sent),
+                    React.createElement('td', { className: 'pcell-meta', 'data-label': 'Open rate' }, React.createElement('span', { className: 'rate-dot' }, React.createElement('span', { className: 'rd ' + p.dot }), p.rate + '%')),
+                    React.createElement('td', { className: 'muted', 'data-label': 'Last contact' }, p.last),
+                    React.createElement('td', { className: 'pcell-meta', 'data-label': 'Status' }, React.createElement('span', { className: 'badge ' + statusClass[p.status] }, p.status)),
+                    React.createElement('td', { className: 'pcell-actions' }, React.createElement(PersonActions, {
+                      onEdit: () => setEditingPerson(p),
+                      onDelete: () => handleDeletePerson(p.id),
+                    })),
+                  )),
               ),
             ),
           )
@@ -209,10 +318,10 @@
                 ),
               )),
 
-      adding && React.createElement(AddPerson, { onClose: () => setAdding(false), onAdd: (p) => { setPeople([{ ...p, sent: 0, rate: 0, dot: 'r', last: 'Never', status: 'ACTIVE' }, ...people]); setAdding(false); toast('Person added ✓'); } }),
-      creatingList && React.createElement(CreateList, { onClose: () => setCreatingList(false), onCreate: handleCreateList }),
-      editingPerson && React.createElement(EditPerson, { p: editingPerson, lists, onClose: () => setEditingPerson(null), onSave: (upd) => { setPeople(people.map(x => x.email === editingPerson.email ? { ...x, ...upd } : x)); setEditingPerson(null); toast('Changes saved ✓'); } }),
-      editingList && React.createElement(EditList, { l: editingList, onClose: () => setEditingList(null), onSave: (name) => handleUpdateList(editingList.id, name) }),
+      adding && React.createElement(AddPerson, { lists, onClose: () => setAdding(false), onCreate: handleCreatePerson }),
+      creatingList && React.createElement(CreateList, { people, onClose: () => setCreatingList(false), onCreate: handleCreateList }),
+      editingPerson && React.createElement(EditPerson, { p: editingPerson, lists, onClose: () => setEditingPerson(null), onSave: (payload) => handleUpdatePerson(editingPerson.id, payload) }),
+      editingList && React.createElement(EditList, { l: editingList, people, onClose: () => setEditingList(null), onSave: (name) => handleUpdateList(editingList.id, name) }),
     );
   }
 
@@ -228,31 +337,50 @@
     );
   }
 
-  function AddPerson({ onClose, onAdd }) {
-    const [first, setFirst] = useState(''); const [last, setLast] = useState(''); const [email, setEmail] = useState('');
+  function AddPerson({ lists, onClose, onCreate }) {
+    const [first, setFirst] = useState('');
+    const [last, setLast] = useState('');
+    const [email, setEmail] = useState('');
+    const [company, setCompany] = useState('');
+    const [listId, setListId] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const badEmail = email.trim() && !(window.PeekdPeople?.isEmail?.(email) ?? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()));
+
+    async function submit() {
+      if (saving) return;
+      setSaving(true);
+      await onCreate({ firstName: first, lastName: last, email, company, listId });
+      setSaving(false);
+    }
+
     return React.createElement(ModalShell, {
       title: 'Add Person', onClose,
       foot: [
-        React.createElement('button', { key: 'c', className: 'btn btn-ghost', onClick: onClose }, 'Cancel'),
-        React.createElement('button', { key: 'a', className: 'btn btn-primary', onClick: () => onAdd({ name: (first + ' ' + last).trim() || 'New Contact', email: email || 'unknown@email.com', initials: ((first[0] || 'N') + (last[0] || 'C')).toUpperCase() }) }, 'Add Person'),
+        React.createElement('button', { key: 'c', className: 'btn btn-ghost', onClick: onClose, disabled: saving }, 'Cancel'),
+        React.createElement('button', {
+          key: 'a',
+          className: 'btn btn-primary',
+          onClick: submit,
+          disabled: saving || !email.trim() || badEmail,
+        }, saving ? 'Adding…' : 'Add Person'),
       ],
     },
       React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 14 } },
         React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'NAME'),
           React.createElement('div', { className: 'flex gap8' },
-            React.createElement('input', { className: 'input', placeholder: 'First name', value: first, onChange: e => setFirst(e.target.value) }),
-            React.createElement('input', { className: 'input', placeholder: 'Last name', value: last, onChange: e => setLast(e.target.value) }))),
+            React.createElement('input', { className: 'input', placeholder: 'First name', value: first, onChange: e => setFirst(e.target.value), disabled: saving }),
+            React.createElement('input', { className: 'input', placeholder: 'Last name', value: last, onChange: e => setLast(e.target.value), disabled: saving }))),
         React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'EMAIL'),
-          React.createElement('input', { className: 'input', placeholder: 'name@company.com', value: email, onChange: e => setEmail(e.target.value) })),
+          React.createElement('input', { className: 'input', placeholder: 'name@company.com', value: email, onChange: e => setEmail(e.target.value), disabled: saving }),
+          badEmail && React.createElement('span', { style: { fontSize: 11.5, color: 'var(--danger)' } }, 'Enter a valid email address')),
         React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'COMPANY (optional)'),
-          React.createElement('input', { className: 'input', placeholder: 'Acme Corp' })),
-        React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'ADD TO LIST'),
-          React.createElement('button', { className: 'select', style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, 'No list', React.createElement(Icon, { name: 'chevDown', size: 14 }))),
+          React.createElement('input', { className: 'input', placeholder: 'Acme Corp', value: company, onChange: e => setCompany(e.target.value), disabled: saving })),
+        React.createElement(ListPicker, { lists, value: listId, onChange: setListId, disabled: saving }),
       ),
     );
   }
 
-  function CreateList({ onClose, onCreate }) {
+  function CreateList({ people, onClose, onCreate }) {
     const [tab, setTab] = useState('select');
     const [sel, setSel] = useState({});
     const [name, setName] = useState('');
@@ -279,8 +407,8 @@
         React.createElement('button', { className: 'tab' + (tab === 'select' ? ' active' : ''), onClick: () => setTab('select') }, 'Search & select'),
         React.createElement('button', { className: 'tab' + (tab === 'upload' ? ' active' : ''), onClick: () => setTab('upload') }, 'Bulk upload')),
       tab === 'select'
-        ? React.createElement('div', null, D.people.map((p, i) => React.createElement('label', { key: i, className: 'check-line', onClick: () => setSel({ ...sel, [i]: !sel[i] }) },
-            React.createElement('span', { className: 'checkbox' + (sel[i] ? ' on' : '') }, sel[i] && React.createElement(Icon, { name: 'check', size: 12 })),
+        ? React.createElement('div', null, (people || []).map((p) => React.createElement('label', { key: p.id, className: 'check-line', onClick: () => setSel({ ...sel, [p.id]: !sel[p.id] }) },
+            React.createElement('span', { className: 'checkbox' + (sel[p.id] ? ' on' : '') }, sel[p.id] && React.createElement(Icon, { name: 'check', size: 12 })),
             React.createElement(Avatar, { initials: p.initials, size: 26 }),
             React.createElement('div', { style: { flex: 1 } }, React.createElement('div', { style: { fontSize: 13, fontWeight: 500 } }, p.name), React.createElement('div', { className: 'pn-email' }, p.email)))))
         : React.createElement('div', { className: 'dropzone' },
@@ -344,36 +472,51 @@
   }
 
   function EditPerson({ p, lists, onClose, onSave }) {
-    const parts = (p.name || '').split(' ');
-    const [first, setFirst] = useState(parts[0] || '');
-    const [last, setLast] = useState(parts.slice(1).join(' '));
+    const [first, setFirst] = useState(p.firstName || (p.name || '').split(' ')[0] || '');
+    const [last, setLast] = useState(p.lastName || (p.name || '').split(' ').slice(1).join(' ') || '');
     const [email, setEmail] = useState(p.email || '');
     const [company, setCompany] = useState(p.company || '');
+    const [listId, setListId] = useState(p.listId || null);
+    const [saving, setSaving] = useState(false);
+    const badEmail = email.trim() && !(window.PeekdPeople?.isEmail?.(email) ?? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()));
+
+    async function submit() {
+      if (saving) return;
+      setSaving(true);
+      await onSave({ firstName: first, lastName: last, email, company, listId });
+      setSaving(false);
+    }
+
     return React.createElement(ModalShell, {
       title: 'Edit Person', onClose,
       foot: [
-        React.createElement('button', { key: 'c', className: 'btn btn-ghost', onClick: onClose }, 'Cancel'),
-        React.createElement('button', { key: 's', className: 'btn btn-primary', onClick: () => onSave({ name: (first + ' ' + last).trim() || p.name, email: email || p.email, company, initials: ((first[0] || p.initials[0]) + (last[0] || (p.initials[1] || ''))).toUpperCase() }) }, 'Save changes'),
+        React.createElement('button', { key: 'c', className: 'btn btn-ghost', onClick: onClose, disabled: saving }, 'Cancel'),
+        React.createElement('button', {
+          key: 's',
+          className: 'btn btn-primary',
+          onClick: submit,
+          disabled: saving || !email.trim() || badEmail,
+        }, saving ? 'Saving…' : 'Save changes'),
       ],
     },
       React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 14 } },
         React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'NAME'),
           React.createElement('div', { className: 'flex gap8' },
-            React.createElement('input', { className: 'input', placeholder: 'First name', value: first, onChange: e => setFirst(e.target.value) }),
-            React.createElement('input', { className: 'input', placeholder: 'Last name', value: last, onChange: e => setLast(e.target.value) }))),
+            React.createElement('input', { className: 'input', placeholder: 'First name', value: first, onChange: e => setFirst(e.target.value), disabled: saving }),
+            React.createElement('input', { className: 'input', placeholder: 'Last name', value: last, onChange: e => setLast(e.target.value), disabled: saving }))),
         React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'EMAIL'),
-          React.createElement('input', { className: 'input', value: email, onChange: e => setEmail(e.target.value) })),
+          React.createElement('input', { className: 'input', value: email, onChange: e => setEmail(e.target.value), disabled: saving }),
+          badEmail && React.createElement('span', { style: { fontSize: 11.5, color: 'var(--danger)' } }, 'Enter a valid email address')),
         React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'COMPANY'),
-          React.createElement('input', { className: 'input', placeholder: 'Acme Corp', value: company, onChange: e => setCompany(e.target.value) })),
-        React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'ADD TO LIST'),
-          React.createElement('button', { className: 'select', style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, (lists && lists[0] && lists[0].name) || 'No list', React.createElement(Icon, { name: 'chevDown', size: 14 }))),
+          React.createElement('input', { className: 'input', placeholder: 'Acme Corp', value: company, onChange: e => setCompany(e.target.value), disabled: saving })),
+        React.createElement(ListPicker, { lists, value: listId, onChange: setListId, disabled: saving }),
       ),
     );
   }
 
-  function EditList({ l, onClose, onSave }) {
+  function EditList({ l, people, onClose, onSave }) {
     const [name, setName] = useState(l.name);
-    const [members, setMembers] = useState(D.people.slice(0, Math.min(l.count, D.people.length)));
+    const members = (people || []).filter((p) => p.listId === l.id);
     return React.createElement(ModalShell, {
       title: 'Edit List', onClose, wide: true,
       foot: [
@@ -387,10 +530,9 @@
       React.createElement('div', { className: 'search-input', style: { marginBottom: 12 } }, React.createElement(Icon, { name: 'search', size: 15 }), React.createElement('input', { placeholder: 'Search to add people...' })),
       members.length === 0
         ? React.createElement('div', { className: 'muted', style: { fontSize: 13, padding: '8px 2px' } }, 'No members yet.')
-        : members.map((m) => React.createElement('div', { key: m.email, className: 'member-row' },
+        : members.map((m) => React.createElement('div', { key: m.id, className: 'member-row' },
             React.createElement(Avatar, { initials: m.initials, size: 28 }),
-            React.createElement('div', { style: { flex: 1, minWidth: 0 } }, React.createElement('div', { style: { fontSize: 13, fontWeight: 500 } }, m.name), React.createElement('div', { className: 'pn-email' }, m.email)),
-            React.createElement('button', { className: 'row-act', onClick: () => setMembers(members.filter(x => x.email !== m.email)) }, React.createElement(Icon, { name: 'x', size: 14 })))),
+            React.createElement('div', { style: { flex: 1, minWidth: 0 } }, React.createElement('div', { style: { fontSize: 13, fontWeight: 500 } }, m.name), React.createElement('div', { className: 'pn-email' }, m.email)))),
     );
   }
 
