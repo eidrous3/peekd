@@ -37,12 +37,35 @@
   function PeoplePage({ free, onUpgrade, toast, setHeaderExtra, setHeaderCTA, onUseInCampaign }) {
     const [tab, setTab] = useState('people');
     const [people, setPeople] = useState(D.people);
-    const [lists, setLists] = useState(D.lists);
+    const [lists, setLists] = useState([]);
+    const [listsStatus, setListsStatus] = useState('idle');
     const [adding, setAdding] = useState(false);
     const [creatingList, setCreatingList] = useState(false);
     const [editingPerson, setEditingPerson] = useState(null);
     const [editingList, setEditingList] = useState(null);
     const [query, setQuery] = useState('');
+
+    async function loadLists() {
+      if (!window.PeekdLists?.fetchLists) {
+        setLists(D.lists);
+        setListsStatus('ready');
+        return;
+      }
+      setListsStatus('loading');
+      const res = await window.PeekdLists.fetchLists();
+      if (!res.ok) {
+        setLists([]);
+        setListsStatus(res.error === 'no_session' ? 'no_session' : 'error');
+        return;
+      }
+      setLists(res.lists || []);
+      setListsStatus('ready');
+    }
+
+    React.useEffect(() => {
+      if (free || tab !== 'lists') return;
+      loadLists();
+    }, [free, tab]);
 
     React.useEffect(() => {
       setHeaderExtra(null);
@@ -97,17 +120,23 @@
                 React.createElement('p', null, 'Group contacts into saved lists and launch campaigns to the whole list at once.'),
                 React.createElement('button', { className: 'btn btn-upgrade', style: { width: 'auto', padding: '0 22px' }, onClick: onUpgrade }, React.createElement(Icon, { name: 'bolt', size: 15, fill: 'currentColor', stroke: 0 }), 'Upgrade to Pro — $7/mo'))
             : React.createElement('div', { className: 'card', style: { overflow: 'hidden' } },
-                React.createElement('table', { className: 'ptable' },
+                listsStatus === 'loading' && React.createElement('p', { className: 'dim', style: { padding: '20px 18px' } }, 'Loading lists…'),
+                listsStatus === 'error' && React.createElement('p', { className: 'dim', style: { padding: '20px 18px', color: 'var(--danger)' } }, 'Could not load lists. Try refreshing.'),
+                listsStatus === 'no_session' && React.createElement('p', { className: 'dim', style: { padding: '20px 18px' } }, 'Sign in to view your lists.'),
+                listsStatus === 'ready' && React.createElement('table', { className: 'ptable' },
                   React.createElement('thead', null, React.createElement('tr', null,
                     ['LIST', 'PEOPLE', 'SENT', 'OPEN RATE', 'LAST CONTACT', ''].map((h, i) => React.createElement('th', { key: i }, h)))),
                   React.createElement('tbody', null,
-                    shownLists.map((l) => React.createElement(ListRow, {
-                      key: l.id, l, toast,
-                      onEdit: () => setEditingList(l),
-                      onDuplicate: () => { setLists(ls => [{ ...l, id: 'l' + Date.now(), name: l.name + ' (copy)', created: 'Today' }, ...ls]); toast('List duplicated ✓'); },
-                      onUseInCampaign: () => onUseInCampaign && onUseInCampaign(l),
-                      onDelete: () => { setLists(ls => ls.filter(x => x.id !== l.id)); toast('List deleted ✓'); },
-                    })),
+                    shownLists.length === 0
+                      ? React.createElement('tr', null,
+                        React.createElement('td', { colSpan: 6, className: 'muted', style: { padding: '24px 18px', textAlign: 'center' } }, 'No lists yet. Create one to get started.'))
+                      : shownLists.map((l) => React.createElement(ListRow, {
+                        key: l.id, l, toast,
+                        onEdit: () => setEditingList(l),
+                        onDuplicate: () => { setLists(ls => [{ ...l, id: 'l' + Date.now(), name: l.name + ' (copy)', created: 'Today' }, ...ls]); toast('List duplicated ✓'); },
+                        onUseInCampaign: () => onUseInCampaign && onUseInCampaign(l),
+                        onDelete: () => { setLists(ls => ls.filter(x => x.id !== l.id)); toast('List deleted ✓'); },
+                      })),
                   ),
                 ),
               )),
