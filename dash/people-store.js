@@ -160,13 +160,44 @@
     return { ok: true };
   }
 
-  async function ensurePeopleFromEmails(emails) {
-    const normalized = [...new Set(
-      (Array.isArray(emails) ? emails : [])
-        .map((e) => String(e || '').trim().toLowerCase())
-        .filter(isEmail),
-    )];
-    if (!normalized.length) return { ok: true, added: [], skipped: [] };
+  function nameFromEmailLocal(email) {
+    const local = String(email || '').split('@')[0] || '';
+    return local.replace(/[._-]+/g, ' ').replace(/\d+/g, '').trim();
+  }
+
+  function splitDisplayName(name) {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return { firstName: '', lastName: '' };
+    if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+    return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+  }
+
+  function normalizeContactList(input) {
+    const map = new Map();
+    for (const item of Array.isArray(input) ? input : []) {
+      if (typeof item === 'string') {
+        const email = String(item || '').trim().toLowerCase();
+        if (!isEmail(email)) continue;
+        map.set(email, map.get(email) || { email, firstName: '', lastName: '' });
+      } else if (item && typeof item === 'object') {
+        const email = String(item.email || '').trim().toLowerCase();
+        if (!isEmail(email)) continue;
+        const existing = map.get(email) || { email, firstName: '', lastName: '' };
+        const firstName = String(item.firstName ?? item.first_name ?? existing.firstName ?? '').trim();
+        const lastName = String(item.lastName ?? item.last_name ?? existing.lastName ?? '').trim();
+        map.set(email, {
+          email,
+          firstName: firstName || existing.firstName,
+          lastName: lastName || existing.lastName,
+        });
+      }
+    }
+    return [...map.values()];
+  }
+
+  async function ensurePeopleFromEmails(emailsOrContacts) {
+    const contacts = normalizeContactList(emailsOrContacts);
+    if (!contacts.length) return { ok: true, added: [], skipped: [] };
 
     const s = await session();
     if (!s?.user) return { ok: false, error: 'no_session' };
@@ -177,7 +208,8 @@
     const added = [];
     const skipped = [];
 
-    for (const email of normalized) {
+    for (const contact of contacts) {
+      const email = contact.email;
       const { data: existing, error: lookupError } = await sb
         .from('people')
         .select('id')
@@ -191,15 +223,15 @@
         continue;
       }
 
-      const local = email.split('@')[0] || '';
-      const firstName = local.replace(/[._-]+/g, ' ').replace(/\d+/g, '').trim();
+      const firstName = contact.firstName || nameFromEmailLocal(email);
+      const lastName = contact.lastName || '';
 
       const { data, error } = await sb
         .from('people')
         .insert({
           user_id: s.user.id,
           first_name: firstName,
-          last_name: '',
+          last_name: lastName,
           email,
           company: null,
           list_id: null,
@@ -221,12 +253,37 @@
     return { ok: true, added, skipped };
   }
 
+  async function ensurePeopleFromInboxMessages(messages, { excludeEmails = [] } = {}) {
+    const excluded = new Set(
+      (Array.isArray(excludeEmails) ? excludeEmails : [])
+        .map((e) => String(e || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    const contacts = [];
+    for (const msg of messages || []) {
+      const labels = msg.gmailLabelIds || [];
+      const inSent = labels.includes('SENT');
+      const inInbox = labels.includes('INBOX');
+      if (inSent && !inInbox) continue;
+
+      const email = String(msg.email || msg.from || '').trim().toLowerCase();
+      if (!isEmail(email) || excluded.has(email)) continue;
+
+      const { firstName, lastName } = splitDisplayName(msg.name);
+      contacts.push({ email, firstName, lastName });
+    }
+
+    return ensurePeopleFromEmails(contacts);
+  }
+
   window.PeekdPeople = {
     fetchPeople,
     createPerson,
     updatePerson,
     deletePerson,
     ensurePeopleFromEmails,
+    ensurePeopleFromInboxMessages,
     isEmail,
   };
 })();

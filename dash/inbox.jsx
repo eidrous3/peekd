@@ -305,6 +305,10 @@
       setInboxStatus('ready');
       if (res.messages?.length) setSel(res.messages[0].id);
       else setSel(null);
+      if (window.PeekdPeople?.ensurePeopleFromInboxMessages) {
+        const accountEmails = (res.accounts || []).map((a) => a.email);
+        window.PeekdPeople.ensurePeopleFromInboxMessages(res.messages, { excludeEmails: accountEmails }).catch(() => {});
+      }
     }
 
     useEffect(() => { loadInbox(acct); }, []);
