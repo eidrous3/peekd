@@ -31,7 +31,7 @@
     ]},
   ];
 
-  function Sidebar({ page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade, pro, onToggleFree }) {
+  function Sidebar({ page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade, pro, onToggleFree, profile }) {
     const [menuOpen, setMenuOpen] = useState(false);
     const [logoutConfirm, setLogoutConfirm] = useState(false);
     const footRef = useRef(null);
@@ -42,6 +42,13 @@
       return () => document.removeEventListener('mousedown', h);
     }, [menuOpen]);
     const go = (p) => { setPage(p); setMenuOpen(false); };
+    const user = window.PeekdProfile?.displayProfile(profile) || { name: '…', email: '…', initials: '…' };
+    const handleLogout = async () => {
+      setMenuOpen(false);
+      setLogoutConfirm(false);
+      if (window.PeekdAuth?.signOut) await window.PeekdAuth.signOut();
+      window.location.href = 'Peekd Login.html';
+    };
     return React.createElement('aside', { className: 'side' },
       React.createElement('div', { className: 'side-top' },
         React.createElement('div', { className: 'brand' },
@@ -95,11 +102,11 @@
           React.createElement('span', null, 'Collapse'),
         ),
         React.createElement('div', { className: 'avatar-menu-wrap' },
-          React.createElement('button', { className: 'avatar-btn', onClick: () => setMenuOpen(!menuOpen), title: 'Account' }, React.createElement(Avatar, { initials: 'HM' })),
+          React.createElement('button', { className: 'avatar-btn', onClick: () => setMenuOpen(!menuOpen), title: 'Account' }, React.createElement(Avatar, { initials: user.initials })),
           menuOpen && React.createElement('div', { className: 'avatar-menu' },
             React.createElement('div', { className: 'am-head' },
-              React.createElement('div', { className: 'am-name' }, 'Hannah Mitchell'),
-              React.createElement('div', { className: 'am-email' }, 'hannah@peekd.app'),
+              React.createElement('div', { className: 'am-name' }, user.name),
+              React.createElement('div', { className: 'am-email' }, user.email),
             ),
             React.createElement('div', { className: 'am-sep' }),
             React.createElement('button', { className: 'am-item', onClick: () => go('settings') }, React.createElement(Icon, { name: 'settings', size: 16 }), 'Settings'),
@@ -117,7 +124,7 @@
           ),
           React.createElement('div', { className: 'modal-foot', style: { justifyContent: 'center' } },
             React.createElement('button', { className: 'btn btn-ghost', onClick: () => setLogoutConfirm(false) }, 'Cancel'),
-            React.createElement('button', { className: 'btn', style: { background: 'var(--danger)', color: '#fff' }, onClick: () => { window.location.href = 'Peekd Login.html'; } }, 'Log out'),
+            React.createElement('button', { className: 'btn', style: { background: 'var(--danger)', color: '#fff' }, onClick: handleLogout }, 'Log out'),
           ),
         ),
       ),

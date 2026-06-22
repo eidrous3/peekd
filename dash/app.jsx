@@ -26,9 +26,20 @@
     const [headerExtra, setHeaderExtra] = useState(null);
     const [headerCTA, setHeaderCTA] = useState(null);
     const [campaignSeed, setCampaignSeed] = useState(null);
+    const [profile, setProfile] = useState(null);
 
     useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem('peekd_dark', dark ? '1' : '0'); }, [dark]);
     useEffect(() => { localStorage.setItem('peekd_page', page); }, [page]);
+
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        if (!window.PeekdProfile?.fetchProfile) return;
+        const res = await window.PeekdProfile.fetchProfile();
+        if (!cancelled && res.ok) setProfile(res.profile);
+      })();
+      return () => { cancelled = true; };
+    }, []);
 
     useEffect(() => {
       const params = new URLSearchParams(window.location.search);
@@ -61,12 +72,12 @@
     else if (page === 'analytics') body = React.createElement(AnalyticsPage, { toast, setHeaderExtra, free, onUpgrade: openUpgrade });
     else if (page === 'campaigns') body = React.createElement(CampaignsPage, { free, onUpgrade: openUpgrade, toast, setHeaderExtra, setHeaderCTA, seed: campaignSeed, clearSeed: () => setCampaignSeed(null) });
     else if (page === 'people') body = React.createElement(PeoplePage, { free, onUpgrade: openUpgrade, toast, setHeaderExtra, setHeaderCTA, onUseInCampaign: (list) => { setCampaignSeed(list); setPage('campaigns'); } });
-    else if (page === 'settings') body = React.createElement(SettingsPage, { onUpgrade: openUpgrade, toast, pro });
+    else if (page === 'settings') body = React.createElement(SettingsPage, { onUpgrade: openUpgrade, toast, pro, onProfileChange: setProfile });
     else body = React.createElement(HelpPage, { toast });
 
     const isInbox = page === 'inbox';
     return React.createElement('div', { className: 'app' + (collapsed ? ' collapsed' : '') },
-      React.createElement(Sidebar, { page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade: openUpgrade, pro, onToggleFree: goFree }),
+      React.createElement(Sidebar, { page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade: openUpgrade, pro, onToggleFree: goFree, profile }),
       React.createElement('div', { className: 'main' },
         React.createElement(Header, { title: TITLES[page] || 'Peekd', unread, onBell: () => setBell(true), extra: headerExtra, cta: headerCTA }),
         React.createElement('div', { className: 'page', style: isInbox ? { overflow: 'hidden' } : {} }, body),
@@ -75,7 +86,7 @@
       upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, toast }),
       bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, setNotifs, onOpenEmail: () => { setBell(false); setPage('inbox'); } }),
       React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen }),
-      moreOpen && React.createElement(MoreSheet, { page, setPage, dark, setDark, onClose: () => setMoreOpen(false) }),
+      moreOpen && React.createElement(MoreSheet, { page, setPage, dark, setDark, onClose: () => setMoreOpen(false), profile }),
       React.createElement(Toast, { msg: toastMsg }),
     );
   }

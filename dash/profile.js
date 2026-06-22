@@ -172,5 +172,15 @@
     return { ok: false, error: msg };
   }
 
-  window.PeekdProfile = { fetchProfile, updateProfile, restoreProfile, softDeleteProfile, initials };
+  function displayProfile(profile) {
+    if (!profile) return { name: '…', email: '…', initials: '…' };
+    const name = (profile.name || '').trim();
+    return {
+      name: name || (profile.email || '').split('@')[0] || 'Account',
+      email: profile.email || '',
+      initials: profile.initials || initials(name, profile.email),
+    };
+  }
+
+  window.PeekdProfile = { fetchProfile, updateProfile, restoreProfile, softDeleteProfile, initials, displayProfile };
 })();

@@ -37,13 +37,19 @@
     );
   }
 
-  function MoreSheet({ page, setPage, dark, setDark, onClose }) {
+  function MoreSheet({ page, setPage, dark, setDark, onClose, profile }) {
     useEffect(() => {
       const k = (e) => { if (e.key === 'Escape') onClose(); };
       document.addEventListener('keydown', k);
       return () => document.removeEventListener('keydown', k);
     }, []);
     const go = (p) => { onClose(); setPage(p); };
+    const user = window.PeekdProfile?.displayProfile(profile) || { name: '…', email: '…', initials: '…' };
+    const handleLogout = async () => {
+      onClose();
+      if (window.PeekdAuth?.signOut) await window.PeekdAuth.signOut();
+      window.location.href = 'Peekd Login.html';
+    };
     const row = (icon, label, onClick, active) => React.createElement('button', {
       className: 'm-sheet-row' + (active ? ' active' : ''), onClick,
     },
@@ -55,10 +61,10 @@
       React.createElement('div', { className: 'm-sheet', onMouseDown: (e) => e.stopPropagation() },
         React.createElement('div', { className: 'm-sheet-grip' }),
         React.createElement('div', { className: 'm-sheet-head' },
-          React.createElement(Avatar, { initials: 'HM', size: 40 }),
+          React.createElement(Avatar, { initials: user.initials, size: 40 }),
           React.createElement('div', { className: 'm-sheet-head-text' },
-            React.createElement('div', { className: 'm-sheet-name' }, 'Hannah Mitchell'),
-            React.createElement('div', { className: 'm-sheet-email' }, 'hannah@peekd.app'),
+            React.createElement('div', { className: 'm-sheet-name' }, user.name),
+            React.createElement('div', { className: 'm-sheet-email' }, user.email),
           ),
         ),
         React.createElement('div', { className: 'm-sheet-list' },
@@ -70,7 +76,7 @@
             React.createElement(Switch, { on: dark, onClick: () => setDark(!dark) }),
           ),
         ),
-        React.createElement('button', { className: 'm-sheet-logout', onClick: () => { window.location.href = 'Peekd Login.html'; } },
+        React.createElement('button', { className: 'm-sheet-logout', onClick: handleLogout },
           React.createElement(Icon, { name: 'logout', size: 18 }), 'Log out',
         ),
       ),

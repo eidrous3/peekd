@@ -88,7 +88,7 @@
     );
   }
 
-  function AccountTab({ onUpgrade, toast, pro, profileStatus, profile, setProfile }) {
+  function AccountTab({ onUpgrade, toast, pro, profileStatus, profile, setProfile, onProfileChange }) {
     const [draftName, setDraftName] = useState('');
     const [draftTimezone, setDraftTimezone] = useState('America/New_York');
     const [saving, setSaving] = useState(false);
@@ -127,6 +127,7 @@
         return;
       }
       setProfile(res.profile);
+      onProfileChange && onProfileChange(res.profile);
       toast('Profile saved ✓');
     }
 
@@ -398,7 +399,7 @@
     );
   }
 
-  function SettingsPage({ onUpgrade, toast, pro }) {
+  function SettingsPage({ onUpgrade, toast, pro, onProfileChange }) {
     const [tab, setTab] = useState(() => {
       const params = new URLSearchParams(window.location.search);
       return params.get('settings') === 'integrations' ? 'integrations' : 'account';
@@ -420,6 +421,7 @@
           return;
         }
         setProfile(res.profile);
+        onProfileChange && onProfileChange(res.profile);
         setProfileStatus('ready');
       })();
       return () => { cancelled = true; };
@@ -430,7 +432,7 @@
         React.createElement('div', { className: 'set-nav' },
           tabs.map(([id, label]) => React.createElement('button', { key: id, className: tab === id ? 'active' : '', onClick: () => setTab(id) }, label))),
         React.createElement('div', { className: 'set-panel' },
-          tab === 'account' && React.createElement(AccountTab, { onUpgrade, toast, pro, profileStatus, profile, setProfile }),
+          tab === 'account' && React.createElement(AccountTab, { onUpgrade, toast, pro, profileStatus, profile, setProfile, onProfileChange }),
           tab === 'notifications' && React.createElement(NotificationsTab, { toast }),
           tab === 'integrations' && React.createElement(IntegrationsTab, { toast }),
           tab === 'privacy' && React.createElement('div', null,
