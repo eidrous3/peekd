@@ -341,6 +341,36 @@ export async function notifyAdminNewTicket({ ticket, description, userEmail, att
   });
 }
 
+export async function notifyAdminCustomerReply({ ticket, replyText, userEmail, attachmentName }) {
+  const number = ticket.ticket_number;
+  const subject = `[Peekd #${number}] Customer reply: ${ticket.subject}`;
+  const adminUrl = `${siteUrl()}/adming`;
+  const lines = [
+    `Customer reply from ${userEmail}`,
+    `Ticket #${number}: ${ticket.subject}`,
+    '',
+    replyText || '(See attachment in admin.)',
+  ];
+  if (attachmentName) lines.push('', `Attachment: ${attachmentName}`);
+
+  const text = `${lines.join('\n')}\n\nOpen admin: ${adminUrl}`;
+  const html = [
+    `<p><strong>Customer reply</strong> from ${escHtml(userEmail)}</p>`,
+    `<p><strong>Ticket:</strong> #${number}<br>`,
+    `<strong>Subject:</strong> ${escHtml(ticket.subject)}</p>`,
+    replyText ? `<pre style="white-space:pre-wrap;font-family:inherit">${escHtml(replyText)}</pre>` : '<p><em>See the attachment in admin.</em></p>',
+    attachmentName ? `<p>Attachment: ${escHtml(attachmentName)}</p>` : '',
+    `<p><a href="${escHtml(adminUrl)}">View in support admin</a></p>`,
+  ].join('');
+
+  return sendTicketEmail({
+    to: adminEmail(),
+    subject,
+    html,
+    text,
+  });
+}
+
 export async function notifyCustomerAdminReply({ ticket, replyText, attachmentName }) {
   const email = String(ticket.user_email || '').trim().toLowerCase();
   if (!email) return { ok: false, error: 'no_customer_email' };

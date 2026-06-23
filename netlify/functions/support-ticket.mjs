@@ -7,6 +7,7 @@ import {
   json,
   mapMessageRow,
   mapTicketRow,
+  notifyAdminCustomerReply,
   parseAttachment,
   uploadAttachment,
 } from './_support.mjs';
@@ -91,6 +92,18 @@ export default async (req) => {
     method: 'PATCH',
     body: { status: 'open' },
   });
+
+  try {
+    const notify = await notifyAdminCustomerReply({
+      ticket,
+      replyText: text,
+      userEmail: (user.email || ticket.user_email || '').trim().toLowerCase(),
+      attachmentName: message.attachment_filename || null,
+    });
+    if (!notify.ok) console.error('[support] admin reply email failed:', notify.error);
+  } catch (err) {
+    console.error('[support] admin reply email failed:', err);
+  }
 
   const uiMessage = await mapMessageRow(message);
   return json({ ok: true, message: uiMessage });
