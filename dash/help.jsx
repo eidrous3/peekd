@@ -222,10 +222,17 @@
       React.createElement('button', { className: 'kb-back', onClick: onBack }, React.createElement(Icon, { name: 'chevLeft', size: 15 }), 'All tickets'),
       React.createElement('p', { className: 'dim', style: { padding: '12px 2px' } }, 'Loading ticket…'));
 
-    const renderFile = (file) => file && React.createElement(file.url ? 'a' : 'span', {
-      className: 'tk-bubble-file',
-      ...(file.url ? { href: file.url, target: '_blank', rel: 'noopener noreferrer' } : {}),
-    }, React.createElement(Icon, { name: 'image', size: 13 }), file.name);
+    const renderFile = (file) => {
+      if (!file) return null;
+      const props = { className: 'tk-bubble-file' };
+      if (file.url) {
+        props.href = file.url;
+        props.target = '_blank';
+        props.rel = 'noopener noreferrer';
+      }
+      return React.createElement(file.url ? 'a' : 'span', props,
+        React.createElement(Icon, { name: 'image', size: 13 }), file.name);
+    };
 
     return React.createElement('div', null,
       React.createElement('button', { className: 'kb-back', onClick: onBack }, React.createElement(Icon, { name: 'chevLeft', size: 15 }), 'All tickets'),
@@ -252,7 +259,7 @@
         React.createElement('input', { ref: rfileRef, type: 'file', accept: '.png,.jpg,.jpeg,.pdf', style: { display: 'none' }, onChange: e => pick(e.target.files[0]), disabled: sending }),
         React.createElement('div', { className: 'tk-reply-actions' },
           React.createElement('button', { className: 'tk-attach-btn', onClick: () => rfileRef.current && rfileRef.current.click(), disabled: sending }, React.createElement(Icon, { name: 'paperclip', size: 14 }), 'Attach'),
-          React.createElement('button', { className: 'btn btn-primary btn-sm', disabled: sending || (!reply.trim() && !rfile), onClick: send }, sending ? 'Sending…' : 'Send reply'))),
+          React.createElement('button', { className: 'btn btn-primary btn-sm', disabled: sending || (!reply.trim() && !rfile), onClick: send }, sending ? 'Sending…' : 'Send reply')))),
     );
   }
 
