@@ -10,6 +10,7 @@
     const [page, setPage] = useState(() => {
       const params = new URLSearchParams(window.location.search);
       if (params.get('settings') === 'integrations') return 'settings';
+      if (params.get('help') === '1') return 'help';
       return localStorage.getItem('peekd_page') || 'inbox';
     });
     const [collapsed, setCollapsed] = useState(false);
@@ -43,8 +44,11 @@
 
     useEffect(() => {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('settings') !== 'integrations') return;
-      params.delete('settings');
+      const hadSettings = params.get('settings') === 'integrations';
+      const hadHelp = params.get('help') === '1';
+      if (!hadSettings && !hadHelp) return;
+      if (hadSettings) params.delete('settings');
+      if (hadHelp) params.delete('help');
       const qs = params.toString();
       const next = window.location.pathname + (qs ? `?${qs}` : '');
       window.history.replaceState({}, '', next);

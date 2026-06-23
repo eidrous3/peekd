@@ -10,7 +10,7 @@ const out = `// Auto-generated at build time — do not commit.
 //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET       — Gmail OAuth
 //   SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) — signup existing-user check, delete account, Gmail callback, support admin
 //   SUPPORT_ADMIN_EMAIL, SUPPORT_ADMIN_PASSWORD, SUPPORT_ADMIN_SECRET — support ticket admin login
-//   RESEND_FROM_EMAIL                       — sender address (e.g. noreply@mail.yourdomain.com)
+//   RESEND_API_KEY, RESEND_FROM_EMAIL       — support ticket + transactional email (Resend)
 window.PeekdConfig = {
   supabaseUrl: ${JSON.stringify(url)},
   supabasePublishableKey: ${JSON.stringify(key)},

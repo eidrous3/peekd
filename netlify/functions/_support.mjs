@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { Resend } from 'resend';
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'application/pdf']);
@@ -275,4 +276,100 @@ export async function fetchTicketMessages(ticketId) {
   );
   if (!res.ok) return [];
   return Array.isArray(res.data) ? res.data : [];
+}
+
+export function siteUrl() {
+  const raw = process.env.URL || process.env.DEPLOY_URL || 'https://getpeekd.com';
+  return String(raw).replace(/\/$/, '');
+}
+
+function escHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+export async function sendTicketEmail({ to, subject, html, text }) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM_EMAIL;
+  if (!apiKey || !from) return { ok: false, error: 'email_not_configured' };
+
+  const resend = new Resend(apiKey);
+  const { data, error } = await resend.emails.send({
+    from,
+    to: Array.isArray(to) ? to : [to],
+    subject,
+    html,
+    text,
+  });
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, id: data?.id };
+}
+
+export async function notifyAdminNewTicket({ ticket, description, userEmail, attachmentName }) {
+  const number = ticket.ticket_number;
+  const subject = `[Peekd #${number}] New ticket: ${ticket.subject}`;
+  const adminUrl = `${siteUrl()}/adming`;
+  const lines = [
+    `New support ticket from ${userEmail}`,
+    `Category: ${ticket.category}`,
+    `Ticket #${number}`,
+    '',
+    description,
+  ];
+  if (attachmentName) lines.push('', `Attachment: ${attachmentName}`);
+
+  const text = `${lines.join('\n')}\n\nOpen admin: ${adminUrl}`;
+  const html = [
+    `<p><strong>New support ticket</strong> from ${escHtml(userEmail)}</p>`,
+    `<p><strong>Category:</strong> ${escHtml(ticket.category)}<br>`,
+    `<strong>Ticket:</strong> #${number}<br>`,
+    `<strong>Subject:</strong> ${escHtml(ticket.subject)}</p>`,
+    `<pre style="white-space:pre-wrap;font-family:inherit">${escHtml(description)}</pre>`,
+    attachmentName ? `<p>Attachment: ${escHtml(attachmentName)}</p>` : '',
+    `<p><a href="${escHtml(adminUrl)}">View in support admin</a></p>`,
+  ].join('');
+
+  return sendTicketEmail({
+    to: adminEmail(),
+    subject,
+    html,
+    text,
+  });
+}
+
+export async function notifyCustomerAdminReply({ ticket, replyText, attachmentName }) {
+  const email = String(ticket.user_email || '').trim().toLowerCase();
+  if (!email) return { ok: false, error: 'no_customer_email' };
+
+  const number = ticket.ticket_number;
+  const subject = `Re: [Peekd #${number}] ${ticket.subject}`;
+  const helpUrl = `${siteUrl()}/peekd%20dashboard?help=1`;
+  const lines = [
+    'Peekd Support replied to your ticket:',
+    '',
+    replyText || '(See attachment in your dashboard.)',
+    '',
+    `Ticket #${number}: ${ticket.subject}`,
+    '',
+    `View your ticket: ${helpUrl}`,
+  ];
+  const text = lines.join('\n');
+  const html = [
+    `<p>Peekd Support replied to your ticket <strong>#${number}</strong>:</p>`,
+    replyText ? `<pre style="white-space:pre-wrap;font-family:inherit">${escHtml(replyText)}</pre>` : '<p><em>See the attachment in your dashboard.</em></p>',
+    attachmentName ? `<p>Attachment: ${escHtml(attachmentName)}</p>` : '',
+    `<p><a href="${escHtml(helpUrl)}">View your ticket in Peekd</a></p>`,
+    `<p style="color:#666;font-size:13px">Subject: ${escHtml(ticket.subject)}</p>`,
+  ].join('');
+
+  return sendTicketEmail({
+    to: email,
+    subject,
+    html,
+    text,
+  });
 }

@@ -6,6 +6,7 @@ import {
   json,
   mapMessageRow,
   mapTicketRow,
+  notifyCustomerAdminReply,
   parseAttachment,
   uploadAttachment,
   verifyAdminToken,
@@ -128,6 +129,17 @@ export default async (req) => {
       method: 'PATCH',
       body: { status },
     });
+  }
+
+  try {
+    const notify = await notifyCustomerAdminReply({
+      ticket,
+      replyText: text,
+      attachmentName: message.attachment_filename || null,
+    });
+    if (!notify.ok) console.error('[support] customer email failed:', notify.error);
+  } catch (err) {
+    console.error('[support] customer email failed:', err);
   }
 
   const uiMessage = await mapMessageRow(message);

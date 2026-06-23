@@ -6,6 +6,7 @@ import {
   getUserFromToken,
   json,
   mapTicketRow,
+  notifyAdminNewTicket,
   parseAttachment,
   uploadAttachment,
 } from './_support.mjs';
@@ -103,6 +104,18 @@ export default async (req) => {
 
   const messages = await fetchTicketMessages(ticket.id);
   const uiTicket = await mapTicketRow(ticket, { messages, includeMessages: true });
+
+  try {
+    const notify = await notifyAdminNewTicket({
+      ticket,
+      description,
+      userEmail,
+      attachmentName: message.attachment_filename || null,
+    });
+    if (!notify.ok) console.error('[support] admin email failed:', notify.error);
+  } catch (err) {
+    console.error('[support] admin email failed:', err);
+  }
 
   return json({ ok: true, ticket: uiTicket });
 };
