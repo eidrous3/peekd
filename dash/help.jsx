@@ -127,45 +127,40 @@
   }
 
   // ── Right: Support tickets ────────────────────────────────────
-  const SAMPLE_TICKETS = [
-    { id: 1042, subject: 'Tracking pixel not firing in Outlook', category: 'Bug report', status: 'progress', created: '2 days ago',
-      thread: [
-        { from: 'you', time: 'Mon, 9:14 AM', text: 'When I send from Outlook, opens never register — even though the recipient clearly replied. Gmail tracks fine. What\'s going on?' },
-        { from: 'support', name: 'Marcus · Peekd', time: 'Mon, 11:02 AM', text: 'Thanks for the detail! This looks like your Outlook tenant is pre-fetching images through Safe Links, which suppresses the pixel. I\'ve escalated to our deliverability team and we\'re testing a workaround — I\'ll update you right here.' },
-      ] },
-    { id: 1031, subject: 'Refund for a double charge this month', category: 'Billing question', status: 'resolved', created: 'Jun 1',
-      thread: [
-        { from: 'you', time: 'Jun 1, 8:30 AM', text: 'I was billed $7 twice for Pro this month. Can you refund the duplicate?' },
-        { from: 'support', name: 'Dana · Peekd', time: 'Jun 1, 9:12 AM', text: 'You\'re right — there was a duplicate charge on Jun 1. I\'ve refunded $7.00 to your card; it should land in 3–5 business days. Sorry for the hassle!' },
-        { from: 'you', time: 'Jun 1, 9:40 AM', text: 'Perfect, thanks for the quick fix.' },
-      ] },
-    { id: 1024, subject: 'Add Slack notifications for opens', category: 'Feature request', status: 'open', created: '3 weeks ago',
-      thread: [
-        { from: 'you', time: 'May 18, 2:05 PM', text: 'Would love a Slack integration that pings a channel when a tracked email is opened. Any plans for this?' },
-      ] },
-  ];
   const TK_STATUS = { open: { label: 'Open', cls: 'tk-open' }, progress: { label: 'In progress', cls: 'tk-progress' }, resolved: { label: 'Resolved', cls: 'tk-resolved' } };
   const fmtFileSize = (b) => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(0) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
 
-  function TicketForm({ onSubmit }) {
+  function ticketErrorMessage(error) {
+    if (error === 'attachment_too_large') return 'Attachment is too large (max 10 MB).';
+    if (error === 'invalid_attachment_type') return 'Only PNG, JPG, and PDF files are allowed.';
+    if (error === 'no_session') return 'Sign in to open a support ticket.';
+    return 'Could not save your ticket. Try again.';
+  }
+
+  function TicketForm({ onSubmit, submitting }) {
     const [subject, setSubject] = useState('');
     const [cat, setCat] = useState('');
     const [desc, setDesc] = useState('');
     const [file, setFile] = useState(null);
     const [drag, setDrag] = useState(false);
     const fileRef = useRef(null);
-    const pick = (f) => { if (!f) return; setFile({ name: f.name, size: f.size }); };
-    const canSubmit = subject.trim() && desc.trim();
+    const maxBytes = window.PeekdTickets?.MAX_FILE_BYTES || 10 * 1024 * 1024;
+    const pick = (f) => {
+      if (!f) return;
+      if (f.size > maxBytes) return;
+      setFile(f);
+    };
+    const canSubmit = subject.trim() && desc.trim() && !submitting;
     return React.createElement(React.Fragment, null,
       React.createElement('div', { className: 'field', style: { marginBottom: 14 } },
         React.createElement('label', { className: 'field-label' }, 'SUBJECT'),
-        React.createElement('input', { className: 'input', placeholder: 'What\'s this about?', value: subject, onChange: e => setSubject(e.target.value) })),
+        React.createElement('input', { className: 'input', placeholder: 'What\'s this about?', value: subject, onChange: e => setSubject(e.target.value), disabled: submitting })),
       React.createElement('div', { className: 'field', style: { marginBottom: 14 } },
         React.createElement('label', { className: 'field-label' }, 'CATEGORY'),
         React.createElement(CatSelect, { value: cat, onChange: setCat })),
       React.createElement('div', { className: 'field', style: { marginBottom: 14 } },
         React.createElement('label', { className: 'field-label' }, 'DESCRIPTION'),
-        React.createElement('textarea', { className: 'textarea', style: { minHeight: 120 }, placeholder: 'Describe your issue...', value: desc, onChange: e => setDesc(e.target.value) })),
+        React.createElement('textarea', { className: 'textarea', style: { minHeight: 120 }, placeholder: 'Describe your issue...', value: desc, onChange: e => setDesc(e.target.value), disabled: submitting })),
       React.createElement('div', { className: 'field', style: { marginBottom: 18 } },
         React.createElement('label', { className: 'field-label' }, 'ATTACHMENT (OPTIONAL)'),
         React.createElement('input', { ref: fileRef, type: 'file', accept: '.png,.jpg,.jpeg,.pdf', style: { display: 'none' }, onChange: e => pick(e.target.files[0]) }),
@@ -175,7 +170,7 @@
               React.createElement('div', { style: { flex: 1, minWidth: 0 } },
                 React.createElement('div', { className: 'fc-name' }, file.name),
                 React.createElement('div', { className: 'fc-size' }, fmtFileSize(file.size))),
-              React.createElement('button', { className: 'row-act', onClick: () => { setFile(null); if (fileRef.current) fileRef.current.value = ''; } }, React.createElement(Icon, { name: 'x', size: 14 })))
+              React.createElement('button', { className: 'row-act', onClick: () => { setFile(null); if (fileRef.current) fileRef.current.value = ''; }, disabled: submitting }, React.createElement(Icon, { name: 'x', size: 14 })))
           : React.createElement('div', {
               className: 'help-drop' + (drag ? ' drag' : ''),
               onClick: () => fileRef.current && fileRef.current.click(),
@@ -186,11 +181,12 @@
               React.createElement('div', { className: 'hd-main' }, '📎 Drop file or browse'),
               React.createElement('div', { className: 'hd-sub' }, 'PNG, JPG, PDF — max 10MB'))),
       React.createElement('button', { className: 'btn btn-primary', style: { width: '100%' }, disabled: !canSubmit, onClick: () => onSubmit({ subject, cat, desc, file }) },
-        'Open ticket ', React.createElement(Icon, { name: 'arrowRight', size: 15 })),
+        submitting ? 'Opening ticket…' : 'Open ticket ', !submitting && React.createElement(Icon, { name: 'arrowRight', size: 15 })),
     );
   }
 
-  function TicketList({ tickets, onOpen }) {
+  function TicketList({ tickets, loading, onOpen }) {
+    if (loading) return React.createElement('p', { className: 'dim', style: { padding: '8px 2px' } }, 'Loading tickets…');
     if (!tickets.length) return React.createElement('div', { className: 'tk-empty' },
       React.createElement('div', { className: 'tk-empty-ico' }, React.createElement(Icon, { name: 'messageSquare', size: 22 })),
       React.createElement('p', null, 'No tickets yet. Open one and it\'ll show up here.'));
@@ -199,65 +195,137 @@
         React.createElement('div', { className: 'tk-top' },
           React.createElement('span', { className: 'tk-subject' }, t.subject),
           React.createElement('span', { className: 'tk-status ' + TK_STATUS[t.status].cls }, TK_STATUS[t.status].label)),
-        React.createElement('div', { className: 'tk-meta' }, '#' + t.id + '  ·  ' + t.category + '  ·  ' + t.created),
+        React.createElement('div', { className: 'tk-meta' }, '#' + t.number + '  ·  ' + t.category + '  ·  ' + t.created),
       )),
     );
   }
 
-  function TicketDetail({ tk, onBack, onReply }) {
+  function TicketDetail({ tk, loading, onBack, onReply }) {
     const [reply, setReply] = useState('');
     const [rfile, setRfile] = useState(null);
+    const [sending, setSending] = useState(false);
     const rfileRef = useRef(null);
-    const pick = (f) => { if (!f) return; setRfile({ name: f.name, size: f.size }); };
-    const send = () => { const v = reply.trim(); if (!v && !rfile) return; onReply({ text: v, file: rfile }); setReply(''); setRfile(null); if (rfileRef.current) rfileRef.current.value = ''; };
+    const maxBytes = window.PeekdTickets?.MAX_FILE_BYTES || 10 * 1024 * 1024;
+    const pick = (f) => { if (!f || f.size > maxBytes) return; setRfile(f); };
+    const send = async () => {
+      const v = reply.trim();
+      if ((!v && !rfile) || sending) return;
+      setSending(true);
+      await onReply({ text: v, file: rfile });
+      setSending(false);
+      setReply('');
+      setRfile(null);
+      if (rfileRef.current) rfileRef.current.value = '';
+    };
+
+    if (loading || !tk) return React.createElement('div', null,
+      React.createElement('button', { className: 'kb-back', onClick: onBack }, React.createElement(Icon, { name: 'chevLeft', size: 15 }), 'All tickets'),
+      React.createElement('p', { className: 'dim', style: { padding: '12px 2px' } }, 'Loading ticket…'));
+
+    const renderFile = (file) => file && React.createElement(file.url ? 'a' : 'span', {
+      className: 'tk-bubble-file',
+      ...(file.url ? { href: file.url, target: '_blank', rel: 'noopener noreferrer' } : {}),
+    }, React.createElement(Icon, { name: 'image', size: 13 }), file.name);
+
     return React.createElement('div', null,
       React.createElement('button', { className: 'kb-back', onClick: onBack }, React.createElement(Icon, { name: 'chevLeft', size: 15 }), 'All tickets'),
       React.createElement('div', { className: 'tk-detail-head' },
         React.createElement('span', { className: 'tk-status ' + TK_STATUS[tk.status].cls }, TK_STATUS[tk.status].label),
         React.createElement('h3', null, tk.subject),
-        React.createElement('div', { className: 'tk-meta' }, '#' + tk.id + '  ·  ' + tk.category + '  ·  Opened ' + tk.created)),
+        React.createElement('div', { className: 'tk-meta' }, '#' + tk.number + '  ·  ' + tk.category + '  ·  Opened ' + tk.created)),
       React.createElement('div', { className: 'tk-thread' },
-        tk.thread.map((m, i) => React.createElement('div', { key: i, className: 'tk-msg ' + (m.from === 'you' ? 'tk-me' : 'tk-them') },
+        (tk.thread || []).map((m, i) => React.createElement('div', { key: m.id || i, className: 'tk-msg ' + (m.from === 'you' ? 'tk-me' : 'tk-them') },
           React.createElement('div', { className: 'tk-msg-head' },
             React.createElement('span', { className: 'tk-msg-name' }, m.from === 'you' ? 'You' : (m.name || 'Peekd Support')),
             React.createElement('span', { className: 'tk-msg-time' }, m.time)),
           React.createElement('div', { className: 'tk-bubble' },
             m.text && React.createElement('span', null, m.text),
-            m.file && React.createElement('span', { className: 'tk-bubble-file' }, React.createElement(Icon, { name: 'image', size: 13 }), m.file.name)))),
-        tk.file && React.createElement('div', { className: 'tk-attach' }, React.createElement(Icon, { name: 'image', size: 14 }), tk.file.name)),
+            renderFile(m.file)))),
       React.createElement('div', { className: 'tk-reply' },
-        React.createElement('textarea', { className: 'textarea', style: { minHeight: 70 }, placeholder: 'Write a reply...', value: reply, onChange: e => setReply(e.target.value) }),
+        React.createElement('textarea', { className: 'textarea', style: { minHeight: 70 }, placeholder: 'Write a reply...', value: reply, onChange: e => setReply(e.target.value), disabled: sending }),
         rfile && React.createElement('div', { className: 'file-chip' },
           React.createElement('span', { className: 'fc-ico' }, React.createElement(Icon, { name: 'image', size: 16 })),
           React.createElement('div', { style: { flex: 1, minWidth: 0 } },
             React.createElement('div', { className: 'fc-name' }, rfile.name),
             React.createElement('div', { className: 'fc-size' }, fmtFileSize(rfile.size))),
-          React.createElement('button', { className: 'row-act', onClick: () => { setRfile(null); if (rfileRef.current) rfileRef.current.value = ''; } }, React.createElement(Icon, { name: 'x', size: 14 }))),
-        React.createElement('input', { ref: rfileRef, type: 'file', accept: '.png,.jpg,.jpeg,.pdf', style: { display: 'none' }, onChange: e => pick(e.target.files[0]) }),
+          React.createElement('button', { className: 'row-act', onClick: () => { setRfile(null); if (rfileRef.current) rfileRef.current.value = ''; }, disabled: sending }, React.createElement(Icon, { name: 'x', size: 14 }))),
+        React.createElement('input', { ref: rfileRef, type: 'file', accept: '.png,.jpg,.jpeg,.pdf', style: { display: 'none' }, onChange: e => pick(e.target.files[0]), disabled: sending }),
         React.createElement('div', { className: 'tk-reply-actions' },
-          React.createElement('button', { className: 'tk-attach-btn', onClick: () => rfileRef.current && rfileRef.current.click() }, React.createElement(Icon, { name: 'paperclip', size: 14 }), 'Attach'),
-          React.createElement('button', { className: 'btn btn-primary btn-sm', disabled: !reply.trim() && !rfile, onClick: send }, 'Send reply'))),
+          React.createElement('button', { className: 'tk-attach-btn', onClick: () => rfileRef.current && rfileRef.current.click(), disabled: sending }, React.createElement(Icon, { name: 'paperclip', size: 14 }), 'Attach'),
+          React.createElement('button', { className: 'btn btn-primary btn-sm', disabled: sending || (!reply.trim() && !rfile), onClick: send }, sending ? 'Sending…' : 'Send reply'))),
     );
   }
 
   function SupportPanel({ toast }) {
-    const [tickets, setTickets] = useState(SAMPLE_TICKETS);
-    const [mode, setMode] = useState('form'); // form | list | detail
+    const [tickets, setTickets] = useState([]);
+    const [selected, setSelected] = useState(null);
+    const [loadingList, setLoadingList] = useState(true);
+    const [loadingDetail, setLoadingDetail] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [mode, setMode] = useState('form');
     const [selId, setSelId] = useState(null);
-    const sel = tickets.find(t => t.id === selId);
 
-    const createTicket = ({ subject, cat, desc, file }) => {
-      const id = Math.max(1042, ...tickets.map(t => t.id)) + 1;
-      const tk = { id, subject: subject.trim(), category: cat || 'Other', status: 'open', created: 'Just now', file,
-        thread: [
-          { from: 'you', time: 'Just now', text: desc.trim() },
-          { from: 'support', name: 'Peekd Support', time: 'Just now', text: 'Thanks — we\'ve logged this as ticket #' + id + '. A specialist will reply within 24 hours.' },
-        ] };
-      setTickets([tk, ...tickets]);
-      setSelId(id); setMode('detail');
+    async function loadTickets() {
+      if (!window.PeekdTickets?.fetchTickets) {
+        setTickets([]);
+        setLoadingList(false);
+        return;
+      }
+      setLoadingList(true);
+      const res = await window.PeekdTickets.fetchTickets();
+      setLoadingList(false);
+      if (!res.ok) {
+        setTickets([]);
+        return;
+      }
+      setTickets(res.tickets || []);
+    }
+
+    async function loadTicket(id) {
+      if (!window.PeekdTickets?.fetchTicket) return;
+      setLoadingDetail(true);
+      const res = await window.PeekdTickets.fetchTicket(id);
+      setLoadingDetail(false);
+      if (res.ok) setSelected(res.ticket);
+    }
+
+    useEffect(() => { loadTickets(); }, []);
+
+    useEffect(() => {
+      if (mode === 'detail' && selId) loadTicket(selId);
+    }, [mode, selId]);
+
+    const createTicket = async ({ subject, cat, desc, file }) => {
+      if (!window.PeekdTickets?.createTicket) return;
+      setSubmitting(true);
+      const res = await window.PeekdTickets.createTicket({
+        subject,
+        category: cat || 'Other',
+        description: desc,
+        file,
+      });
+      setSubmitting(false);
+      if (!res.ok) {
+        toast && toast(ticketErrorMessage(res.error));
+        return;
+      }
+      await loadTickets();
+      setSelected(res.ticket);
+      setSelId(res.ticket.id);
+      setMode('detail');
       toast && toast('Ticket opened ✓');
     };
-    const addReply = ({ text, file }) => setTickets(ts => ts.map(t => t.id === selId ? { ...t, thread: [...t.thread, { from: 'you', time: 'Just now', text, file }] } : t));
+
+    const addReply = async ({ text, file }) => {
+      if (!selId || !window.PeekdTickets?.replyToTicket) return;
+      const res = await window.PeekdTickets.replyToTicket(selId, { text, file });
+      if (!res.ok) {
+        toast && toast(ticketErrorMessage(res.error));
+        return;
+      }
+      await loadTicket(selId);
+      toast && toast('Reply sent ✓');
+    };
 
     return React.createElement('div', null,
       React.createElement('div', { className: 'support-card' },
@@ -267,9 +335,9 @@
         mode !== 'detail' && React.createElement('div', { className: 'tabs', style: { width: 'fit-content', marginBottom: 16 } },
           React.createElement('button', { className: 'tab' + (mode === 'form' ? ' active' : ''), onClick: () => setMode('form') }, 'New ticket'),
           React.createElement('button', { className: 'tab' + (mode === 'list' ? ' active' : ''), onClick: () => setMode('list') }, 'My tickets', React.createElement('span', { className: 'tab-count' }, tickets.length))),
-        mode === 'form' && React.createElement(TicketForm, { onSubmit: createTicket }),
-        mode === 'list' && React.createElement(TicketList, { tickets, onOpen: (id) => { setSelId(id); setMode('detail'); } }),
-        mode === 'detail' && sel && React.createElement(TicketDetail, { tk: sel, onBack: () => setMode('list'), onReply: addReply })),
+        mode === 'form' && React.createElement(TicketForm, { onSubmit: createTicket, submitting }),
+        mode === 'list' && React.createElement(TicketList, { tickets, loading: loadingList, onOpen: (id) => { setSelId(id); setMode('detail'); } }),
+        mode === 'detail' && React.createElement(TicketDetail, { tk: selected, loading: loadingDetail, onBack: () => setMode('list'), onReply: addReply })),
       React.createElement('div', { className: 'support-foot' },
         React.createElement('div', null, 'Typical reply time: ', React.createElement('b', null, 'under 24 hours'))),
     );
