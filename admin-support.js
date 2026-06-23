@@ -173,7 +173,7 @@
             m.text && React.createElement('span', null, m.text),
             m.file && (m.file.url
               ? React.createElement('a', { className: 'tk-bubble-file', href: m.file.url, target: '_blank', rel: 'noopener noreferrer' }, '📎 ', m.file.name)
-              : React.createElement('span', { className: 'tk-bubble-file' }, '📎 ', m.file.name))))),
+              : React.createElement('span', { className: 'tk-bubble-file' }, '📎 ', m.file.name)))))),
       React.createElement('div', { className: 'tk-reply' },
         React.createElement('textarea', { className: 'textarea', style: { minHeight: 90 }, placeholder: 'Write a reply as Peekd Support...', value: reply, onChange: (e) => setReply(e.target.value), disabled: sending }),
         file && React.createElement('div', { className: 'file-chip', style: { marginTop: 10 } },
