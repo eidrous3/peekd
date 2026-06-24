@@ -30,7 +30,7 @@
         React.createElement('div', { className: 'mw-subject' + (e.unread ? ' strong' : '') }, e.subject),
         React.createElement('div', { className: 'mw-badges' },
           e.hot && React.createElement('span', { className: 'badge b-hot' }, '🔥 HOT'),
-          React.createElement('span', { className: 'badge ' + badgeClass[e.badge] }, e.badge),
+          e.badge && React.createElement('span', { className: 'badge ' + badgeClass[e.badge] }, e.badge),
         ),
         React.createElement('div', { className: 'mw-meta' },
           React.createElement('span', { className: 'mw-name' }, e.name),
@@ -57,7 +57,7 @@
             e.opens > 0 && React.createElement('span', { className: 'opens-chip' },
               React.createElement(Icon, { name: 'eye', size: 12 }), e.opens),
             e.hot && React.createElement('span', { className: 'badge b-hot' }, '🔥 HOT'),
-            React.createElement('span', { className: 'badge ' + badgeClass[e.badge] }, e.badge),
+            e.badge && React.createElement('span', { className: 'badge ' + badgeClass[e.badge] }, e.badge),
           ),
         ),
       ),
@@ -137,7 +137,9 @@
         React.createElement('div', { className: 'detail-head' },
           React.createElement('div', { className: 'flex between center', style: { gap: 12 } },
             React.createElement('h2', null, e.subject),
-            React.createElement('span', { className: 'badge ' + badgeClass[e.badge], style: { flex: '0 0 auto' } }, e.badge + ' · ' + e.sentAt.split(',')[0]),
+            e.badge
+              ? React.createElement('span', { className: 'badge ' + badgeClass[e.badge], style: { flex: '0 0 auto' } }, e.badge + ' · ' + e.sentAt.split(',')[0])
+              : React.createElement('span', { className: 'muted', style: { flex: '0 0 auto', fontSize: 13 } }, e.sentAt.split(',')[0]),
           ),
           React.createElement('div', { className: 'detail-to' },
             'To: ', React.createElement('b', null, e.to), ' ', React.createElement('span', { className: 'muted' }, e.toEmail),
@@ -294,7 +296,7 @@
       setInboxStatus('loading');
       const res = await window.PeekdGmail.fetchInbox({
         accountEmail: accountEmail && accountEmail !== 'all' ? accountEmail : undefined,
-        labelIds: 'INBOX',
+        labelIds: 'INBOX,SENT',
         maxResults: 30,
       });
       if (!res.ok) {
@@ -365,11 +367,13 @@
       return 0;
     };
 
+    const isSentFolder = (e) => (e.gmailLabelIds || []).includes('SENT');
     const base = acct === 'all' ? emails : emails.filter(e => e.accountEmail === acct || e.from === acct);
-    const tabs = [['all', 'All', base.length], ['unread', 'Unread', base.filter(e => e.unread).length], ['read', 'Read', base.filter(e => !e.unread).length], ['replied', 'Replied', base.filter(e => e.badge === 'REPLIED').length]];
+    const tabs = [['all', 'All', base.length], ['unread', 'Unread', base.filter(e => e.unread).length], ['read', 'Read', base.filter(e => !e.unread).length], ['sent', 'Sent', base.filter(isSentFolder).length], ['replied', 'Replied', base.filter(e => e.badge === 'REPLIED').length]];
     let list = base;
     if (tab === 'unread') list = base.filter(e => e.unread);
     else if (tab === 'read') list = base.filter(e => !e.unread);
+    else if (tab === 'sent') list = base.filter(isSentFolder);
     else if (tab === 'replied') list = base.filter(e => e.badge === 'REPLIED');
     if (query.trim()) {
       const q = query.trim().toLowerCase();

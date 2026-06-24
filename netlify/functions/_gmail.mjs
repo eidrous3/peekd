@@ -357,7 +357,7 @@ export async function fetchGmailInbox(accessToken, { maxResults = 25, labelIds =
       email: displayPerson.email,
       subject,
       preview: data.snippet || '',
-      badge: inSent ? 'SENT' : (unread ? 'OPENED' : 'SENT'),
+      badge: inSent ? 'SENT' : '',
       opens: 0,
       time: relativeTime(date),
       sentAt: formatSentAt(date),
