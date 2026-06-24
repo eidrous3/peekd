@@ -52,7 +52,7 @@ function displayNameFromEmail(email) {
 }
 
 export function isCountableOpen(event) {
-  return event?.classification !== 'likely_proxy';
+  return event?.classification === 'human';
 }
 
 export function countCountableOpens(events) {
@@ -179,9 +179,12 @@ export async function getTrackingByMessageIds(userId, gmailMessageIds) {
 export function buildTrackingSummary(trackedEmailRow) {
   const sentDate = new Date(trackedEmailRow.sent_at || Date.now());
   const recipients = (trackedEmailRow.tracked_recipients || []).map((recipient) => {
-    const events = [...(recipient.email_open_events || [])].sort(
-      (a, b) => new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime(),
-    );
+    const events = [...(recipient.email_open_events || [])]
+      .sort((a, b) => new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime())
+      .map((event) => ({
+        ...event,
+        classification: resolveEventClassification(event, trackedEmailRow.sent_at),
+      }));
     return {
       email: recipient.email,
       name: displayNameFromEmail(recipient.email),
@@ -239,8 +242,11 @@ export function buildTimelineFromEvents({ sentAt, recipients }) {
 
     for (const event of sorted) {
       const key = recipient.email;
-      const isProxy = event.classification === 'likely_proxy';
-      if (!isProxy) {
+      const classification = event.classification || 'unknown';
+      const countable = isCountableOpen(event);
+      const isProxy = classification === 'likely_proxy';
+      const isUnverified = classification === 'unknown';
+      if (countable) {
         openCounts.set(key, (openCounts.get(key) || 0) + 1);
       }
       const count = openCounts.get(key) || 0;
@@ -251,15 +257,21 @@ export function buildTimelineFromEvents({ sentAt, recipients }) {
         who: recipient.name,
         av: recipient.initials,
         label: isProxy
-          ? 'Likely proxy open (Apple Mail)'
-          : count <= 1
-            ? 'opened'
-            : `opened again (×${count})`,
-        meta: isProxy ? 'Privacy proxy · approximate location' : 'Email client',
+          ? 'Likely proxy open (Gmail/Apple)'
+          : isUnverified
+            ? 'Unverified open (not counted)'
+            : count <= 1
+              ? 'opened'
+              : `opened again (×${count})`,
+        meta: isProxy
+          ? 'Image proxy · may not be a real view'
+          : isUnverified
+            ? 'Could not verify a real recipient'
+            : 'Email client',
         time: formatMessageTime(event.opened_at),
         openedAt: openedDate.getTime(),
-        proxy: isProxy,
-        classification: event.classification,
+        proxy: isProxy || isUnverified,
+        classification,
       });
     }
   }
@@ -314,6 +326,26 @@ export function getClientIp(req) {
 
 export function isGmailImageProxy(userAgent) {
   return /GoogleImageProxy|ggpht\.com/i.test(userAgent || '');
+}
+
+export function isGoogleInfrastructureIp(ip) {
+  const value = String(ip || '').trim();
+  if (!value) return false;
+  return /^(66\.249|74\.125|64\.233|72\.14|209\.85|216\.239|172\.217|108\.177|142\.250|173\.194)\./.test(value);
+}
+
+export function isPrefetchBotUserAgent(userAgent) {
+  const ua = String(userAgent || '');
+  if (isGmailImageProxy(ua)) return true;
+  if (/Chrome\/([1-9]|[1-4][0-9])\./i.test(ua)) return true;
+  return /Googlebot|Google-HTTP|Feedfetcher|AdsBot/i.test(ua);
+}
+
+export function looksLikeHumanBrowser(userAgent) {
+  const ua = String(userAgent || '').trim();
+  if (!ua || ua.length < 20) return false;
+  if (isPrefetchBotUserAgent(ua)) return false;
+  return /Mozilla\/5\.0/i.test(ua);
 }
 
 let appleCidrsCache = null;
@@ -378,7 +410,9 @@ export function isAppleProxyIp(ip) {
 
 export function classifyOpen({ ip, userAgent, sentAt, openedAt = new Date() }) {
   if (isGmailImageProxy(userAgent)) return 'likely_proxy';
+  if (isGoogleInfrastructureIp(ip)) return 'likely_proxy';
   if (isAppleProxyIp(ip)) return 'likely_proxy';
+  if (isPrefetchBotUserAgent(userAgent)) return 'likely_proxy';
 
   const sentMs = sentAt ? new Date(sentAt).getTime() : NaN;
   const openedMs = openedAt instanceof Date ? openedAt.getTime() : new Date(openedAt).getTime();
@@ -389,7 +423,19 @@ export function classifyOpen({ ip, userAgent, sentAt, openedAt = new Date() }) {
     }
   }
 
+  if (looksLikeHumanBrowser(userAgent)) return 'human';
   return 'unknown';
+}
+
+export function resolveEventClassification(event, sentAt) {
+  const stored = event?.classification || 'unknown';
+  if (stored === 'human' || stored === 'likely_proxy') return stored;
+  return classifyOpen({
+    ip: event?.ip,
+    userAgent: event?.user_agent,
+    sentAt,
+    openedAt: event?.opened_at ? new Date(event.opened_at) : new Date(),
+  });
 }
 
 export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
