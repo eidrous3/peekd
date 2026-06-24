@@ -265,7 +265,7 @@
     );
   }
 
-  function InboxPage({ free, onUpgrade, onCompose, toast, setHeaderExtra, setHeaderCTA }) {
+  function InboxPage({ free, onUpgrade, onCompose, toast, setHeaderExtra, setHeaderCTA, inboxRefreshKey = 0 }) {
     const [emails, setEmails] = useState([]);
     const [gmailAccounts, setGmailAccounts] = useState([]);
     const [inboxStatus, setInboxStatus] = useState('loading');
@@ -317,7 +317,7 @@
       }
     }
 
-    useEffect(() => { loadInbox(acct); }, []);
+    useEffect(() => { loadInbox(acct); }, [inboxRefreshKey]);
 
     useEffect(() => {
       setHeaderExtra(React.createElement(AccountFilter, { acct, onSelect: (v) => { setAcct(v); loadInbox(v); }, accounts: gmailAccounts }));

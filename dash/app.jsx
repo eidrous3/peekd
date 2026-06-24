@@ -17,6 +17,7 @@
     const [dark, setDark] = useState(() => localStorage.getItem('peekd_dark') === '1');
     const [pro, setPro] = useState(() => localStorage.getItem('peekd_pro') === '1');
     const free = !pro; // gates active when not Pro
+    const [inboxRefreshKey, setInboxRefreshKey] = useState(0);
     const [compose, setCompose] = useState(false);
     const [composeBody, setComposeBody] = useState('');
     const [upgrade, setUpgrade] = useState(false);
@@ -72,7 +73,7 @@
     const goFree = () => { setPro(false); localStorage.setItem('peekd_pro', '0'); toast('Switched to Free plan'); };
 
     let body;
-    if (page === 'inbox') body = React.createElement(InboxPage, { free, onUpgrade: openUpgrade, onCompose: openCompose, toast, setHeaderExtra, setHeaderCTA });
+    if (page === 'inbox') body = React.createElement(InboxPage, { free, onUpgrade: openUpgrade, onCompose: openCompose, toast, setHeaderExtra, setHeaderCTA, inboxRefreshKey });
     else if (page === 'analytics') body = React.createElement(AnalyticsPage, { toast, setHeaderExtra, free, onUpgrade: openUpgrade });
     else if (page === 'campaigns') body = React.createElement(CampaignsPage, { free, onUpgrade: openUpgrade, toast, setHeaderExtra, setHeaderCTA, seed: campaignSeed, clearSeed: () => setCampaignSeed(null) });
     else if (page === 'people') body = React.createElement(PeoplePage, { free, onUpgrade: openUpgrade, toast, setHeaderExtra, setHeaderCTA, onUseInCampaign: (list) => { setCampaignSeed(list); setPage('campaigns'); } });
@@ -86,7 +87,7 @@
         React.createElement(Header, { title: TITLES[page] || 'Peekd', unread, onBell: () => setBell(true), extra: headerExtra, cta: headerCTA }),
         React.createElement('div', { className: 'page', style: isInbox ? { overflow: 'hidden' } : {} }, body),
       ),
-      compose && React.createElement(Compose, { free, initialBody: composeBody, onClose: () => setCompose(false), onUpgrade: () => { setCompose(false); openUpgrade(); }, toast }),
+      compose && React.createElement(Compose, { free, initialBody: composeBody, onClose: () => setCompose(false), onUpgrade: () => { setCompose(false); openUpgrade(); }, toast, onSent: () => setInboxRefreshKey((k) => k + 1) }),
       upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, toast }),
       bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, setNotifs, onOpenEmail: () => { setBell(false); setPage('inbox'); } }),
       React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen }),

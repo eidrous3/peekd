@@ -25,7 +25,7 @@
     });
   }
 
-  function Compose({ free, onClose, onUpgrade, toast, initialBody }) {
+  function Compose({ free, onClose, onUpgrade, toast, initialBody, onSent }) {
     const [to, setTo] = useState([]);
     const [draft, setDraft] = useState('');
     const [fromOpen, setFromOpen] = useState(false);
@@ -139,6 +139,7 @@
       if (window.PeekdPeople?.ensurePeopleFromEmails) {
         await window.PeekdPeople.ensurePeopleFromEmails(allTo);
       }
+      onSent?.();
       onClose();
       toast('Email sent & tracking ✓');
     }
