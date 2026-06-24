@@ -10,7 +10,7 @@ import {
   siteUrl,
 } from './_support.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const trackingModuleDir = path.dirname(fileURLToPath(import.meta.url));
 
 const PIXEL_IMG_STYLE = 'display:block;width:1px;height:1px;border:0;';
 
@@ -322,7 +322,7 @@ let appleBucketsCache = null;
 export function getAppleEgressCidrs() {
   if (appleCidrsCache) return appleCidrsCache;
   try {
-    const raw = fs.readFileSync(path.join(__dirname, '_apple-egress-ips.json'), 'utf8');
+    const raw = fs.readFileSync(path.join(trackingModuleDir, '_apple-egress-ips.json'), 'utf8');
     const data = JSON.parse(raw);
     appleCidrsCache = Array.isArray(data.cidrs) ? data.cidrs : [];
   } catch {

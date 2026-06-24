@@ -77,7 +77,10 @@ export default async (req) => {
     for (const label of labels) {
       const result = await fetchGmailInbox(accessToken, { maxResults, labelIds: label });
       if (!result.ok) {
-        return json({ ok: false, error: result.error, messages: [] }, 502);
+        if (label === 'INBOX' || !allMessages.length) {
+          return json({ ok: false, error: result.error, messages: [] }, 502);
+        }
+        continue;
       }
 
       for (const msg of result.messages) {
@@ -96,7 +99,12 @@ export default async (req) => {
   });
 
   const messageIds = allMessages.map((m) => m.id).filter(Boolean);
-  const trackingByMessageId = await getTrackingByMessageIds(user.id, messageIds);
+  let trackingByMessageId = {};
+  try {
+    trackingByMessageId = await getTrackingByMessageIds(user.id, messageIds);
+  } catch {
+    /* inbox must still load if tracking lookup fails */
+  }
   const messages = allMessages.map((message) => mergeTrackingIntoMessage(
     message,
     trackingByMessageId[message.id],
