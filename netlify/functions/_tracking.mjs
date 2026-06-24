@@ -241,37 +241,23 @@ export function buildTimelineFromEvents({ sentAt, recipients }) {
     );
 
     for (const event of sorted) {
+      if (!isCountableOpen(event)) continue;
+
       const key = recipient.email;
-      const classification = event.classification || 'unknown';
-      const countable = isCountableOpen(event);
-      const isProxy = classification === 'likely_proxy';
-      const isUnverified = classification === 'unknown';
-      if (countable) {
-        openCounts.set(key, (openCounts.get(key) || 0) + 1);
-      }
-      const count = openCounts.get(key) || 0;
+      const count = (openCounts.get(key) || 0) + 1;
+      openCounts.set(key, count);
       const openedDate = new Date(event.opened_at);
 
       entries.push({
         type: 'opened',
         who: recipient.name,
         av: recipient.initials,
-        label: isProxy
-          ? 'Likely proxy open (Gmail/Apple)'
-          : isUnverified
-            ? 'Unverified open (not counted)'
-            : count <= 1
-              ? 'opened'
-              : `opened again (×${count})`,
-        meta: isProxy
-          ? 'Image proxy · may not be a real view'
-          : isUnverified
-            ? 'Could not verify a real recipient'
-            : 'Email client',
+        label: count <= 1 ? 'opened' : `opened again (×${count})`,
+        meta: 'Email client',
         time: formatMessageTime(event.opened_at),
         openedAt: openedDate.getTime(),
-        proxy: isProxy || isUnverified,
-        classification,
+        proxy: false,
+        classification: event.classification || 'human',
       });
     }
   }
