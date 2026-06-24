@@ -336,7 +336,7 @@ export function isGoogleInfrastructureIp(ip) {
 
 export function isPrefetchBotUserAgent(userAgent) {
   const ua = String(userAgent || '');
-  if (isGmailImageProxy(ua)) return true;
+  if (isGmailImageProxy(ua)) return false;
   if (/Chrome\/([1-9]|[1-4][0-9])\./i.test(ua)) return true;
   return /Googlebot|Google-HTTP|Feedfetcher|AdsBot/i.test(ua);
 }
@@ -409,10 +409,12 @@ export function isAppleProxyIp(ip) {
 }
 
 export function classifyOpen({ ip, userAgent, sentAt, openedAt = new Date() }) {
-  if (isGmailImageProxy(userAgent)) return 'likely_proxy';
-  if (isGoogleInfrastructureIp(ip)) return 'likely_proxy';
+  // Gmail wraps all remote images through GoogleImageProxy — that is the real open signal for Gmail.
+  if (isGmailImageProxy(userAgent)) return 'human';
+
   if (isAppleProxyIp(ip)) return 'likely_proxy';
   if (isPrefetchBotUserAgent(userAgent)) return 'likely_proxy';
+  if (isGoogleInfrastructureIp(ip) && !looksLikeHumanBrowser(userAgent)) return 'likely_proxy';
 
   const sentMs = sentAt ? new Date(sentAt).getTime() : NaN;
   const openedMs = openedAt instanceof Date ? openedAt.getTime() : new Date(openedAt).getTime();
@@ -428,8 +430,6 @@ export function classifyOpen({ ip, userAgent, sentAt, openedAt = new Date() }) {
 }
 
 export function resolveEventClassification(event, sentAt) {
-  const stored = event?.classification || 'unknown';
-  if (stored === 'human' || stored === 'likely_proxy') return stored;
   return classifyOpen({
     ip: event?.ip,
     userAgent: event?.user_agent,
