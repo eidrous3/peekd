@@ -54,6 +54,7 @@
         to: recipients,
         subject: String(subject || '').trim(),
         html: String(html || '').trim(),
+        track: true,
         addBranding: !!addBranding,
         attachments: Array.isArray(attachments)
           ? attachments.map((a) => ({

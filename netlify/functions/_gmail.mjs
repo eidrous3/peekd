@@ -346,14 +346,15 @@ export async function fetchGmailInbox(accessToken, { maxResults = 25, labelIds =
     const date = dateRaw ? new Date(dateRaw) : new Date(Number(data.internalDate || Date.now()));
     const unread = (data.labelIds || []).includes('UNREAD');
     const inSent = (data.labelIds || []).includes('SENT');
+    const displayPerson = inSent ? to : from;
 
     return {
       id: data.id,
       threadId: data.threadId,
       from: from.email,
-      initials: initials(from.name, from.email),
-      name: from.name || from.email.split('@')[0],
-      email: from.email,
+      initials: initials(displayPerson.name, displayPerson.email),
+      name: displayPerson.name || displayPerson.email.split('@')[0],
+      email: displayPerson.email,
       subject,
       preview: data.snippet || '',
       badge: inSent ? 'SENT' : (unread ? 'OPENED' : 'SENT'),

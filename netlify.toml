@@ -1,6 +1,6 @@
 [build]
   publish = "."
-  command = "npm install && node scripts/generate-config.js"
+  command = "npm install && node scripts/fetch-apple-egress-ips.js && node scripts/generate-config.js"
 
 [functions]
   directory = "netlify/functions"

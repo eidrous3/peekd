@@ -89,6 +89,8 @@
 
 .timeline{display:flex;flex-direction:column}
 .tl-event{display:flex;gap:11px;padding-bottom:16px;position:relative}
+.tl-event.tl-proxy .tl-text{color:var(--fg-mute)}
+.tl-event.tl-proxy .tl-meta{font-style:italic}
 .tl-event:not(:last-child)::before{content:'';position:absolute;left:13.5px;top:30px;bottom:0;width:1.5px;background:var(--line)}
 .tl-body{flex:1;min-width:0;padding-top:3px}
 .tl-line{display:flex;align-items:center;gap:7px}

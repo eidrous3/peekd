@@ -3,3 +3,4 @@ config.js
 
 node_modules/
 package-lock.json
+netlify/functions/_apple-egress-ips.json

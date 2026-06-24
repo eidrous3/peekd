@@ -2,6 +2,7 @@
   "name": "peekd",
   "private": true,
   "dependencies": {
+    "ipaddr.js": "^2.2.0",
     "resend": "^4.5.1"
   }
 }

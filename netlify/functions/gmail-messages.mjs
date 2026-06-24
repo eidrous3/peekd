@@ -4,12 +4,18 @@ import {
   getUserFromToken,
   getValidAccessToken,
 } from './_gmail.mjs';
+import {
+  getTrackingByMessageIds,
+  mergeTrackingIntoMessage,
+} from './_tracking.mjs';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
+
+const DEFAULT_LABELS = ['INBOX', 'SENT'];
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -31,7 +37,7 @@ export default async (req) => {
 
   let accountEmail = '';
   let accountId = '';
-  let labelIds = 'INBOX';
+  let labelIds = DEFAULT_LABELS;
   let maxResults = 25;
 
   if (req.method === 'POST') {
@@ -39,16 +45,22 @@ export default async (req) => {
       const body = await req.json();
       accountEmail = body.accountEmail || '';
       accountId = body.accountId || '';
-      if (body.labelIds) labelIds = body.labelIds;
+      if (body.labelIds) {
+        labelIds = Array.isArray(body.labelIds) ? body.labelIds : String(body.labelIds).split(',');
+      }
       if (body.maxResults) maxResults = Math.min(50, Number(body.maxResults) || 25);
     } catch { /* use defaults */ }
   } else {
     const url = new URL(req.url);
     accountEmail = url.searchParams.get('accountEmail') || '';
     accountId = url.searchParams.get('accountId') || '';
-    labelIds = url.searchParams.get('labelIds') || 'INBOX';
+    if (url.searchParams.get('labelIds')) {
+      labelIds = url.searchParams.get('labelIds').split(',');
+    }
     maxResults = Math.min(50, Number(url.searchParams.get('maxResults')) || 25);
   }
+
+  const labels = [...new Set((labelIds.length ? labelIds : DEFAULT_LABELS).map((l) => String(l).trim()).filter(Boolean))];
 
   const accounts = await getConnectedAccounts(user.id, { email: accountEmail || undefined, accountId: accountId || undefined });
   if (!accounts.length) {
@@ -62,16 +74,18 @@ export default async (req) => {
     const accessToken = await getValidAccessToken(account);
     if (!accessToken) continue;
 
-    const result = await fetchGmailInbox(accessToken, { maxResults, labelIds });
-    if (!result.ok) {
-      return json({ ok: false, error: result.error, messages: [] }, 502);
-    }
+    for (const label of labels) {
+      const result = await fetchGmailInbox(accessToken, { maxResults, labelIds: label });
+      if (!result.ok) {
+        return json({ ok: false, error: result.error, messages: [] }, 502);
+      }
 
-    for (const msg of result.messages) {
-      const key = `${account.email}:${msg.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      allMessages.push({ ...msg, accountEmail: account.email });
+      for (const msg of result.messages) {
+        const key = `${account.email}:${msg.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        allMessages.push({ ...msg, accountEmail: account.email });
+      }
     }
   }
 
@@ -81,9 +95,16 @@ export default async (req) => {
     return db - da;
   });
 
+  const messageIds = allMessages.map((m) => m.id).filter(Boolean);
+  const trackingByMessageId = await getTrackingByMessageIds(user.id, messageIds);
+  const messages = allMessages.map((message) => mergeTrackingIntoMessage(
+    message,
+    trackingByMessageId[message.id],
+  ));
+
   return json({
     ok: true,
-    messages: allMessages,
+    messages,
     accounts: accounts.map((a) => ({ id: a.id, email: a.email, is_primary: a.is_primary })),
   });
 };

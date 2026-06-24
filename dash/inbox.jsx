@@ -67,7 +67,7 @@
   function TimelineEvent({ ev, free }) {
     if (ev.type === 'link' && free) return null;
     const iconMap = { sent: 'send', delivered: 'check', opened: 'eye', replied: 'cornerUpLeft', link: 'link', scheduled: 'clock', bounced: 'alertCircle' };
-    return React.createElement('div', { className: 'tl-event' },
+    return React.createElement('div', { className: 'tl-event' + (ev.proxy ? ' tl-proxy' : '') },
       React.createElement('span', { className: 'timeline-ico ti-' + ev.type },
         React.createElement(Icon, { name: iconMap[ev.type], size: 15 })),
       React.createElement('div', { className: 'tl-body' },
@@ -105,6 +105,10 @@
       .concat(e.cc.map((c) => ({ key: c, label: c.split('@')[0], sub: c })));
     const hashStr = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
     const engFor = (key) => {
+      const tracked = (e.recipientOpens || []).find((r) => r.email === key);
+      if (tracked) {
+        return { opens: tracked.opens, last: e.lastOpened, device: e.device, location: e.location };
+      }
       if (key === 'all' || key === e.toEmail) return { opens: e.opens, last: e.lastOpened, device: e.device, location: e.location };
       const h = hashStr(key);
       const devices = ['iPhone', 'MacBook', 'Android', 'Windows', 'iPad'];

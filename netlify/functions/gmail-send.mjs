@@ -4,6 +4,12 @@ import {
   getValidAccessToken,
   sendGmailMessage,
 } from './_gmail.mjs';
+import {
+  createTrackedSend,
+  injectTrackingPixels,
+  updateTrackedSendGmailIds,
+} from './_tracking.mjs';
+import { dbRequest } from './_support.mjs';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -72,6 +78,7 @@ export default async (req) => {
   const subject = String(body.subject || '').trim();
   const html = String(body.html || '').trim();
   const addBranding = body.addBranding === true;
+  const track = body.track !== false;
   const parsedAttachments = parseAttachments(body.attachments);
   if (!parsedAttachments.ok) return json({ error: parsedAttachments.error }, 400);
 
@@ -87,7 +94,24 @@ export default async (req) => {
   const accessToken = await getValidAccessToken(account);
   if (!accessToken) return json({ error: 'token_refresh_failed' }, 502);
 
+  let tracked = null;
+  if (track) {
+    tracked = await createTrackedSend({
+      userId: user.id,
+      fromEmail,
+      subject,
+      to,
+    });
+    if (!tracked.ok) {
+      console.error('[gmail-send] tracking setup failed:', tracked.error);
+      return json({ ok: false, error: tracked.error || 'tracking_setup_failed' }, 502);
+    }
+  }
+
   let finalHtml = html || '<p></p>';
+  if (track && tracked?.pixelUrls?.length) {
+    finalHtml = injectTrackingPixels(finalHtml, tracked.pixelUrls);
+  }
   if (addBranding) {
     finalHtml += '<p style="margin-top:24px;font-size:11px;color:#94a3b8;">Tracked by Peekd</p>';
   }
@@ -100,11 +124,29 @@ export default async (req) => {
     attachments: parsedAttachments.attachments,
   });
 
-  if (!sent.ok) return json({ ok: false, error: sent.error }, 502);
+  if (!sent.ok) {
+    if (tracked?.trackedEmailId) {
+      await dbRequest(`tracked_emails?id=eq.${encodeURIComponent(tracked.trackedEmailId)}`, {
+        method: 'DELETE',
+      });
+    }
+    return json({ ok: false, error: sent.error }, 502);
+  }
+
+  if (track && tracked?.trackedEmailId) {
+    const patch = await updateTrackedSendGmailIds(tracked.trackedEmailId, {
+      gmailMessageId: sent.messageId,
+      gmailThreadId: sent.threadId,
+    });
+    if (!patch.ok) {
+      console.error('[gmail-send] tracking patch failed:', patch.error);
+    }
+  }
 
   return json({
     ok: true,
     messageId: sent.messageId,
     threadId: sent.threadId,
+    trackedEmailId: tracked?.trackedEmailId || null,
   });
 };
