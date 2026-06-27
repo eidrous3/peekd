@@ -46,7 +46,7 @@ export function injectTrackingPixels(html, pixelUrls) {
 
 const ANCHOR_HREF_RE = /<a\b([^>]*?\s)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))([^>]*)>/gi;
 const HTML_TAG_RE = /(<[^>]+>)/g;
-const PLAIN_URL_RE = /\b(?:https?:\/\/[^\s<>"']+|www\.[^\s<>"']+|[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\.[a-z]{2,}(?:\/[^\s<>"']*)?)/gi;
+const PLAIN_URL_RE = /\b(?:https?:\/\/[^\s<>"']+|www\.[^\s<>"']+|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?:\/[^\s<>"']*)?)/gi;
 
 function isPeekdTrackingUrl(value) {
   if (/track-open|track-click/i.test(value)) return true;
