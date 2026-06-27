@@ -347,9 +347,7 @@ export function buildTrackingSummary(trackedEmailRow) {
   const opens = countableEvents.length;
   const lastEvent = countableEvents[countableEvents.length - 1];
   const lastOpened = lastEvent ? relativeTime(new Date(lastEvent.opened_at)) : '—';
-  const hot = lastEvent
-    ? (Date.now() - new Date(lastEvent.opened_at).getTime()) < 3_600_000
-    : false;
+  const hot = opens > 2;
 
   const trackedLinks = trackedEmailRow.tracked_links || [];
   const links = buildLinkActivity(trackedLinks, recipients);

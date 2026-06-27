@@ -29,7 +29,7 @@
         ),
         React.createElement('div', { className: 'mw-subject' + (e.unread ? ' strong' : '') }, e.subject),
         React.createElement('div', { className: 'mw-badges' },
-          e.hot && React.createElement('span', { className: 'badge b-hot' }, '🔥 HOT'),
+          e.opens > 2 && React.createElement('span', { className: 'badge b-hot' }, '🔥 HOT'),
           e.badge && React.createElement('span', { className: 'badge ' + badgeClass[e.badge] }, e.badge),
         ),
         React.createElement('div', { className: 'mw-meta' },
@@ -56,7 +56,7 @@
           React.createElement('span', { className: 'mailrow-meta' },
             e.opens > 0 && React.createElement('span', { className: 'opens-chip' },
               React.createElement(Icon, { name: 'eye', size: 12 }), e.opens),
-            e.hot && React.createElement('span', { className: 'badge b-hot' }, '🔥 HOT'),
+            e.opens > 2 && React.createElement('span', { className: 'badge b-hot' }, '🔥 HOT'),
             e.badge && React.createElement('span', { className: 'badge ' + badgeClass[e.badge] }, e.badge),
           ),
         ),
@@ -400,7 +400,7 @@
         s === 'opened' ? e.badge === 'OPENED' :
         s === 'replied' ? e.badge === 'REPLIED' :
         s === 'sent' ? e.badge === 'SENT' :
-        s === 'hot' ? e.opens >= 3 : false));
+        s === 'hot' ? e.opens > 2 : false));
     }
     if (appTime !== 'any') {
       const maxDays = appTime === 'today' ? 0 : appTime === '7days' ? 7 : 30;
