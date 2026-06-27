@@ -776,21 +776,13 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
   const recentEvents = await fetchRecentOpenEvents(recipient.id, openedAt);
   const recentProxies = recentEvents.filter((event) => isStoredOpenFromProxy(event, sentAt));
   const recentHumans = recentEvents.filter((event) => event.classification === 'human');
+  const humanUpgradesProxy = classification === 'human' && recentProxies.length > 0 && recentHumans.length === 0;
 
-  // Proxy preload after a real open, or duplicate proxy fetch (Gmail/Apple).
-  if (incomingProxy || classification === 'likely_proxy') {
-    if (recentHumans.length || recentProxies.length) {
-      return { ok: true, recorded: false, deduped: true, recipientId: recipient.id };
-    }
-  }
-
-  // Human open after Apple/Gmail proxy preload — keep one real open, drop the preload row(s).
-  if (classification === 'human' && recentProxies.length) {
+  if (humanUpgradesProxy) {
     await deleteOpenEvents(recentProxies);
-  }
-
-  // Gmail image proxy often hits twice; both can classify as human.
-  if (classification === 'human' && incomingProxy && recentHumans.some((event) => isStoredOpenFromProxy(event, sentAt))) {
+  } else if (classification === 'human' && incomingProxy && recentHumans.some((event) => isStoredOpenFromProxy(event, sentAt))) {
+    return { ok: true, recorded: false, deduped: true, recipientId: recipient.id };
+  } else if ((incomingProxy || classification === 'likely_proxy') && (recentHumans.length || recentProxies.length)) {
     return { ok: true, recorded: false, deduped: true, recipientId: recipient.id };
   }
 
