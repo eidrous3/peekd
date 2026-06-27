@@ -13,6 +13,7 @@ import {
 const trackingModuleDir = path.dirname(fileURLToPath(import.meta.url));
 
 const PIXEL_IMG_STYLE = 'display:block;width:1px;height:1px;border:0;';
+const OPEN_DEDUPE_WINDOW_MS = 45_000;
 
 export function generatePixelToken() {
   return crypto.randomBytes(16).toString('base64url');
@@ -720,8 +721,16 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
   }
 
   const recipient = lookup.data[0];
-  const sentAt = recipient.tracked_emails?.sent_at;
   const openedAt = new Date();
+  const since = new Date(openedAt.getTime() - OPEN_DEDUPE_WINDOW_MS).toISOString();
+  const recent = await dbRequest(
+    `email_open_events?tracked_recipient_id=eq.${encodeURIComponent(recipient.id)}&opened_at=gte.${encodeURIComponent(since)}&select=id&limit=1`,
+  );
+  if (recent.ok && recent.data?.length) {
+    return { ok: true, recorded: false, deduped: true, recipientId: recipient.id };
+  }
+
+  const sentAt = recipient.tracked_emails?.sent_at;
   const classification = classifyOpen({
     ip,
     userAgent,
