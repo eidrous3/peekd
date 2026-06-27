@@ -288,18 +288,19 @@
     const searchRef = useRef(null);
     const filterRef = useRef(null);
 
-    async function loadInbox(accountEmail) {
+    async function loadInbox(accountEmail, { silent = false } = {}) {
       if (!window.PeekdGmail?.fetchInbox) {
-        setInboxStatus('error');
+        if (!silent) setInboxStatus('error');
         return;
       }
-      setInboxStatus('loading');
+      if (!silent) setInboxStatus('loading');
       const res = await window.PeekdGmail.fetchInbox({
         accountEmail: accountEmail && accountEmail !== 'all' ? accountEmail : undefined,
         labelIds: 'INBOX,SENT',
         maxResults: 30,
       });
       if (!res.ok) {
+        if (silent) return;
         setEmails([]);
         setGmailAccounts(res.accounts || []);
         setInboxStatus(res.error === 'no_gmail_account' ? 'no_account' : 'error');
@@ -309,8 +310,17 @@
       setEmails(res.messages || []);
       setGmailAccounts(res.accounts || []);
       setInboxStatus('ready');
-      if (res.messages?.length) setSel(res.messages[0].id);
-      else setSel(null);
+      if (silent) {
+        setSel((current) => {
+          if (!res.messages?.length) return null;
+          if (current && res.messages.some((m) => m.id === current)) return current;
+          return current ?? res.messages[0].id;
+        });
+      } else if (res.messages?.length) {
+        setSel(res.messages[0].id);
+      } else {
+        setSel(null);
+      }
       if (window.PeekdPeople?.ensurePeopleFromInboxMessages) {
         const accountEmails = (res.accounts || []).map((a) => a.email);
         window.PeekdPeople.ensurePeopleFromInboxMessages(res.messages, { excludeEmails: accountEmails }).catch(() => {});
@@ -318,6 +328,12 @@
     }
 
     useEffect(() => { loadInbox(acct); }, [inboxRefreshKey]);
+
+    useEffect(() => {
+      if (inboxStatus !== 'ready') return undefined;
+      const timer = setInterval(() => loadInbox(acct, { silent: true }), 60_000);
+      return () => clearInterval(timer);
+    }, [acct, inboxStatus]);
 
     useEffect(() => {
       setHeaderExtra(React.createElement(AccountFilter, { acct, onSelect: (v) => { setAcct(v); loadInbox(v); }, accounts: gmailAccounts }));
