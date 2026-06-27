@@ -45,15 +45,78 @@ export function injectTrackingPixels(html, pixelUrls) {
 }
 
 const ANCHOR_HREF_RE = /<a\b([^>]*?\s)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))([^>]*)>/gi;
+const HTML_TAG_RE = /(<[^>]+>)/g;
+const PLAIN_URL_RE = /\b(?:https?:\/\/[^\s<>"']+|www\.[^\s<>"']+|[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\.[a-z]{2,}(?:\/[^\s<>"']*)?)/gi;
+
+function isPeekdTrackingUrl(value) {
+  if (/track-open|track-click/i.test(value)) return true;
+  return /\/t\//.test(value) && /getpeekd\.com|netlify\.app|localhost/i.test(value);
+}
+
+export function stripTrailingUrlPunctuation(value) {
+  return String(value || '').replace(/[.,;:!?)\]}]+$/g, '');
+}
+
+export function normalizeTrackableHref(href) {
+  const value = stripTrailingUrlPunctuation(String(href || '').trim());
+  if (!value || value.startsWith('#')) return null;
+  if (/^(mailto:|tel:|javascript:|data:)/i.test(value)) return null;
+  if (isPeekdTrackingUrl(value)) return null;
+
+  let candidate = value;
+  if (/^\/\//.test(candidate)) {
+    candidate = `https:${candidate}`;
+  } else if (!/^https?:\/\//i.test(candidate)) {
+    if (!/^(www\.|[a-z0-9][-a-z0-9.]*\.[a-z]{2,}(\/|$))/i.test(candidate)) {
+      return null;
+    }
+    candidate = `https://${candidate}`;
+  }
+
+  try {
+    const url = new URL(candidate);
+    if (!/^https?:$/i.test(url.protocol)) return null;
+    if (!url.hostname.includes('.')) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
 
 export function isTrackableHref(href) {
-  const value = String(href || '').trim();
-  if (!value || value.startsWith('#')) return false;
-  if (/^(mailto:|tel:|javascript:|data:)/i.test(value)) return false;
-  if (!/^https?:\/\//i.test(value)) return false;
-  if (/\/t\//.test(value) && /getpeekd\.com|netlify\.app|localhost/i.test(value)) return false;
-  if (/track-open|track-click/i.test(value)) return false;
-  return true;
+  return normalizeTrackableHref(href) != null;
+}
+
+function linkifyTextSegment(text) {
+  return String(text || '').replace(PLAIN_URL_RE, (match) => {
+    const cleaned = stripTrailingUrlPunctuation(match);
+    const normalized = normalizeTrackableHref(cleaned);
+    if (!normalized) return match;
+    const suffix = match.slice(cleaned.length);
+    return `<a href="${normalized}">${cleaned}</a>${suffix}`;
+  });
+}
+
+export function linkifyPlainUrlsInHtml(html) {
+  const parts = String(html || '').split(HTML_TAG_RE);
+  let insideAnchor = 0;
+  let insideSkip = 0;
+
+  return parts.map((part) => {
+    if (part.startsWith('<')) {
+      if (/^<a\b/i.test(part)) insideAnchor += 1;
+      else if (/^<\/a>/i.test(part)) insideAnchor = Math.max(0, insideAnchor - 1);
+      else if (/^<(script|style)\b/i.test(part)) insideSkip += 1;
+      else if (/^<\/(script|style)>/i.test(part)) insideSkip = Math.max(0, insideSkip - 1);
+      return part;
+    }
+    if (insideAnchor > 0 || insideSkip > 0) return part;
+    return linkifyTextSegment(part);
+  }).join('');
+}
+
+export function prepareHtmlForLinkTracking(html) {
+  return linkifyPlainUrlsInHtml(String(html || ''));
 }
 
 export function extractTrackableHrefs(html) {
@@ -63,7 +126,8 @@ export function extractTrackableHrefs(html) {
   let match = ANCHOR_HREF_RE.exec(body);
   while (match) {
     const href = match[2] || match[3] || match[4] || '';
-    if (isTrackableHref(href)) urls.add(href);
+    const normalized = normalizeTrackableHref(href);
+    if (normalized) urls.add(normalized);
     match = ANCHOR_HREF_RE.exec(body);
   }
   ANCHOR_HREF_RE.lastIndex = 0;
@@ -76,7 +140,8 @@ export function wrapLinksInHtml(html, urlToTrackingHref) {
 
   return String(html || '').replace(ANCHOR_HREF_RE, (full, before, dbl, sgl, bare, after) => {
     const href = dbl || sgl || bare || '';
-    const trackingHref = map.get(href);
+    const normalized = normalizeTrackableHref(href);
+    const trackingHref = normalized ? map.get(normalized) : null;
     if (!trackingHref) return full;
     const quote = dbl != null ? '"' : (sgl != null ? "'" : '');
     if (quote) return `<a${before}href=${quote}${trackingHref}${quote}${after}>`;
@@ -85,9 +150,10 @@ export function wrapLinksInHtml(html, urlToTrackingHref) {
 }
 
 export async function createTrackedLinksForSend(trackedEmailId, html) {
-  const originalUrls = extractTrackableHrefs(html);
+  const preparedHtml = prepareHtmlForLinkTracking(html);
+  const originalUrls = extractTrackableHrefs(preparedHtml);
   if (!trackedEmailId || !originalUrls.length) {
-    return { ok: true, links: [], urlToTrackingHref: new Map() };
+    return { ok: true, links: [], urlToTrackingHref: new Map(), preparedHtml };
   }
 
   const rows = originalUrls.map((originalUrl) => ({
@@ -111,7 +177,7 @@ export async function createTrackedLinksForSend(trackedEmailId, html) {
     urlToTrackingHref.set(row.original_url, clickTrackUrl(row.click_token));
   }
 
-  return { ok: true, links: res.data, urlToTrackingHref };
+  return { ok: true, links: res.data, urlToTrackingHref, preparedHtml };
 }
 
 function normalizeEmail(email) {

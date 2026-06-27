@@ -117,9 +117,12 @@ export default async (req) => {
   }
   if (track && trackLinks && tracked?.trackedEmailId) {
     const links = await createTrackedLinksForSend(tracked.trackedEmailId, finalHtml);
-    if (links.ok && links.urlToTrackingHref?.size) {
-      finalHtml = wrapLinksInHtml(finalHtml, links.urlToTrackingHref);
-    } else if (!links.ok) {
+    if (links.ok) {
+      if (links.preparedHtml) finalHtml = links.preparedHtml;
+      if (links.urlToTrackingHref?.size) {
+        finalHtml = wrapLinksInHtml(finalHtml, links.urlToTrackingHref);
+      }
+    } else {
       console.error('[gmail-send] link tracking setup failed:', links.error);
     }
   }
