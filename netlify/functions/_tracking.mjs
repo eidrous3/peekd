@@ -553,6 +553,48 @@ export function isAppleProxyIp(ip) {
   return bucket.some((cidr) => ipInCidr(value, cidr));
 }
 
+export function isProxyPixelFetch({ ip, userAgent, sentAt, openedAt = new Date() }) {
+  if (isGmailImageProxy(userAgent)) return true;
+  if (isAppleProxyIp(ip)) return true;
+  if (isPrefetchBotUserAgent(userAgent)) return true;
+  if (isGoogleInfrastructureIp(ip) && isGmailImageProxy(userAgent)) return true;
+  if (isGoogleInfrastructureIp(ip) && !looksLikeHumanBrowser(userAgent)) return true;
+
+  const sentMs = sentAt ? new Date(sentAt).getTime() : NaN;
+  const openedMs = openedAt instanceof Date ? openedAt.getTime() : new Date(openedAt).getTime();
+  if (!Number.isNaN(sentMs) && !Number.isNaN(openedMs)) {
+    const secondsSinceSend = (openedMs - sentMs) / 1000;
+    if (secondsSinceSend >= 0 && secondsSinceSend < 60 && isAppleProxyIp(ip)) return true;
+  }
+
+  return false;
+}
+
+function isStoredOpenFromProxy(event, sentAt) {
+  if (!event) return false;
+  if (event.classification === 'likely_proxy') return true;
+  return isProxyPixelFetch({
+    ip: event.ip,
+    userAgent: event.user_agent,
+    sentAt,
+    openedAt: event.opened_at ? new Date(event.opened_at) : new Date(),
+  });
+}
+
+async function fetchRecentOpenEvents(recipientId, openedAt) {
+  const since = new Date(openedAt.getTime() - OPEN_DEDUPE_WINDOW_MS).toISOString();
+  const res = await dbRequest(
+    `email_open_events?tracked_recipient_id=eq.${encodeURIComponent(recipientId)}&opened_at=gte.${encodeURIComponent(since)}&select=id,classification,user_agent,ip,opened_at&order=opened_at.desc&limit=5`,
+  );
+  return res.ok && Array.isArray(res.data) ? res.data : [];
+}
+
+async function deleteOpenEvents(events) {
+  const ids = (events || []).map((event) => event.id).filter(Boolean);
+  if (!ids.length) return;
+  await dbRequest(`email_open_events?id=in.${postgrestInFilter(ids)}`, { method: 'DELETE' });
+}
+
 export function classifyOpen({ ip, userAgent, sentAt, openedAt = new Date() }) {
   // Gmail wraps all remote images through GoogleImageProxy — that is the real open signal for Gmail.
   if (isGmailImageProxy(userAgent)) return 'human';
@@ -721,22 +763,36 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
   }
 
   const recipient = lookup.data[0];
-  const openedAt = new Date();
-  const since = new Date(openedAt.getTime() - OPEN_DEDUPE_WINDOW_MS).toISOString();
-  const recent = await dbRequest(
-    `email_open_events?tracked_recipient_id=eq.${encodeURIComponent(recipient.id)}&opened_at=gte.${encodeURIComponent(since)}&select=id&limit=1`,
-  );
-  if (recent.ok && recent.data?.length) {
-    return { ok: true, recorded: false, deduped: true, recipientId: recipient.id };
-  }
-
   const sentAt = recipient.tracked_emails?.sent_at;
+  const openedAt = new Date();
+  const incomingProxy = isProxyPixelFetch({ ip, userAgent, sentAt, openedAt });
   const classification = classifyOpen({
     ip,
     userAgent,
     sentAt,
     openedAt,
   });
+
+  const recentEvents = await fetchRecentOpenEvents(recipient.id, openedAt);
+  const recentProxies = recentEvents.filter((event) => isStoredOpenFromProxy(event, sentAt));
+  const recentHumans = recentEvents.filter((event) => event.classification === 'human');
+
+  // Proxy preload after a real open, or duplicate proxy fetch (Gmail/Apple).
+  if (incomingProxy || classification === 'likely_proxy') {
+    if (recentHumans.length || recentProxies.length) {
+      return { ok: true, recorded: false, deduped: true, recipientId: recipient.id };
+    }
+  }
+
+  // Human open after Apple/Gmail proxy preload — keep one real open, drop the preload row(s).
+  if (classification === 'human' && recentProxies.length) {
+    await deleteOpenEvents(recentProxies);
+  }
+
+  // Gmail image proxy often hits twice; both can classify as human.
+  if (classification === 'human' && incomingProxy && recentHumans.some((event) => isStoredOpenFromProxy(event, sentAt))) {
+    return { ok: true, recorded: false, deduped: true, recipientId: recipient.id };
+  }
 
   const insert = await dbRequest('email_open_events', {
     method: 'POST',
