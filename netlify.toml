@@ -16,5 +16,11 @@
   to = "/Peekd Admin Support.html"
   status = 200
 
+[[redirects]]
+  from = "/t/:token"
+  to = "/.netlify/functions/track-click?k=:token"
+  status = 200
+  force = true
+
 [build.environment]
   NODE_VERSION = "20"

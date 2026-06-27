@@ -35,7 +35,7 @@
     };
   }
 
-  async function sendEmail({ fromEmail, to, subject, html, addBranding, attachments }) {
+  async function sendEmail({ fromEmail, to, subject, html, addBranding, trackLinks, attachments }) {
     const s = await session();
     if (!s?.access_token) return { ok: false, error: 'no_session' };
 
@@ -55,6 +55,7 @@
         subject: String(subject || '').trim(),
         html: String(html || '').trim(),
         track: true,
+        trackLinks: trackLinks === true,
         addBranding: !!addBranding,
         attachments: Array.isArray(attachments)
           ? attachments.map((a) => ({

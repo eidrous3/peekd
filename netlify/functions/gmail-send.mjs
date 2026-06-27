@@ -6,8 +6,10 @@ import {
 } from './_gmail.mjs';
 import {
   createTrackedSend,
+  createTrackedLinksForSend,
   injectTrackingPixels,
   updateTrackedSendGmailIds,
+  wrapLinksInHtml,
 } from './_tracking.mjs';
 import { dbRequest } from './_support.mjs';
 
@@ -79,6 +81,7 @@ export default async (req) => {
   const html = String(body.html || '').trim();
   const addBranding = body.addBranding === true;
   const track = body.track !== false;
+  const trackLinks = body.trackLinks === true;
   const parsedAttachments = parseAttachments(body.attachments);
   if (!parsedAttachments.ok) return json({ error: parsedAttachments.error }, 400);
 
@@ -111,6 +114,14 @@ export default async (req) => {
   let finalHtml = html || '<p></p>';
   if (track && tracked?.pixelUrls?.length) {
     finalHtml = injectTrackingPixels(finalHtml, tracked.pixelUrls);
+  }
+  if (track && trackLinks && tracked?.trackedEmailId) {
+    const links = await createTrackedLinksForSend(tracked.trackedEmailId, finalHtml);
+    if (links.ok && links.urlToTrackingHref?.size) {
+      finalHtml = wrapLinksInHtml(finalHtml, links.urlToTrackingHref);
+    } else if (!links.ok) {
+      console.error('[gmail-send] link tracking setup failed:', links.error);
+    }
   }
   if (addBranding) {
     finalHtml += '<p style="margin-top:24px;font-size:11px;color:#94a3b8;">Tracked by Peekd</p>';

@@ -18,6 +18,15 @@ export function generatePixelToken() {
   return crypto.randomBytes(16).toString('base64url');
 }
 
+export function generateClickToken() {
+  return generatePixelToken();
+}
+
+export function clickTrackUrl(token) {
+  const base = siteUrl();
+  return `${base}/t/${String(token || '').trim()}`;
+}
+
 export function pixelOpenUrl(token) {
   const base = siteUrl();
   return `${base}/.netlify/functions/track-open?k=${encodeURIComponent(token)}`;
@@ -33,6 +42,76 @@ export function injectTrackingPixels(html, pixelUrls) {
   )).join('');
 
   return `${body}${tags}`;
+}
+
+const ANCHOR_HREF_RE = /<a\b([^>]*?\s)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))([^>]*)>/gi;
+
+export function isTrackableHref(href) {
+  const value = String(href || '').trim();
+  if (!value || value.startsWith('#')) return false;
+  if (/^(mailto:|tel:|javascript:|data:)/i.test(value)) return false;
+  if (!/^https?:\/\//i.test(value)) return false;
+  if (/\/t\//.test(value) && /getpeekd\.com|netlify\.app|localhost/i.test(value)) return false;
+  if (/track-open|track-click/i.test(value)) return false;
+  return true;
+}
+
+export function extractTrackableHrefs(html) {
+  const urls = new Set();
+  const body = String(html || '');
+  ANCHOR_HREF_RE.lastIndex = 0;
+  let match = ANCHOR_HREF_RE.exec(body);
+  while (match) {
+    const href = match[2] || match[3] || match[4] || '';
+    if (isTrackableHref(href)) urls.add(href);
+    match = ANCHOR_HREF_RE.exec(body);
+  }
+  ANCHOR_HREF_RE.lastIndex = 0;
+  return [...urls];
+}
+
+export function wrapLinksInHtml(html, urlToTrackingHref) {
+  const map = urlToTrackingHref instanceof Map ? urlToTrackingHref : new Map(Object.entries(urlToTrackingHref || {}));
+  if (!map.size) return String(html || '');
+
+  return String(html || '').replace(ANCHOR_HREF_RE, (full, before, dbl, sgl, bare, after) => {
+    const href = dbl || sgl || bare || '';
+    const trackingHref = map.get(href);
+    if (!trackingHref) return full;
+    const quote = dbl != null ? '"' : (sgl != null ? "'" : '');
+    if (quote) return `<a${before}href=${quote}${trackingHref}${quote}${after}>`;
+    return `<a${before}href="${trackingHref}"${after}>`;
+  });
+}
+
+export async function createTrackedLinksForSend(trackedEmailId, html) {
+  const originalUrls = extractTrackableHrefs(html);
+  if (!trackedEmailId || !originalUrls.length) {
+    return { ok: true, links: [], urlToTrackingHref: new Map() };
+  }
+
+  const rows = originalUrls.map((originalUrl) => ({
+    tracked_email_id: trackedEmailId,
+    original_url: originalUrl,
+    click_token: generateClickToken(),
+  }));
+
+  const res = await dbRequest('tracked_links', {
+    method: 'POST',
+    body: rows,
+    prefer: 'return=representation',
+  });
+
+  if (!res.ok || !Array.isArray(res.data)) {
+    return { ok: false, error: res.error || 'tracked_link_create_failed' };
+  }
+
+  const urlToTrackingHref = new Map();
+  for (const row of res.data) {
+    urlToTrackingHref.set(row.original_url, clickTrackUrl(row.click_token));
+  }
+
+  return { ok: true, links: res.data, urlToTrackingHref };
 }
 
 function normalizeEmail(email) {
@@ -160,6 +239,7 @@ export async function getTrackingByMessageIds(userId, gmailMessageIds) {
     'subject',
     'from_email',
     'tracked_recipients(id,email,email_open_events(id,opened_at,classification,user_agent,ip))',
+    'tracked_links(id,original_url,click_token,email_click_events(id,clicked_at,classification,user_agent,ip))',
   ].join(',');
 
   const res = await dbRequest(
@@ -205,6 +285,10 @@ export function buildTrackingSummary(trackedEmailRow) {
     ? (Date.now() - new Date(lastEvent.opened_at).getTime()) < 3_600_000
     : false;
 
+  const trackedLinks = trackedEmailRow.tracked_links || [];
+  const links = buildLinkActivity(trackedLinks, recipients);
+  const clickTimeline = buildClickTimelineEntries(trackedLinks, recipients);
+
   return {
     trackedEmailId: trackedEmailRow.id,
     gmailMessageId: trackedEmailRow.gmail_message_id,
@@ -217,7 +301,9 @@ export function buildTrackingSummary(trackedEmailRow) {
     timeline: buildTimelineFromEvents({
       sentAt: sentDate,
       recipients,
+      clickTimeline,
     }),
+    links,
     recipientOpens: recipients.map((r) => ({
       email: r.email,
       name: r.name,
@@ -226,7 +312,7 @@ export function buildTrackingSummary(trackedEmailRow) {
   };
 }
 
-export function buildTimelineFromEvents({ sentAt, recipients }) {
+export function buildTimelineFromEvents({ sentAt, recipients, clickTimeline = [] }) {
   const sentMeta = formatMessageTime(sentAt instanceof Date ? sentAt.toISOString() : sentAt);
   const timeline = [
     { type: 'sent', label: 'Sent', meta: sentMeta },
@@ -255,15 +341,22 @@ export function buildTimelineFromEvents({ sentAt, recipients }) {
         label: count <= 1 ? 'opened' : `opened again (×${count})`,
         meta: 'Email client',
         time: formatMessageTime(event.opened_at),
-        openedAt: openedDate.getTime(),
+        sortAt: openedDate.getTime(),
         proxy: false,
         classification: event.classification || 'human',
       });
     }
   }
 
-  entries.sort((a, b) => a.openedAt - b.openedAt);
-  return timeline.concat(entries.map(({ openedAt, ...rest }) => rest));
+  for (const clickEntry of clickTimeline || []) {
+    entries.push({
+      ...clickEntry,
+      sortAt: clickEntry.sortAt ?? new Date(clickEntry.clickedAt || 0).getTime(),
+    });
+  }
+
+  entries.sort((a, b) => a.sortAt - b.sortAt);
+  return timeline.concat(entries.map(({ sortAt, clickedAt, ...rest }) => rest));
 }
 
 export function mergeTrackingIntoMessage(message, tracking) {
@@ -275,6 +368,7 @@ export function mergeTrackingIntoMessage(message, tracking) {
     lastOpened: tracking.lastOpened,
     hot: tracking.hot,
     timeline: tracking.timeline?.length ? tracking.timeline : message.timeline,
+    links: tracking.links?.length ? tracking.links : message.links,
     recipientOpens: tracking.recipientOpens || [],
     trackedEmailId: tracking.trackedEmailId,
   };
@@ -422,6 +516,131 @@ export function resolveEventClassification(event, sentAt) {
     sentAt,
     openedAt: event?.opened_at ? new Date(event.opened_at) : new Date(),
   });
+}
+
+export function displayUrlForLink(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    const host = parsed.host.replace(/^www\./i, '');
+    const path = parsed.pathname === '/' ? '' : parsed.pathname;
+    return `${host}${path}` || host;
+  } catch {
+    return String(url || '').replace(/^https?:\/\//i, '').slice(0, 80);
+  }
+}
+
+export function isCountableClick(event) {
+  return event?.classification !== 'likely_proxy';
+}
+
+export function classifyClick({ ip, userAgent }) {
+  if (isPrefetchBotUserAgent(userAgent)) return 'likely_proxy';
+  if (isGoogleInfrastructureIp(ip) && !looksLikeHumanBrowser(userAgent)) return 'likely_proxy';
+  if (looksLikeHumanBrowser(userAgent)) return 'human';
+  return 'unknown';
+}
+
+export function buildLinkActivity(trackedLinks, recipients) {
+  const singleRecipient = (recipients || []).length === 1 ? recipients[0] : null;
+  const rows = (trackedLinks || []).map((link) => {
+    const events = [...(link.email_click_events || [])]
+      .filter(isCountableClick)
+      .sort((a, b) => new Date(a.clicked_at).getTime() - new Date(b.clicked_at).getTime());
+    const clicks = events.length;
+    if (!clicks) return null;
+
+    const lastEvent = events[events.length - 1];
+    const byLabel = singleRecipient
+      ? `${singleRecipient.name} ×${clicks}`
+      : `${clicks} click${clicks === 1 ? '' : 's'}`;
+
+    return {
+      url: displayUrlForLink(link.original_url),
+      clicks,
+      last: relativeTime(new Date(lastEvent.clicked_at)),
+      by: byLabel,
+      w: 0,
+    };
+  }).filter(Boolean);
+
+  if (!rows.length) return [];
+
+  const maxClicks = Math.max(...rows.map((row) => row.clicks), 1);
+  return rows
+    .map((row) => ({ ...row, w: Math.round((row.clicks / maxClicks) * 100) }))
+    .sort((a, b) => b.clicks - a.clicks);
+}
+
+export function buildClickTimelineEntries(trackedLinks, recipients) {
+  const singleRecipient = (recipients || []).length === 1 ? recipients[0] : null;
+  const clickCounts = new Map();
+  const entries = [];
+
+  for (const link of trackedLinks || []) {
+    const events = [...(link.email_click_events || [])]
+      .filter(isCountableClick)
+      .sort((a, b) => new Date(a.clicked_at).getTime() - new Date(b.clicked_at).getTime());
+
+    for (const event of events) {
+      const key = link.original_url;
+      const count = (clickCounts.get(key) || 0) + 1;
+      clickCounts.set(key, count);
+      const clickedAt = new Date(event.clicked_at);
+
+      entries.push({
+        type: 'link',
+        who: singleRecipient?.name || null,
+        av: singleRecipient?.initials || null,
+        label: count <= 1 ? 'clicked a link' : `clicked a link (×${count})`,
+        meta: displayUrlForLink(link.original_url),
+        time: formatMessageTime(event.clicked_at),
+        clickedAt: clickedAt.getTime(),
+        sortAt: clickedAt.getTime(),
+      });
+    }
+  }
+
+  return entries;
+}
+
+export async function recordLinkClick({ clickToken, ip, userAgent }) {
+  const token = String(clickToken || '').trim();
+  if (!token) return { ok: true, recorded: false };
+
+  const lookup = await dbRequest(
+    `tracked_links?click_token=eq.${encodeURIComponent(token)}&select=id,original_url,tracked_emails(sent_at)`,
+  );
+
+  if (!lookup.ok || !lookup.data?.[0]) {
+    return { ok: true, recorded: false };
+  }
+
+  const link = lookup.data[0];
+  const clickedAt = new Date();
+  const classification = classifyClick({ ip, userAgent });
+
+  const insert = await dbRequest('email_click_events', {
+    method: 'POST',
+    body: {
+      tracked_link_id: link.id,
+      ip: ip || null,
+      user_agent: userAgent ? String(userAgent).slice(0, 500) : null,
+      classification,
+      clicked_at: clickedAt.toISOString(),
+    },
+    prefer: 'return=minimal',
+  });
+
+  if (!insert.ok) {
+    return { ok: false, recorded: false, error: insert.error };
+  }
+
+  return {
+    ok: true,
+    recorded: true,
+    redirectUrl: link.original_url,
+    classification,
+  };
 }
 
 export async function recordPixelOpen({ pixelToken, ip, userAgent }) {

@@ -121,6 +121,7 @@
         subject: subject.trim(),
         html: body,
         addBranding: free,
+        trackLinks: !free,
         attachments: attachments.map((file) => ({
           filename: file.name,
           mimeType: file.mimeType,
