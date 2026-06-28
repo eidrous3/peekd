@@ -34,61 +34,19 @@
     return wrapped;
   }
 
-  async function checkEmailExists(email) {
-    try {
-      const res = await fetch('/.netlify/functions/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { exists: false, checked: false };
-      return { exists: data.exists === true, checked: true };
-    } catch {
-      return { exists: false, checked: false };
-    }
-  }
-
-  async function probeExistingViaSignUp(email) {
-    const sb = client();
-    if (!sb) return false;
-    const { data, error } = await sb.auth.signUp({
-      email,
-      password: `Pk${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}1!`,
-    });
-    const identities = data?.user?.identities;
-    if (Array.isArray(identities) && identities.length === 0) return true;
-    if (error && /already|registered|exists/i.test(error.message || '')) return true;
-    return false;
-  }
-
-  async function isExistingUser(email) {
-    const check = await checkEmailExists(email);
-    if (check.exists) return true;
-    if (check.checked) return false;
-    return probeExistingViaSignUp(email);
-  }
-
-  async function sendMagicLink(email, { signup = false } = {}) {
+  async function sendMagicLink(email) {
     const sb = client();
     if (!sb) throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in Netlify.');
 
     const clean = cleanEmail(email);
     const redirectTo = new URL('Peekd Dashboard.html', window.location.href).href;
-    let existingUser = false;
-    let shouldCreateUser = signup;
-
-    if (signup) {
-      existingUser = await isExistingUser(clean);
-      if (existingUser) shouldCreateUser = false;
-    }
 
     const { error } = await sb.auth.signInWithOtp({
       email: clean,
-      options: { emailRedirectTo: redirectTo, shouldCreateUser },
+      options: { emailRedirectTo: redirectTo, shouldCreateUser: true },
     });
     if (error) throw wrapError(error);
-    return { email: clean, existingUser: !!existingUser };
+    return { email: clean };
   }
 
   async function signInWithOAuth(provider) {

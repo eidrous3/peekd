@@ -55,10 +55,10 @@
     }
     if (/invalid email/i.test(msg)) return 'Please enter a valid email address.';
     if (/signup.*disabled|signups not allowed/i.test(msg)) {
-      return 'Sign up is unavailable. Try signing in with an existing account.';
+      return 'New accounts are temporarily unavailable. Please try again later.';
     }
     if (/user not found|no user/i.test(msg)) {
-      return 'No account found for this email. Try signing up instead.';
+      return 'We could not send a link to that email. Please try again.';
     }
     return msg || 'Something went wrong. Please try again.';
   }

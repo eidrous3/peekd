@@ -125,9 +125,9 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
           </span>
           <span class="brand-word">Peekd</span>
         </a>
-        <div class="eyebrow" id="eyebrow">Welcome back</div>
+        <div class="eyebrow" id="eyebrow">Welcome</div>
         <h1 id="heading">Sign in to Peekd</h1>
-        <p class="lede" id="lede">We'll email you a magic link — no password needed.</p>
+        <p class="lede" id="lede">Enter your email and we'll send a magic link — new accounts are created automatically.</p>
 
         <div class="config-warn" id="configWarn" hidden>
           Supabase is not connected. 
@@ -165,7 +165,6 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
           </button>
         </div>
 
-        <p class="swap" id="swapRow">Don't have an account? <button type="button" id="modeToggle">Sign up free</button></p>
         <p class="terms">By continuing, you agree to Peekd's <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</p>
       </div>
 
@@ -196,9 +195,6 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
 <script src="dash/sanitize.js"></script>
 <script src="dash/auth.js"></script>
 <script>
-  const params = new URLSearchParams(window.location.search);
-  let mode = params.get('mode') === 'signup' ? 'signup' : 'signin';
-
   const form = document.getElementById('magicForm');
   const emailInput = document.getElementById('email');
   const emailErr = document.getElementById('emailErr');
@@ -241,25 +237,6 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
     return result.email;
   }
 
-  function setMode(next) {
-    mode = next;
-    const signup = mode === 'signup';
-    document.title = signup ? 'Peekd — Sign up' : 'Peekd — Sign in';
-    document.getElementById('eyebrow').textContent = signup ? 'Get started' : 'Welcome back';
-    document.getElementById('heading').textContent = signup ? 'Create your Peekd account' : 'Sign in to Peekd';
-    document.getElementById('lede').textContent = signup
-      ? 'We\'ll email you a magic link to create your account — no password needed.'
-      : 'We\'ll email you a magic link to sign in — no password needed.';
-    submitBtn.innerHTML = 'Send magic link <span>→</span>';
-    document.getElementById('swapRow').innerHTML = signup
-      ? 'Already have an account? <button type="button" id="modeToggle">Sign in</button>'
-      : 'Don\'t have an account? <button type="button" id="modeToggle">Sign up free</button>';
-    document.getElementById('modeToggle').addEventListener('click', () => {
-      setMode(mode === 'signup' ? 'signin' : 'signup');
-      history.replaceState(null, '', mode === 'signup' ? '?mode=signup' : 'Peekd Login.html');
-    });
-  }
-
   function startCountdown() {
     const wait = document.getElementById('resendWait');
     const btn = document.getElementById('resendBtn');
@@ -273,26 +250,14 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
     }, 1000);
   }
 
-  const EXISTING_TOAST = 'You\'re already signed up. A login link will be sent to your email.';
-
   async function submitEmail(email) {
-    const result = await window.PeekdAuth.sendMagicLink(email, { signup: mode === 'signup' });
+    const result = await window.PeekdAuth.sendMagicLink(email);
     const clean = result.email;
-    const existingUser = !!result.existingUser;
-
     lastEmail = clean;
-
-    if (mode === 'signup' && existingUser) {
-      showToast(EXISTING_TOAST, { warn: true });
-      return;
-    }
-
     sentEmail.textContent = clean;
-    document.getElementById('sentHeading').textContent = mode === 'signup' ? 'Almost there' : 'Check your inbox';
+    document.getElementById('sentHeading').textContent = 'Check your inbox';
     const safe = window.PeekdSanitize.escapeHtml(clean);
-    document.getElementById('sentLede').innerHTML = (mode === 'signup'
-      ? 'We sent a sign-up link to<br><strong>'
-      : 'We sent a magic link to<br><strong>') + safe + '</strong>';
+    document.getElementById('sentLede').innerHTML = 'We sent a magic link to<br><strong>' + safe + '</strong>';
     formState.hidden = true;
     sentState.hidden = false;
     startCountdown();
@@ -326,11 +291,7 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
     if (!v || submitting) return;
     submitting = true;
     try {
-      const result = await window.PeekdAuth.sendMagicLink(v, { signup: mode === 'signup' });
-      if (mode === 'signup' && result.existingUser) {
-        showToast(EXISTING_TOAST, { warn: true });
-        return;
-      }
+      await window.PeekdAuth.sendMagicLink(v);
       startCountdown();
     } catch (err) {
       showEmailError(err.message || 'Could not resend link');
@@ -353,8 +314,6 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
     clearEmailError();
     window.PeekdAuth.signInWithOAuth('azure').catch(err => showEmailError(err.message));
   });
-
-  setMode(mode);
 
   if (!window.PeekdAuth.ready()) {
     document.getElementById('configWarn').hidden = false;
