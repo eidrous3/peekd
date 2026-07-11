@@ -3,7 +3,6 @@
   const { useState, useEffect, useRef } = React;
   const Icon = window.Icon;
   const { Avatar } = window;
-  const D = window.PeekdData;
 
   // Track the mobile breakpoint so the inbox can switch to a single-column,
   // full-screen-detail flow without touching the desktop split view.
@@ -103,20 +102,36 @@
     // Recipient list + per-recipient sample engagement
     const recipients = [{ key: 'all', label: 'All recipients' }, { key: e.toEmail, label: e.to, sub: e.toEmail }]
       .concat(e.cc.map((c) => ({ key: c, label: c.split('@')[0], sub: c })));
-    const hashStr = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
     const engFor = (key) => {
-      const tracked = (e.recipientOpens || []).find((r) => r.email === key);
-      if (tracked) {
-        return { opens: tracked.opens, last: e.lastOpened, device: e.device, location: e.location };
+      if (key === 'all') {
+        const all = e.engagementAll || {
+          opens: e.opens,
+          lastOpened: e.lastOpened,
+          device: e.device,
+          location: e.location,
+        };
+        return {
+          opens: all.opens ?? e.opens ?? 0,
+          last: all.lastOpened ?? e.lastOpened ?? '—',
+          device: all.device ?? e.device ?? '—',
+          location: all.location ?? e.location ?? '—',
+        };
       }
-      if (key === 'all' || key === e.toEmail) return { opens: e.opens, last: e.lastOpened, device: e.device, location: e.location };
-      const h = hashStr(key);
-      const devices = ['iPhone', 'MacBook', 'Android', 'Windows', 'iPad'];
-      const locations = ['New York, NY', 'London, UK', 'Berlin, DE', 'Toronto, CA', 'Remote'];
-      const lasts = ['5m ago', '1h ago', '3h ago', 'Yesterday', '2 days ago'];
-      return { opens: 1 + (h % 4), last: lasts[h % lasts.length], device: devices[h % devices.length], location: locations[(h >>> 3) % locations.length] };
+      const tracked = (e.recipientEngagement || []).find((r) => r.email === key);
+      if (tracked) {
+        return {
+          opens: tracked.opens ?? 0,
+          last: tracked.lastOpened ?? '—',
+          device: tracked.device ?? '—',
+          location: tracked.location ?? '—',
+        };
+      }
+      return { opens: 0, last: '—', device: '—', location: '—' };
     };
     const eng = engFor(engRcpt);
+    const locationValue = free ? '—' : eng.location;
+    const locationSub = free ? 'Pro feature' : (engRcpt === 'all' ? 'most common' : 'this recipient');
+    const openSeries = Array.isArray(e.openSeries) && e.openSeries.some((v) => v > 0) ? e.openSeries : null;
     const engLabel = (recipients.find((r) => r.key === engRcpt) || recipients[0]).label;
 
     return React.createElement('div', { className: 'detail' + (mobileDetail ? ' mobile-open' : '') },
@@ -190,18 +205,21 @@
             ),
           ),
           React.createElement('div', { className: 'engage-grid' },
-            [['OPENS', eng.opens, 'Tracked'], ['LAST OPENED', eng.last, 'most recent'], ['DEVICE', eng.device, engRcpt === 'all' ? 'most common' : 'this recipient'], ['LOCATION', eng.location, engRcpt === 'all' ? 'most common' : 'this recipient']]
+            [['OPENS', eng.opens, 'Tracked'], ['LAST OPENED', eng.last, 'most recent'], ['DEVICE', eng.device, engRcpt === 'all' ? 'most common' : 'this recipient'], ['LOCATION', locationValue, locationSub]]
               .map(([l, v, s]) => React.createElement('div', { key: l, className: 'engage-cell' },
                 React.createElement('div', { className: 'ec-label' }, l),
                 React.createElement('div', { className: 'ec-value' }, v),
                 React.createElement('div', { className: 'ec-sub' }, s),
               )),
           ),
+          !e.trackedEmailId && React.createElement('p', { className: 'muted', style: { fontSize: 12, margin: '10px 0 0' } }, 'Engagement tracking applies to emails sent from Peekd Compose.'),
         ),
 
         React.createElement('section', { className: 'd-section' },
           React.createElement('div', { className: 'd-section-title' }, 'OPEN ACTIVITY'),
-          React.createElement(window.Chart, { data: D.openSeries, height: 92, fmt: v => v + ' opens' }),
+          openSeries
+            ? React.createElement(window.Chart, { data: openSeries, height: 92, fmt: (v) => v + ' opens' })
+            : React.createElement('div', { className: 'muted', style: { fontSize: 13 } }, e.trackedEmailId ? 'No opens recorded yet.' : 'Open activity appears for emails you send from Peekd.'),
         ),
 
         React.createElement('section', { className: 'd-section' },

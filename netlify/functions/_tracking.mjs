@@ -323,6 +323,98 @@ export async function getTrackingByMessageIds(userId, gmailMessageIds) {
   return byMessageId;
 }
 
+export function parseDeviceFromUserAgent(userAgent) {
+  const ua = String(userAgent || '');
+  if (!ua) return '—';
+  if (isGmailImageProxy(ua)) return 'Gmail';
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/iPad/i.test(ua)) return 'iPad';
+  if (/Android/i.test(ua)) return 'Android';
+  if (/Macintosh|Mac OS X/i.test(ua)) return 'Mac';
+  if (/Windows/i.test(ua)) return 'Windows';
+  if (/CrOS/i.test(ua)) return 'Chromebook';
+  if (/Linux/i.test(ua)) return 'Linux';
+  if (looksLikeHumanBrowser(ua)) return 'Web browser';
+  return 'Email client';
+}
+
+function isPrivateOrInfrastructureIp(ip) {
+  const value = String(ip || '').trim();
+  if (!value) return true;
+  if (isGoogleInfrastructureIp(value)) return true;
+  if (isAppleProxyIp(value)) return true;
+  try {
+    const addr = ipaddr.parse(value);
+    const range = addr.range();
+    if (range === 'private' || range === 'loopback' || range === 'linkLocal') return true;
+  } catch { /* fall through */ }
+  return false;
+}
+
+export function locationLabelFromIp(ip) {
+  if (isPrivateOrInfrastructureIp(ip)) return '—';
+  return '—';
+}
+
+export function formatOpenEventMeta(event) {
+  const device = parseDeviceFromUserAgent(event?.user_agent);
+  const location = locationLabelFromIp(event?.ip);
+  if (device === '—' && location === '—') return 'Email client';
+  if (location === '—') return device;
+  return `${device} · ${location}`;
+}
+
+function pickMostCommon(values) {
+  const counts = new Map();
+  for (const value of values) {
+    const key = String(value || '—');
+    if (key === '—') continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  if (!counts.size) return '—';
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
+export function buildEngagementFromEvents(events, sentAt) {
+  const countable = (events || [])
+    .filter(isCountableOpen)
+    .sort((a, b) => new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime());
+
+  if (!countable.length) {
+    return { opens: 0, lastOpened: '—', device: '—', location: '—' };
+  }
+
+  const last = countable[countable.length - 1];
+  const devices = countable.map((event) => parseDeviceFromUserAgent(event.user_agent));
+  const locations = countable.map((event) => locationLabelFromIp(event.ip));
+
+  return {
+    opens: countable.length,
+    lastOpened: relativeTime(new Date(last.opened_at)),
+    device: pickMostCommon(devices) || parseDeviceFromUserAgent(last.user_agent),
+    location: pickMostCommon(locations),
+  };
+}
+
+export function buildOpenSeriesFromEvents(events, sentAt, points = 14) {
+  const countable = (events || [])
+    .filter(isCountableOpen)
+    .sort((a, b) => new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime());
+  const buckets = Array.from({ length: points }, () => 0);
+  if (!countable.length) return buckets;
+
+  const sentMs = new Date(sentAt || countable[0].opened_at).getTime();
+  const msPerDay = 86_400_000;
+
+  for (const event of countable) {
+    const dayIndex = Math.floor((new Date(event.opened_at).getTime() - sentMs) / msPerDay);
+    if (dayIndex >= 0 && dayIndex < points) buckets[dayIndex] += 1;
+    else if (dayIndex >= points) buckets[points - 1] += 1;
+  }
+
+  return buckets;
+}
+
 export function buildTrackingSummary(trackedEmailRow) {
   const sentDate = new Date(trackedEmailRow.sent_at || Date.now());
   const recipients = (trackedEmailRow.tracked_recipients || []).map((recipient) => {
@@ -345,14 +437,21 @@ export function buildTrackingSummary(trackedEmailRow) {
   const countableEvents = allEvents.filter(isCountableOpen).sort(
     (a, b) => new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime(),
   );
-  const opens = countableEvents.length;
-  const lastEvent = countableEvents[countableEvents.length - 1];
-  const lastOpened = lastEvent ? relativeTime(new Date(lastEvent.opened_at)) : '—';
+  const engagementAll = buildEngagementFromEvents(countableEvents, trackedEmailRow.sent_at);
+  const opens = engagementAll.opens;
+  const lastOpened = engagementAll.lastOpened;
   const hot = opens > 2;
+
+  const recipientEngagement = recipients.map((recipient) => ({
+    email: recipient.email,
+    name: recipient.name,
+    ...buildEngagementFromEvents(recipient.events, trackedEmailRow.sent_at),
+  }));
 
   const trackedLinks = trackedEmailRow.tracked_links || [];
   const links = buildLinkActivity(trackedLinks, recipients);
   const clickTimeline = buildClickTimelineEntries(trackedLinks, recipients);
+  const openSeries = buildOpenSeriesFromEvents(countableEvents, trackedEmailRow.sent_at);
 
   return {
     trackedEmailId: trackedEmailRow.id,
@@ -361,6 +460,11 @@ export function buildTrackingSummary(trackedEmailRow) {
     sentAt: trackedEmailRow.sent_at,
     opens,
     lastOpened,
+    device: engagementAll.device,
+    location: engagementAll.location,
+    engagementAll,
+    recipientEngagement,
+    openSeries,
     hot,
     badge: opens > 0 ? 'OPENED' : 'SENT',
     timeline: buildTimelineFromEvents({
@@ -404,7 +508,7 @@ export function buildTimelineFromEvents({ sentAt, recipients, clickTimeline = []
         who: recipient.name,
         av: recipient.initials,
         label: count <= 1 ? 'opened' : `opened again (×${count})`,
-        meta: 'Email client',
+        meta: formatOpenEventMeta(event),
         time: formatMessageTime(event.opened_at),
         sortAt: openedDate.getTime(),
         proxy: false,
@@ -431,10 +535,15 @@ export function mergeTrackingIntoMessage(message, tracking) {
     opens: tracking.opens,
     badge: tracking.badge || message.badge,
     lastOpened: tracking.lastOpened,
+    device: tracking.device || message.device,
+    location: tracking.location || message.location,
     hot: tracking.hot,
     timeline: tracking.timeline?.length ? tracking.timeline : message.timeline,
     links: tracking.links?.length ? tracking.links : message.links,
     recipientOpens: tracking.recipientOpens || [],
+    recipientEngagement: tracking.recipientEngagement || [],
+    engagementAll: tracking.engagementAll || null,
+    openSeries: tracking.openSeries || [],
     trackedEmailId: tracking.trackedEmailId,
   };
 }
