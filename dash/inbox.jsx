@@ -129,8 +129,15 @@
       return { opens: 0, last: '—', device: '—', location: '—' };
     };
     const eng = engFor(engRcpt);
-    const locationValue = free ? '—' : eng.location;
-    const locationSub = free ? 'Pro feature' : (engRcpt === 'all' ? 'most common' : 'this recipient');
+    const locationKnown = eng.location && eng.location !== '—';
+    const locationValue = free
+      ? '—'
+      : (locationKnown ? eng.location : (eng.opens > 0 ? 'Hidden' : '—'));
+    const locationSub = free
+      ? 'Pro feature'
+      : (locationKnown
+        ? (engRcpt === 'all' ? 'most common' : 'this recipient')
+        : (eng.opens > 0 ? 'blocked by email privacy' : (engRcpt === 'all' ? 'most common' : 'this recipient')));
     const openSeries = Array.isArray(e.openSeries) && e.openSeries.some((v) => v > 0) ? e.openSeries : null;
     const engLabel = (recipients.find((r) => r.key === engRcpt) || recipients[0]).label;
 

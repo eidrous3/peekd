@@ -305,7 +305,7 @@ export async function getTrackingByMessageIds(userId, gmailMessageIds) {
     'sent_at',
     'subject',
     'from_email',
-    'tracked_recipients(id,email,email_open_events(id,opened_at,classification,user_agent,ip))',
+    'tracked_recipients(id,email,email_open_events(id,opened_at,classification,user_agent,ip,location_label))',
     'tracked_links(id,original_url,click_token,email_click_events(id,clicked_at,classification,user_agent,ip))',
   ].join(',');
 
@@ -318,6 +318,7 @@ export async function getTrackingByMessageIds(userId, gmailMessageIds) {
   const byMessageId = {};
   for (const row of res.data) {
     if (!row.gmail_message_id) continue;
+    await enrichTrackedEmailLocations(row);
     byMessageId[row.gmail_message_id] = buildTrackingSummary(row);
   }
   return byMessageId;
@@ -351,14 +352,92 @@ function isPrivateOrInfrastructureIp(ip) {
   return false;
 }
 
-export function locationLabelFromIp(ip) {
-  if (isPrivateOrInfrastructureIp(ip)) return '—';
+const geoCache = new Map();
+
+export function formatGeoLookupResult(data) {
+  if (!data || data.status !== 'success') return null;
+  const parts = [data.city, data.regionName].map((part) => String(part || '').trim()).filter(Boolean);
+  if (parts.length) return parts.join(', ');
+  const country = String(data.country || '').trim();
+  return country || null;
+}
+
+export async function lookupLocationLabel(ip) {
+  const value = String(ip || '').trim();
+  if (!value || isPrivateOrInfrastructureIp(value)) return null;
+  if (geoCache.has(value)) return geoCache.get(value);
+
+  try {
+    const res = await fetch(
+      `http://ip-api.com/json/${encodeURIComponent(value)}?fields=status,city,regionName,country`,
+      { signal: AbortSignal.timeout(2500) },
+    );
+    const data = await res.json().catch(() => ({}));
+    const label = formatGeoLookupResult(data);
+    geoCache.set(value, label);
+    return label;
+  } catch {
+    geoCache.set(value, null);
+    return null;
+  }
+}
+
+export function locationLabelFromEvent(event) {
+  const stored = String(event?.location_label || '').trim();
+  if (stored) return stored;
+  const cached = geoCache.get(String(event?.ip || '').trim());
+  if (cached) return cached;
+  if (isPrivateOrInfrastructureIp(event?.ip)) return '—';
   return '—';
+}
+
+export function locationLabelFromIp(ip) {
+  return locationLabelFromEvent({ ip });
+}
+
+async function enrichTrackedEmailLocations(trackedEmailRow) {
+  const openEvents = [];
+  for (const recipient of trackedEmailRow.tracked_recipients || []) {
+    for (const event of recipient.email_open_events || []) {
+      openEvents.push(event);
+    }
+  }
+
+  const ips = [...new Set(
+    openEvents
+      .filter((event) => !event.location_label && event.ip && !isPrivateOrInfrastructureIp(event.ip))
+      .map((event) => String(event.ip).trim()),
+  )];
+
+  if (ips.length) {
+    await Promise.all(ips.map((ip) => lookupLocationLabel(ip)));
+  }
+
+  for (const recipient of trackedEmailRow.tracked_recipients || []) {
+    recipient.email_open_events = (recipient.email_open_events || []).map((event) => {
+      if (event.location_label) return event;
+      const label = geoCache.get(String(event.ip || '').trim());
+      return label ? { ...event, location_label: label } : event;
+    });
+  }
+
+  for (const event of openEvents) {
+    if (event.location_label || !event.id) continue;
+    const label = geoCache.get(String(event.ip || '').trim());
+    if (!label) continue;
+    dbRequest(`email_open_events?id=eq.${encodeURIComponent(event.id)}`, {
+      method: 'PATCH',
+      body: { location_label: label },
+      prefer: 'return=minimal',
+    }).catch(() => {});
+  }
+
+  return trackedEmailRow;
 }
 
 export function formatOpenEventMeta(event) {
   const device = parseDeviceFromUserAgent(event?.user_agent);
-  const location = locationLabelFromIp(event?.ip);
+  const location = locationLabelFromEvent(event);
   if (device === '—' && location === '—') return 'Email client';
   if (location === '—') return device;
   return `${device} · ${location}`;
@@ -386,7 +465,7 @@ export function buildEngagementFromEvents(events, sentAt) {
 
   const last = countable[countable.length - 1];
   const devices = countable.map((event) => parseDeviceFromUserAgent(event.user_agent));
-  const locations = countable.map((event) => locationLabelFromIp(event.ip));
+  const locations = countable.map((event) => locationLabelFromEvent(event));
 
   return {
     opens: countable.length,
@@ -895,6 +974,8 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
     return { ok: true, recorded: false, deduped: true, recipientId: recipient.id };
   }
 
+  const locationLabel = await lookupLocationLabel(ip);
+
   const insert = await dbRequest('email_open_events', {
     method: 'POST',
     body: {
@@ -902,6 +983,7 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
       ip: ip || null,
       user_agent: userAgent ? String(userAgent).slice(0, 500) : null,
       classification,
+      location_label: locationLabel,
       opened_at: openedAt.toISOString(),
     },
     prefer: 'return=minimal',
