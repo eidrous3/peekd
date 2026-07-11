@@ -146,6 +146,9 @@
         ? (eng.locationSource === 'click' ? 'from link click' : (engRcpt === 'all' ? 'most common' : 'this recipient'))
         : (eng.opens > 0 ? 'blocked by email privacy' : (engRcpt === 'all' ? 'most common' : 'this recipient')));
     const openSeries = Array.isArray(e.openSeries) && e.openSeries.some((v) => v > 0) ? e.openSeries : null;
+    const showLinkActivity = e.links.length > 0;
+    const visibleTimeline = (e.timeline || []).filter((ev) => !(ev.type === 'link' && free));
+    const showTimeline = visibleTimeline.some((ev) => !['sent', 'delivered'].includes(ev.type));
     const engLabel = (recipients.find((r) => r.key === engRcpt) || recipients[0]).label;
 
     return React.createElement('div', { className: 'detail' + (mobileDetail ? ' mobile-open' : '') },
@@ -236,14 +239,14 @@
             : React.createElement('div', { className: 'muted', style: { fontSize: 13 } }, e.trackedEmailId ? 'No opens recorded yet.' : 'Open activity appears for emails you send from Peekd.'),
         ),
 
-        React.createElement('section', { className: 'd-section' },
+        showLinkActivity && React.createElement('section', { className: 'd-section' },
           React.createElement('div', { className: 'd-section-title' }, 'LINK ACTIVITY', !free ? '' : React.createElement('span', { className: 'pro-tag' }, 'PRO')),
           free
             ? React.createElement('div', { className: 'locked-row' },
                 React.createElement(Icon, { name: 'lock', size: 15 }),
                 React.createElement('span', null, 'Link clicks hidden · Pro feature'),
                 React.createElement('button', { className: 'upgrade-inline', onClick: onUpgrade }, 'Upgrade →'))
-            : (e.links.length ? e.links.map((lk, i) => React.createElement('div', { key: i, className: 'link-row' },
+            : e.links.map((lk, i) => React.createElement('div', { key: i, className: 'link-row' },
                 React.createElement(Icon, { name: 'link', size: 14 }),
                 React.createElement('div', { className: 'lk-body' },
                   React.createElement('div', { className: 'lk-top' },
@@ -253,17 +256,13 @@
                   React.createElement('div', { className: 'lk-bar' }, React.createElement('span', { style: { width: lk.w + '%' } })),
                   React.createElement('div', { className: 'lk-by' }, lk.by),
                   lk.detail && React.createElement('div', { className: 'lk-detail muted', style: { fontSize: 12, marginTop: 4 } }, lk.detail),
-                ))) : React.createElement('div', { className: 'muted', style: { fontSize: 13 } }, 'No link activity yet.')),
+                ))),
         ),
 
-        React.createElement('section', { className: 'd-section' },
+        showTimeline && React.createElement('section', { className: 'd-section' },
           React.createElement('div', { className: 'd-section-title' }, 'ACTIVITY TIMELINE'),
           React.createElement('div', { className: 'timeline' },
-            e.timeline.map((ev, i) => React.createElement(TimelineEvent, { key: i, ev, free })),
-            free && e.links.length > 0 && React.createElement('div', { className: 'locked-row tl' },
-              React.createElement(Icon, { name: 'lock', size: 15 }),
-              React.createElement('span', null, 'Link clicks hidden · Pro feature'),
-              React.createElement('button', { className: 'upgrade-inline', onClick: onUpgrade }, 'Upgrade →')),
+            visibleTimeline.map((ev, i) => React.createElement(TimelineEvent, { key: i, ev, free })),
           ),
         ),
       ),
