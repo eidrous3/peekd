@@ -1,6 +1,7 @@
 import {
   fetchGmailInbox,
   enrichInboxWithReplies,
+  hideIncomingThreadReplies,
   getConnectedAccounts,
   getUserFromToken,
   getValidAccessToken,
@@ -118,9 +119,11 @@ export default async (req) => {
     /* inbox must still load if reply detection fails */
   }
 
+  const visibleMessages = hideIncomingThreadReplies(messagesWithReplies);
+
   return json({
     ok: true,
-    messages: messagesWithReplies,
+    messages: visibleMessages,
     accounts: accounts.map((a) => ({ id: a.id, email: a.email, is_primary: a.is_primary })),
   });
 };

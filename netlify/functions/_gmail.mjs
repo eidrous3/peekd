@@ -520,6 +520,23 @@ export async function enrichInboxWithReplies(accounts, messages) {
   return enriched;
 }
 
+/** Drop inbox-only messages when the same thread already has a sent message in the list. */
+export function hideIncomingThreadReplies(messages) {
+  if (!Array.isArray(messages) || !messages.length) return messages;
+
+  const sentThreadKeys = new Set(
+    messages
+      .filter((msg) => (msg.gmailLabelIds || []).includes('SENT') && msg.threadId)
+      .map((msg) => `${msg.accountEmail || ''}:${msg.threadId}`),
+  );
+
+  return messages.filter((msg) => {
+    if ((msg.gmailLabelIds || []).includes('SENT')) return true;
+    if (!msg.threadId) return true;
+    return !sentThreadKeys.has(`${msg.accountEmail || ''}:${msg.threadId}`);
+  });
+}
+
 export function encodeRawEmail(raw) {
   return Buffer.from(raw, 'utf-8')
     .toString('base64')
