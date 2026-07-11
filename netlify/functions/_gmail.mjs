@@ -351,6 +351,7 @@ export async function fetchGmailInbox(accessToken, { maxResults = 25, labelIds =
     return {
       id: data.id,
       threadId: data.threadId,
+      internalDate: Number(data.internalDate || 0),
       from: from.email,
       initials: initials(displayPerson.name, displayPerson.email),
       name: displayPerson.name || displayPerson.email.split('@')[0],
@@ -380,6 +381,143 @@ export async function fetchGmailInbox(accessToken, { maxResults = 25, labelIds =
   }));
 
   return { ok: true, messages: messages.filter(Boolean) };
+}
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isAutomatedReplyEmail(email) {
+  return /^(mailer-daemon|postmaster|noreply|no-reply|donotreply|do-not-reply)@/i.test(normalizeEmail(email));
+}
+
+export async function fetchGmailThread(accessToken, threadId) {
+  if (!accessToken || !threadId) return null;
+
+  const res = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=From&metadataHeaders=Date`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return null;
+  return data;
+}
+
+export function findReplyInThread(thread, { accountEmail, sentMessageId, sentInternalDate, recipientEmail }) {
+  if (!thread?.messages?.length) return null;
+
+  const sender = normalizeEmail(accountEmail);
+  const recipient = normalizeEmail(recipientEmail);
+  const messages = [...thread.messages].sort(
+    (a, b) => Number(a.internalDate || 0) - Number(b.internalDate || 0),
+  );
+
+  const sentMessage = messages.find((msg) => msg.id === sentMessageId);
+  const anchorDate = Number(sentMessage?.internalDate || sentInternalDate || 0);
+
+  for (const msg of messages) {
+    const msgDate = Number(msg.internalDate || 0);
+    if (!msgDate || msgDate <= anchorDate) continue;
+
+    const from = parseEmailHeader(headerValue(msg.payload?.headers, 'From'));
+    const fromEmail = normalizeEmail(from.email);
+    if (!fromEmail || fromEmail === sender) continue;
+    if (isAutomatedReplyEmail(fromEmail)) continue;
+
+    const labels = msg.labelIds || [];
+    const isIncoming = !labels.includes('SENT');
+    const fromRecipient = recipient && fromEmail === recipient;
+
+    if (fromRecipient || isIncoming) {
+      return {
+        who: from.name || from.email.split('@')[0],
+        email: fromEmail,
+        initials: initials(from.name, from.email),
+        time: formatSentAt(new Date(msgDate)),
+        internalDate: msgDate,
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function enrichMessagesWithReplies(accessToken, messages, accountEmail) {
+  if (!accessToken || !Array.isArray(messages) || !messages.length) return messages;
+
+  const sentMessages = messages.filter((msg) => (msg.gmailLabelIds || []).includes('SENT') && msg.threadId);
+  if (!sentMessages.length) return messages;
+
+  const threadIds = [...new Set(sentMessages.map((msg) => msg.threadId).filter(Boolean))];
+  const threadById = new Map();
+
+  await Promise.all(threadIds.map(async (threadId) => {
+    const thread = await fetchGmailThread(accessToken, threadId);
+    if (thread) threadById.set(threadId, thread);
+  }));
+
+  return messages.map((message) => {
+    if (!(message.gmailLabelIds || []).includes('SENT') || !message.threadId) return message;
+
+    const thread = threadById.get(message.threadId);
+    const reply = findReplyInThread(thread, {
+      accountEmail,
+      sentMessageId: message.id,
+      sentInternalDate: message.internalDate,
+      recipientEmail: message.toEmail,
+    });
+
+    if (!reply) return message;
+
+    const timeline = [...(message.timeline || [])];
+    const hasReplyEvent = timeline.some((event) => event.type === 'replied');
+    if (!hasReplyEvent) {
+      timeline.push({
+        type: 'replied',
+        who: reply.who,
+        av: reply.initials,
+        label: 'replied',
+        time: reply.time,
+      });
+    }
+
+    return {
+      ...message,
+      badge: 'REPLIED',
+      timeline,
+    };
+  });
+}
+
+export async function enrichInboxWithReplies(accounts, messages) {
+  if (!Array.isArray(messages) || !messages.length) return messages;
+
+  const byAccount = new Map();
+  for (const message of messages) {
+    const key = message.accountEmail;
+    if (!key) continue;
+    if (!byAccount.has(key)) byAccount.set(key, []);
+    byAccount.get(key).push(message);
+  }
+
+  let enriched = messages;
+  for (const account of accounts || []) {
+    const subset = byAccount.get(account.email);
+    if (!subset?.length) continue;
+
+    const accessToken = await getValidAccessToken(account);
+    if (!accessToken) continue;
+
+    const updatedSubset = await enrichMessagesWithReplies(accessToken, subset, account.email);
+    const updatedById = new Map(updatedSubset.map((msg) => [msg.id, msg]));
+    enriched = enriched.map((msg) => (
+      msg.accountEmail === account.email && updatedById.has(msg.id)
+        ? updatedById.get(msg.id)
+        : msg
+    ));
+  }
+
+  return enriched;
 }
 
 export function encodeRawEmail(raw) {

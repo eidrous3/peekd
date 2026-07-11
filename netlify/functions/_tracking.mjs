@@ -609,15 +609,27 @@ export function buildTimelineFromEvents({ sentAt, recipients, clickTimeline = []
 
 export function mergeTrackingIntoMessage(message, tracking) {
   if (!message || !tracking) return message;
+
+  let badge = tracking.badge || message.badge;
+  if (message.badge === 'REPLIED') badge = 'REPLIED';
+  else if (badge !== 'REPLIED' && (tracking.badge === 'OPENED' || message.badge === 'OPENED')) badge = 'OPENED';
+
+  const baseTimeline = message.timeline || [];
+  const trackedTimeline = tracking.timeline || [];
+  const replyEvents = baseTimeline.filter((event) => event.type === 'replied');
+  const timeline = replyEvents.length
+    ? [...trackedTimeline.filter((event) => event.type !== 'replied'), ...replyEvents]
+    : (trackedTimeline.length ? trackedTimeline : baseTimeline);
+
   return {
     ...message,
     opens: tracking.opens,
-    badge: tracking.badge || message.badge,
+    badge,
     lastOpened: tracking.lastOpened,
     device: tracking.device || message.device,
     location: tracking.location || message.location,
     hot: tracking.hot,
-    timeline: tracking.timeline?.length ? tracking.timeline : message.timeline,
+    timeline,
     links: tracking.links?.length ? tracking.links : message.links,
     recipientOpens: tracking.recipientOpens || [],
     recipientEngagement: tracking.recipientEngagement || [],

@@ -1,5 +1,6 @@
 import {
   fetchGmailInbox,
+  enrichInboxWithReplies,
   getConnectedAccounts,
   getUserFromToken,
   getValidAccessToken,
@@ -110,9 +111,16 @@ export default async (req) => {
     trackingByMessageId[message.id],
   ));
 
+  let messagesWithReplies = messages;
+  try {
+    messagesWithReplies = await enrichInboxWithReplies(accounts, messages);
+  } catch {
+    /* inbox must still load if reply detection fails */
+  }
+
   return json({
     ok: true,
-    messages,
+    messages: messagesWithReplies,
     accounts: accounts.map((a) => ({ id: a.id, email: a.email, is_primary: a.is_primary })),
   });
 };

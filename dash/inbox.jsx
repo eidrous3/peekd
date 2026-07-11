@@ -76,7 +76,7 @@
             ev.who ? React.createElement('b', null, ev.who + ' ') : null, ev.label),
           React.createElement('span', { className: 'tl-time' }, ev.time || ''),
         ),
-        ev.meta && React.createElement('div', { className: 'tl-meta' }, ev.meta),
+        ev.meta && ev.type !== 'replied' && React.createElement('div', { className: 'tl-meta' }, ev.meta),
       ),
     );
   }
