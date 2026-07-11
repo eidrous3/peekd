@@ -127,7 +127,7 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
         </a>
         <div class="eyebrow" id="eyebrow">Welcome</div>
         <h1 id="heading">Sign in to Peekd</h1>
-        <p class="lede" id="lede">Enter your email and we'll send a magic link — new accounts are created automatically.</p>
+        <p class="lede" id="lede">Enter your email or continue with Google or Microsoft — new accounts are created automatically.</p>
 
         <div class="config-warn" id="configWarn" hidden>
           Supabase is not connected. 
@@ -306,14 +306,45 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:10px 0 6px;text-a
     emailInput.value = ''; emailInput.focus();
   });
 
-  document.getElementById('googleBtn').addEventListener('click', () => {
+  async function startOAuth(provider, button) {
+    if (submitting) return;
     clearEmailError();
-    window.PeekdAuth.signInWithOAuth('google').catch(err => showEmailError(err.message));
+    submitting = true;
+    const label = button.textContent;
+    button.disabled = true;
+    button.style.opacity = '0.7';
+    try {
+      await window.PeekdAuth.signInWithOAuth(provider);
+    } catch (err) {
+      showEmailError(err.message || 'Could not start sign-in');
+      button.disabled = false;
+      button.style.opacity = '';
+      submitting = false;
+    }
+  }
+
+  document.getElementById('googleBtn').addEventListener('click', (e) => {
+    startOAuth('google', e.currentTarget);
   });
-  document.getElementById('microsoftBtn').addEventListener('click', () => {
-    clearEmailError();
-    window.PeekdAuth.signInWithOAuth('azure').catch(err => showEmailError(err.message));
+  document.getElementById('microsoftBtn').addEventListener('click', (e) => {
+    startOAuth('azure', e.currentTarget);
   });
+
+  (async () => {
+    const params = new URLSearchParams(window.location.search);
+    const authError = params.get('error');
+    if (authError) {
+      showEmailError(decodeURIComponent(authError.replace(/\+/g, ' ')));
+      params.delete('error');
+      const qs = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''));
+    }
+    if (window.PeekdAuth.ready()) {
+      try {
+        await window.PeekdAuth.redirectIfSignedIn();
+      } catch { /* stay on login */ }
+    }
+  })();
 
   if (!window.PeekdAuth.ready()) {
     document.getElementById('configWarn').hidden = false;

@@ -21,8 +21,10 @@
 <script src="dash/tickets.js"></script>
 <script src="dash/gmail-inbox.js"></script>
 <script>
-  // Completes magic-link sign-in when Supabase redirects here with tokens in the URL.
-  if (window.PeekdAuth.ready()) window.PeekdAuth.ensureSession();
+  // Complete magic-link / OAuth redirects before the dashboard loads.
+  if (window.PeekdAuth.ready()) {
+    window.PeekdAuth.bootstrapDashboardAuth().catch(() => {});
+  }
 </script>
 </head>
 <body>

@@ -7,6 +7,7 @@
   const TITLES = { inbox: 'Inbox', analytics: 'Analytics', campaigns: 'Campaigns', people: 'People', settings: 'Settings', help: 'Help & docs' };
 
   function App() {
+    const [authReady, setAuthReady] = useState(false);
     const [page, setPage] = useState(() => {
       const params = new URLSearchParams(window.location.search);
       if (params.get('settings') === 'integrations') return 'settings';
@@ -29,6 +30,28 @@
     const [headerCTA, setHeaderCTA] = useState(null);
     const [campaignSeed, setCampaignSeed] = useState(null);
     const [profile, setProfile] = useState(null);
+
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        if (!window.PeekdAuth?.ready()) {
+          window.location.href = 'Peekd Login.html';
+          return;
+        }
+        try {
+          const session = await window.PeekdAuth.bootstrapDashboardAuth();
+          if (!session) {
+            window.location.href = 'Peekd Login.html';
+            return;
+          }
+        } catch {
+          window.location.href = 'Peekd Login.html';
+          return;
+        }
+        if (!cancelled) setAuthReady(true);
+      })();
+      return () => { cancelled = true; };
+    }, []);
 
     useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem('peekd_dark', dark ? '1' : '0'); }, [dark]);
     useEffect(() => { localStorage.setItem('peekd_page', page); }, [page]);
@@ -81,6 +104,9 @@
     else body = React.createElement(HelpPage, { toast });
 
     const isInbox = page === 'inbox';
+    if (!authReady) {
+      return React.createElement('div', { className: 'app app-loading', style: { display: 'grid', placeItems: 'center', minHeight: '100vh', color: 'var(--fg-mute)' } }, 'Loading…');
+    }
     return React.createElement('div', { className: 'app' + (collapsed ? ' collapsed' : '') },
       React.createElement(Sidebar, { page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade: openUpgrade, pro, onToggleFree: goFree, profile }),
       React.createElement('div', { className: 'main' },

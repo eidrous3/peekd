@@ -60,6 +60,9 @@
     if (/user not found|no user/i.test(msg)) {
       return 'We could not send a link to that email. Please try again.';
     }
+    if (/oauth|provider|identity/i.test(msg)) {
+      return 'Social sign-in failed. Confirm Google/Microsoft are enabled in Supabase Auth settings.';
+    }
     return msg || 'Something went wrong. Please try again.';
   }
 
