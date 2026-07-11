@@ -115,6 +115,8 @@
           last: all.lastOpened ?? e.lastOpened ?? '—',
           device: all.device ?? e.device ?? '—',
           location: all.location ?? e.location ?? '—',
+          deviceSource: all.deviceSource ?? e.deviceSource ?? null,
+          locationSource: all.locationSource ?? e.locationSource ?? null,
         };
       }
       const tracked = (e.recipientEngagement || []).find((r) => r.email === key);
@@ -124,6 +126,8 @@
           last: tracked.lastOpened ?? '—',
           device: tracked.device ?? '—',
           location: tracked.location ?? '—',
+          deviceSource: tracked.deviceSource ?? null,
+          locationSource: tracked.locationSource ?? null,
         };
       }
       return { opens: 0, last: '—', device: '—', location: '—' };
@@ -133,10 +137,13 @@
     const locationValue = free
       ? '—'
       : (locationKnown ? eng.location : (eng.opens > 0 ? 'Hidden' : '—'));
+    const deviceSub = eng.deviceSource === 'click'
+      ? 'from link click'
+      : (engRcpt === 'all' ? 'most common' : 'this recipient');
     const locationSub = free
       ? 'Pro feature'
       : (locationKnown
-        ? (engRcpt === 'all' ? 'most common' : 'this recipient')
+        ? (eng.locationSource === 'click' ? 'from link click' : (engRcpt === 'all' ? 'most common' : 'this recipient'))
         : (eng.opens > 0 ? 'blocked by email privacy' : (engRcpt === 'all' ? 'most common' : 'this recipient')));
     const openSeries = Array.isArray(e.openSeries) && e.openSeries.some((v) => v > 0) ? e.openSeries : null;
     const engLabel = (recipients.find((r) => r.key === engRcpt) || recipients[0]).label;
@@ -212,7 +219,7 @@
             ),
           ),
           React.createElement('div', { className: 'engage-grid' },
-            [['OPENS', eng.opens, 'Tracked'], ['LAST OPENED', eng.last, 'most recent'], ['DEVICE', eng.device, engRcpt === 'all' ? 'most common' : 'this recipient'], ['LOCATION', locationValue, locationSub]]
+            [['OPENS', eng.opens, 'Tracked'], ['LAST OPENED', eng.last, 'most recent'], ['DEVICE', eng.device, deviceSub], ['LOCATION', locationValue, locationSub]]
               .map(([l, v, s]) => React.createElement('div', { key: l, className: 'engage-cell' },
                 React.createElement('div', { className: 'ec-label' }, l),
                 React.createElement('div', { className: 'ec-value' }, v),
@@ -245,6 +252,7 @@
                     React.createElement('span', { className: 'lk-last' }, 'Last: ' + lk.last)),
                   React.createElement('div', { className: 'lk-bar' }, React.createElement('span', { style: { width: lk.w + '%' } })),
                   React.createElement('div', { className: 'lk-by' }, lk.by),
+                  lk.detail && React.createElement('div', { className: 'lk-detail muted', style: { fontSize: 12, marginTop: 4 } }, lk.detail),
                 ))) : React.createElement('div', { className: 'muted', style: { fontSize: 13 } }, 'No link activity yet.')),
         ),
 

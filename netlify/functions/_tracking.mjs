@@ -306,7 +306,7 @@ export async function getTrackingByMessageIds(userId, gmailMessageIds) {
     'subject',
     'from_email',
     'tracked_recipients(id,email,email_open_events(id,opened_at,classification,user_agent,ip,location_label))',
-    'tracked_links(id,original_url,click_token,email_click_events(id,clicked_at,classification,user_agent,ip))',
+    'tracked_links(id,original_url,click_token,email_click_events(id,clicked_at,classification,user_agent,ip,location_label))',
   ].join(',');
 
   const res = await dbRequest(
@@ -396,17 +396,24 @@ export function locationLabelFromIp(ip) {
 }
 
 async function enrichTrackedEmailLocations(trackedEmailRow) {
-  const openEvents = [];
+  const geoEvents = [];
+
   for (const recipient of trackedEmailRow.tracked_recipients || []) {
     for (const event of recipient.email_open_events || []) {
-      openEvents.push(event);
+      geoEvents.push({ kind: 'open', event });
+    }
+  }
+
+  for (const link of trackedEmailRow.tracked_links || []) {
+    for (const event of link.email_click_events || []) {
+      geoEvents.push({ kind: 'click', event, linkId: link.id });
     }
   }
 
   const ips = [...new Set(
-    openEvents
-      .filter((event) => !event.location_label && event.ip && !isPrivateOrInfrastructureIp(event.ip))
-      .map((event) => String(event.ip).trim()),
+    geoEvents
+      .filter(({ event }) => !event.location_label && event.ip && !isPrivateOrInfrastructureIp(event.ip))
+      .map(({ event }) => String(event.ip).trim()),
   )];
 
   if (ips.length) {
@@ -421,11 +428,20 @@ async function enrichTrackedEmailLocations(trackedEmailRow) {
     });
   }
 
-  for (const event of openEvents) {
+  for (const link of trackedEmailRow.tracked_links || []) {
+    link.email_click_events = (link.email_click_events || []).map((event) => {
+      if (event.location_label) return event;
+      const label = geoCache.get(String(event.ip || '').trim());
+      return label ? { ...event, location_label: label } : event;
+    });
+  }
+
+  for (const { kind, event } of geoEvents) {
     if (event.location_label || !event.id) continue;
     const label = geoCache.get(String(event.ip || '').trim());
     if (!label) continue;
-    dbRequest(`email_open_events?id=eq.${encodeURIComponent(event.id)}`, {
+    const table = kind === 'click' ? 'email_click_events' : 'email_open_events';
+    dbRequest(`${table}?id=eq.${encodeURIComponent(event.id)}`, {
       method: 'PATCH',
       body: { location_label: label },
       prefer: 'return=minimal',
@@ -460,7 +476,7 @@ export function buildEngagementFromEvents(events, sentAt) {
     .sort((a, b) => new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime());
 
   if (!countable.length) {
-    return { opens: 0, lastOpened: '—', device: '—', location: '—' };
+    return { opens: 0, lastOpened: '—', device: '—', location: '—', deviceSource: null, locationSource: null };
   }
 
   const last = countable[countable.length - 1];
@@ -472,7 +488,78 @@ export function buildEngagementFromEvents(events, sentAt) {
     lastOpened: relativeTime(new Date(last.opened_at)),
     device: pickMostCommon(devices) || parseDeviceFromUserAgent(last.user_agent),
     location: pickMostCommon(locations),
+    deviceSource: 'open',
+    locationSource: 'open',
   };
+}
+
+function isWeakOpenDevice(device) {
+  const value = String(device || '').trim();
+  return !value || value === '—' || value === 'Gmail' || value === 'Email client';
+}
+
+function isWeakOpenLocation(location) {
+  const value = String(location || '').trim();
+  return !value || value === '—';
+}
+
+export function buildEngagementFromClickEvents(events) {
+  const countable = (events || [])
+    .filter(isCountableClick)
+    .sort((a, b) => new Date(a.clicked_at).getTime() - new Date(b.clicked_at).getTime());
+
+  if (!countable.length) {
+    return { clicks: 0, lastClicked: '—', device: '—', location: '—' };
+  }
+
+  const last = countable[countable.length - 1];
+  const devices = countable.map((event) => parseDeviceFromUserAgent(event.user_agent));
+  const locations = countable.map((event) => locationLabelFromEvent(event));
+
+  return {
+    clicks: countable.length,
+    lastClicked: relativeTime(new Date(last.clicked_at)),
+    device: pickMostCommon(devices) || parseDeviceFromUserAgent(last.user_agent),
+    location: pickMostCommon(locations),
+  };
+}
+
+export function collectClickEvents(trackedLinks) {
+  return (trackedLinks || []).flatMap((link) => (
+    (link.email_click_events || []).map((event) => ({ ...event, linkUrl: link.original_url }))
+  ));
+}
+
+export function mergeEngagementWithClicks(openEngagement, clickEngagement) {
+  const base = {
+    ...openEngagement,
+    deviceSource: openEngagement?.deviceSource || 'open',
+    locationSource: openEngagement?.locationSource || 'open',
+  };
+
+  if (!clickEngagement?.clicks) return base;
+
+  const merged = { ...base, clickEngagement };
+  if (isWeakOpenDevice(base.device) && !isWeakOpenDevice(clickEngagement.device)) {
+    merged.device = clickEngagement.device;
+    merged.deviceSource = 'click';
+  }
+  if (isWeakOpenLocation(base.location) && !isWeakOpenLocation(clickEngagement.location)) {
+    merged.location = clickEngagement.location;
+    merged.locationSource = 'click';
+  }
+  return merged;
+}
+
+export function formatClickEventMeta(event, url) {
+  const device = parseDeviceFromUserAgent(event?.user_agent);
+  const location = locationLabelFromEvent(event);
+  const urlPart = displayUrlForLink(url);
+  const parts = [];
+  if (device && device !== '—') parts.push(device);
+  if (location && location !== '—') parts.push(location);
+  if (urlPart) parts.push(urlPart);
+  return parts.join(' · ') || urlPart || 'Link';
 }
 
 export function buildOpenSeriesFromEvents(events, sentAt, points = 14) {
@@ -516,7 +603,11 @@ export function buildTrackingSummary(trackedEmailRow) {
   const countableEvents = allEvents.filter(isCountableOpen).sort(
     (a, b) => new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime(),
   );
-  const engagementAll = buildEngagementFromEvents(countableEvents, trackedEmailRow.sent_at);
+  const allClickEvents = collectClickEvents(trackedEmailRow.tracked_links || []);
+  const engagementAll = mergeEngagementWithClicks(
+    buildEngagementFromEvents(countableEvents, trackedEmailRow.sent_at),
+    buildEngagementFromClickEvents(allClickEvents),
+  );
   const opens = engagementAll.opens;
   const lastOpened = engagementAll.lastOpened;
   const hot = opens > 2;
@@ -524,7 +615,10 @@ export function buildTrackingSummary(trackedEmailRow) {
   const recipientEngagement = recipients.map((recipient) => ({
     email: recipient.email,
     name: recipient.name,
-    ...buildEngagementFromEvents(recipient.events, trackedEmailRow.sent_at),
+    ...mergeEngagementWithClicks(
+      buildEngagementFromEvents(recipient.events, trackedEmailRow.sent_at),
+      buildEngagementFromClickEvents(allClickEvents),
+    ),
   }));
 
   const trackedLinks = trackedEmailRow.tracked_links || [];
@@ -628,6 +722,8 @@ export function mergeTrackingIntoMessage(message, tracking) {
     lastOpened: tracking.lastOpened,
     device: tracking.device || message.device,
     location: tracking.location || message.location,
+    deviceSource: tracking.engagementAll?.deviceSource || message.deviceSource || null,
+    locationSource: tracking.engagementAll?.locationSource || message.locationSource || null,
     hot: tracking.hot,
     timeline,
     links: tracking.links?.length ? tracking.links : message.links,
@@ -857,6 +953,9 @@ export function buildLinkActivity(trackedLinks, recipients) {
     if (!clicks) return null;
 
     const lastEvent = events[events.length - 1];
+    const device = parseDeviceFromUserAgent(lastEvent.user_agent);
+    const location = locationLabelFromEvent(lastEvent);
+    const detailParts = [device, location].filter((part) => part && part !== '—');
     const byLabel = singleRecipient
       ? `${singleRecipient.name} ×${clicks}`
       : `${clicks} click${clicks === 1 ? '' : 's'}`;
@@ -865,6 +964,9 @@ export function buildLinkActivity(trackedLinks, recipients) {
       url: displayUrlForLink(link.original_url),
       clicks,
       last: relativeTime(new Date(lastEvent.clicked_at)),
+      device,
+      location,
+      detail: detailParts.join(' · '),
       by: byLabel,
       w: 0,
     };
@@ -899,7 +1001,7 @@ export function buildClickTimelineEntries(trackedLinks, recipients) {
         who: singleRecipient?.name || null,
         av: singleRecipient?.initials || null,
         label: count <= 1 ? 'clicked a link' : `clicked a link (×${count})`,
-        meta: displayUrlForLink(link.original_url),
+        meta: formatClickEventMeta(event, link.original_url),
         time: formatMessageTime(event.clicked_at),
         clickedAt: clickedAt.getTime(),
         sortAt: clickedAt.getTime(),
@@ -925,6 +1027,7 @@ export async function recordLinkClick({ clickToken, ip, userAgent }) {
   const link = lookup.data[0];
   const clickedAt = new Date();
   const classification = classifyClick({ ip, userAgent });
+  const locationLabel = await lookupLocationLabel(ip);
 
   const insert = await dbRequest('email_click_events', {
     method: 'POST',
@@ -933,6 +1036,7 @@ export async function recordLinkClick({ clickToken, ip, userAgent }) {
       ip: ip || null,
       user_agent: userAgent ? String(userAgent).slice(0, 500) : null,
       classification,
+      location_label: locationLabel,
       clicked_at: clickedAt.toISOString(),
     },
     prefer: 'return=minimal',
