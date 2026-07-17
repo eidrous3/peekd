@@ -186,7 +186,15 @@
           axis && pts.map((p, i) => React.createElement('circle', { key: i, cx: p[0], cy: p[1], r: 2.5, fill: 'var(--accent)' })),
         ),
         pts.map((p, i) => React.createElement('span', { key: i, className: 'chart-dot' + (hi === i ? ' on' : ''), style: { left: (p[0] / W * 100) + '%', top: (p[1] / H * 100) + '%' } })),
-        hi != null && React.createElement('span', { className: 'chart-tip', style: { left: (pts[hi][0] / W * 100) + '%', top: (pts[hi][1] / H * 100) + '%' } }, fmt(data[hi])),
+        hi != null && (() => {
+          const leftPct = (pts[hi][0] / W * 100);
+          const tipStyle = {
+            left: leftPct + '%',
+            top: (pts[hi][1] / H * 100) + '%',
+            transform: leftPct < 12 ? 'translate(0, -150%)' : leftPct > 88 ? 'translate(-100%, -150%)' : 'translate(-50%, -150%)',
+          };
+          return React.createElement('span', { className: 'chart-tip', style: tipStyle }, fmt(data[hi]));
+        })(),
       ),
     );
   }
