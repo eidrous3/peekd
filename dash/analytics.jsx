@@ -94,7 +94,7 @@
 
   async function fetchEmailsSentStat(period, customRange) {
     const range = resolvePeriodRange(period, customRange);
-    if (!range) return { value: '0', delta: '', up: true, sub: 'vs last period' };
+    if (!range) return { value: '0', delta: '', up: true, sub: '' };
 
     const [current, prior] = await Promise.all([
       countTrackedEmailsInRange(range.current.start, range.current.end),
@@ -102,11 +102,16 @@
     ]);
 
     if (current == null || prior == null) {
-      return { value: '—', delta: '', up: true, sub: 'vs last period' };
+      return { value: '—', delta: '', up: true, sub: '' };
+    }
+
+    // Same as last period — no comparison label. Also hide orphan "vs last period" when delta is blank.
+    if (current === prior) {
+      return { value: formatCount(current), delta: '', up: true, sub: '' };
     }
 
     const { delta, up } = formatDelta(current, prior);
-    return { value: formatCount(current), delta, up, sub: 'vs last period' };
+    return { value: formatCount(current), delta, up, sub: delta ? 'vs last period' : '' };
   }
 
   function statsFor(p, emailsSent) {
@@ -241,9 +246,9 @@
         stats.map((s, i) => React.createElement('div', { key: i, className: 'card stat-card' },
           React.createElement('div', { className: 'sc-label' }, s.label),
           React.createElement('div', { className: 'sc-value' }, s.value),
-          React.createElement('div', { className: 'sc-foot' },
+          (s.delta || s.sub) && React.createElement('div', { className: 'sc-foot' },
             s.delta && React.createElement('span', { className: 'sc-delta ' + (s.up ? 'stat-up' : 'stat-down') }, s.delta),
-            React.createElement('span', null, s.sub)),
+            s.sub && React.createElement('span', null, s.sub)),
         )),
       ),
       React.createElement('div', { className: 'card chart-card' },
