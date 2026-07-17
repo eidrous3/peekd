@@ -24,6 +24,69 @@
     return [String(first || '').trim(), String(last || '').trim()].filter(Boolean).join(' ') || 'Contact';
   }
 
+  function relativeTime(value) {
+    const t = value ? new Date(value).getTime() : NaN;
+    if (Number.isNaN(t)) return '—';
+    const ms = Date.now() - t;
+    if (ms < 60_000) return 'Just now';
+    if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+    if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+    if (ms < 172_800_000) return 'Yesterday';
+    if (ms < 604_800_000) return `${Math.floor(ms / 86_400_000)} days ago`;
+    if (ms < 2_592_000_000) return `${Math.floor(ms / 604_800_000)} week${Math.floor(ms / 604_800_000) > 1 ? 's' : ''} ago`;
+    return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function rateDot(rate) {
+    if (rate >= 60) return 'g';
+    if (rate >= 30) return 'y';
+    return 'r';
+  }
+
+  // Aggregate open rate per recipient email from the user's tracked sends.
+  // sent  = number of tracked recipient rows for that email
+  // opened = rows with at least one human (non-proxy) open event
+  async function fetchEngagementByEmail(sb, userId) {
+    const byEmail = new Map();
+    if (!sb || !userId) return byEmail;
+
+    const { data, error } = await sb
+      .from('tracked_recipients')
+      .select('email, tracked_emails!inner(user_id, sent_at), email_open_events(classification)')
+      .eq('tracked_emails.user_id', userId);
+
+    if (error || !Array.isArray(data)) return byEmail;
+
+    for (const row of data) {
+      const email = String(row.email || '').trim().toLowerCase();
+      if (!email) continue;
+      const opened = (row.email_open_events || []).some((ev) => ev.classification === 'human');
+      const sentAt = row.tracked_emails?.sent_at || null;
+      const cur = byEmail.get(email) || { sent: 0, opened: 0, lastSentAt: null };
+      cur.sent += 1;
+      if (opened) cur.opened += 1;
+      if (sentAt && (!cur.lastSentAt || new Date(sentAt).getTime() > new Date(cur.lastSentAt).getTime())) {
+        cur.lastSentAt = sentAt;
+      }
+      byEmail.set(email, cur);
+    }
+
+    return byEmail;
+  }
+
+  function applyEngagement(person, stats) {
+    if (!stats || !stats.sent) return person;
+    const rate = Math.round((stats.opened / stats.sent) * 100);
+    return {
+      ...person,
+      sent: stats.sent,
+      rate,
+      dot: rateDot(rate),
+      last: stats.lastSentAt ? relativeTime(stats.lastSentAt) : person.last,
+      status: stats.opened > 0 ? 'ACTIVE' : 'UNRESPONSIVE',
+    };
+  }
+
   function toUiPerson(row) {
     const first = row.first_name || '';
     const last = row.last_name || '';
@@ -68,9 +131,12 @@
 
     if (error) return { ok: false, error: error.message, people: [] };
 
+    const people = (data || []).map(toUiPerson);
+    const engagement = await fetchEngagementByEmail(sb, s.user.id);
+
     return {
       ok: true,
-      people: (data || []).map(toUiPerson),
+      people: people.map((p) => applyEngagement(p, engagement.get(p.email.toLowerCase()))),
     };
   }
 
