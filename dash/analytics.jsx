@@ -6,16 +6,118 @@
   const D = window.PeekdData;
 
   const PERIODS = {
-    '7d':  { label: 'Last 7 days',   sent: '89',    or: '68.2%', rr: '28.4%', avg: '2.1', orNum: 68, points: 7 },
-    '14d': { label: 'Last 14 days',  sent: '184',   or: '73.4%', rr: '31.0%', avg: '2.4', orNum: 73, points: 14 },
-    '30d': { label: 'Last 30 days',  sent: '412',   or: '71.8%', rr: '29.6%', avg: '2.3', orNum: 72, points: 30 },
-    '3m':  { label: 'Last 3 months', sent: '1,240', or: '69.3%', rr: '27.1%', avg: '2.2', orNum: 69, points: 12 },
+    '7d':  { label: 'Last 7 days',   sent: '89',    or: '68.2%', rr: '28.4%', avg: '2.1', orNum: 68, points: 7, days: 7 },
+    '14d': { label: 'Last 14 days',  sent: '184',   or: '73.4%', rr: '31.0%', avg: '2.4', orNum: 73, points: 14, days: 14 },
+    '30d': { label: 'Last 30 days',  sent: '412',   or: '71.8%', rr: '29.6%', avg: '2.3', orNum: 72, points: 30, days: 30 },
+    '3m':  { label: 'Last 3 months', sent: '1,240', or: '69.3%', rr: '27.1%', avg: '2.2', orNum: 69, points: 12, days: 90 },
   };
   const ORDER = ['7d', '14d', '30d', '3m'];
+  const DAY_MS = 86_400_000;
 
-  function statsFor(p) {
+  function startOfDay(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  function endOfDay(date) {
+    const d = new Date(date);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  }
+
+  function parseDateInput(value) {
+    if (!value) return null;
+    const d = new Date(value + 'T00:00:00');
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  /** Resolve current + prior windows of equal length for period comparison. */
+  function resolvePeriodRange(period, customRange) {
+    const now = new Date();
+    if (period === 'custom' && customRange?.from && customRange?.to) {
+      const from = startOfDay(parseDateInput(customRange.from));
+      const to = endOfDay(parseDateInput(customRange.to));
+      if (!from || !to || to < from) return null;
+      const durationMs = to.getTime() - from.getTime() + 1;
+      const priorEnd = new Date(from.getTime() - 1);
+      const priorStart = new Date(priorEnd.getTime() - durationMs + 1);
+      return {
+        current: { start: from, end: to },
+        prior: { start: priorStart, end: priorEnd },
+      };
+    }
+
+    const preset = PERIODS[period] || PERIODS['14d'];
+    const end = now;
+    const start = new Date(end.getTime() - preset.days * DAY_MS);
+    const priorEnd = new Date(start.getTime() - 1);
+    const priorStart = new Date(priorEnd.getTime() - preset.days * DAY_MS);
+    return {
+      current: { start, end },
+      prior: { start: priorStart, end: priorEnd },
+    };
+  }
+
+  function formatCount(n) {
+    return Number(n || 0).toLocaleString('en-US');
+  }
+
+  function formatDelta(current, prior) {
+    if (prior === 0) {
+      if (current === 0) return { delta: '0%', up: true };
+      return { delta: '', up: true };
+    }
+    const pct = Math.round(((current - prior) / prior) * 100);
+    const up = pct >= 0;
+    return { delta: (up ? '+' : '') + pct + '%', up };
+  }
+
+  async function countTrackedEmailsInRange(start, end) {
+    const Auth = window.PeekdAuth;
+    if (!Auth?.ready()) return null;
+    const s = await Auth.ensureSession();
+    if (!s?.user) return null;
+    const sb = Auth.client();
+    if (!sb) return null;
+
+    const { count, error } = await sb
+      .from('tracked_emails')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', s.user.id)
+      .gte('sent_at', start.toISOString())
+      .lte('sent_at', end.toISOString());
+
+    if (error) return null;
+    return count || 0;
+  }
+
+  async function fetchEmailsSentStat(period, customRange) {
+    const range = resolvePeriodRange(period, customRange);
+    if (!range) return { value: '0', delta: '', up: true, sub: 'vs last period' };
+
+    const [current, prior] = await Promise.all([
+      countTrackedEmailsInRange(range.current.start, range.current.end),
+      countTrackedEmailsInRange(range.prior.start, range.prior.end),
+    ]);
+
+    if (current == null || prior == null) {
+      return { value: '—', delta: '', up: true, sub: 'vs last period' };
+    }
+
+    const { delta, up } = formatDelta(current, prior);
+    return { value: formatCount(current), delta, up, sub: 'vs last period' };
+  }
+
+  function statsFor(p, emailsSent) {
     return [
-      { label: 'EMAILS SENT', value: p.sent, delta: '+12%', up: true, sub: 'vs last period' },
+      {
+        label: 'EMAILS SENT',
+        value: emailsSent?.value ?? p.sent,
+        delta: emailsSent?.delta ?? '',
+        up: emailsSent?.up ?? true,
+        sub: emailsSent?.sub ?? 'vs last period',
+      },
       { label: 'OPEN RATE', value: p.or, delta: '+4.2%', up: true, sub: 'vs last period' },
       { label: 'REPLY RATE', value: p.rr, delta: '+1.8%', up: true, sub: 'vs last period' },
       { label: 'AVG. OPENS', value: p.avg, delta: '', up: true, sub: 'per tracked email' },
@@ -59,7 +161,7 @@
       return () => document.removeEventListener('mousedown', h);
     }, [open]);
     const label = period === 'custom' ? (customLabel || 'Custom range') : PERIODS[period].label;
-    const fmtDate = (s) => { if (!s) return ''; const d = new Date(s); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+    const fmtDate = (s) => { if (!s) return ''; const d = parseDateInput(s); return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; };
     return React.createElement('div', { className: 'date-filter', ref },
       React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setOpen(!open) }, label, React.createElement(Icon, { name: 'chevDown', size: 14 })),
       open && React.createElement('div', { className: 'date-menu' },
@@ -78,7 +180,16 @@
           React.createElement('label', null, 'To', React.createElement('input', { type: 'date', className: 'input', value: to, onChange: (e) => setTo(e.target.value) })),
           React.createElement('button', {
             className: 'btn btn-primary btn-sm', style: { width: '100%', marginTop: 4 },
-            onClick: () => { onSelect('custom', from && to ? fmtDate(from) + ' – ' + fmtDate(to) : 'Custom range'); setOpen(false); setShowCustom(false); },
+            disabled: !from || !to || to < from,
+            onClick: () => {
+              onSelect('custom', {
+                label: fmtDate(from) + ' – ' + fmtDate(to),
+                from,
+                to,
+              });
+              setOpen(false);
+              setShowCustom(false);
+            },
           }, 'Apply'),
         ),
       ),
@@ -88,16 +199,37 @@
   function AnalyticsPage({ toast, setHeaderExtra, free, onUpgrade }) {
     const [period, setPeriod] = useState('14d');
     const [customLabel, setCustomLabel] = useState(null);
+    const [customRange, setCustomRange] = useState(null);
+    const [emailsSent, setEmailsSent] = useState(null);
     const p = PERIODS[period === 'custom' ? '30d' : period];
-    const stats = statsFor(p);
+    const stats = statsFor(p, emailsSent);
     const series = seriesFor(p);
     const replySeries = replySeriesFor(p);
+
+    useEffect(() => {
+      let cancelled = false;
+      setEmailsSent({ value: '…', delta: '', up: true, sub: 'vs last period' });
+      fetchEmailsSentStat(period, customRange).then((stat) => {
+        if (!cancelled) setEmailsSent(stat);
+      });
+      return () => { cancelled = true; };
+    }, [period, customRange?.from, customRange?.to]);
 
     useEffect(() => {
       setHeaderExtra(React.createElement('div', { className: 'flex gap8' },
         React.createElement(DateFilter, {
           period, customLabel,
-          onSelect: (k, extra) => { if (k === 'custom') { setCustomLabel(extra); setPeriod('custom'); } else setPeriod(k); },
+          onSelect: (k, extra) => {
+            if (k === 'custom') {
+              setCustomLabel(extra?.label || 'Custom range');
+              setCustomRange(extra?.from && extra?.to ? { from: extra.from, to: extra.to } : null);
+              setPeriod('custom');
+            } else {
+              setCustomLabel(null);
+              setCustomRange(null);
+              setPeriod(k);
+            }
+          },
         }),
         React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => toast('Exported CSV') }, React.createElement(Icon, { name: 'download', size: 14 }), 'Export'),
       ));
