@@ -145,6 +145,11 @@
       : (locationKnown
         ? (eng.locationSource === 'click' ? 'from link click' : (engRcpt === 'all' ? 'most common' : 'this recipient'))
         : (eng.opens > 0 ? 'blocked by email privacy' : (engRcpt === 'all' ? 'most common' : 'this recipient')));
+    // Gmail proxy opens reveal no real device or location — drop those cells entirely.
+    const proxyMasked = !locationKnown && ['Gmail', 'Email client'].includes(eng.device);
+    const engCells = proxyMasked
+      ? [['OPENS', eng.opens, 'Tracked'], ['LAST OPENED', eng.last, 'most recent']]
+      : [['OPENS', eng.opens, 'Tracked'], ['LAST OPENED', eng.last, 'most recent'], ['DEVICE', eng.device, deviceSub], ['LOCATION', locationValue, locationSub]];
     const openSeries = Array.isArray(e.openSeries) && e.openSeries.some((v) => v > 0) ? e.openSeries : null;
     const showLinkActivity = e.links.length > 0;
     const visibleTimeline = (e.timeline || []).filter((ev) => !(ev.type === 'link' && free));
@@ -221,8 +226,8 @@
                 ))),
             ),
           ),
-          React.createElement('div', { className: 'engage-grid' },
-            [['OPENS', eng.opens, 'Tracked'], ['LAST OPENED', eng.last, 'most recent'], ['DEVICE', eng.device, deviceSub], ['LOCATION', locationValue, locationSub]]
+          React.createElement('div', { className: 'engage-grid', style: proxyMasked ? { gridTemplateColumns: 'repeat(2,1fr)' } : undefined },
+            engCells
               .map(([l, v, s]) => React.createElement('div', { key: l, className: 'engage-cell' },
                 React.createElement('div', { className: 'ec-label' }, l),
                 React.createElement('div', { className: 'ec-value' }, v),
