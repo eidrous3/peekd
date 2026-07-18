@@ -32,6 +32,30 @@
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
+  function pad2(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  function dayKey(date) {
+    const d = date instanceof Date ? date : new Date(date);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  function eachDay(start, end) {
+    const days = [];
+    const cur = startOfDay(start);
+    const last = startOfDay(end);
+    while (cur.getTime() <= last.getTime()) {
+      days.push(new Date(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return days;
+  }
+
+  function formatChartDayLabel(date) {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
   /** Resolve current + prior windows of equal length for period comparison. */
   function resolvePeriodRange(period, customRange) {
     const now = new Date();
@@ -120,7 +144,7 @@
 
     const { data, error } = await client.sb
       .from('tracked_emails')
-      .select('id, tracked_recipients(id, is_replied, email_open_events(classification))')
+      .select('id, sent_at, tracked_recipients(id, is_replied, email_open_events(classification))')
       .eq('user_id', client.userId)
       .gte('sent_at', start.toISOString())
       .lte('sent_at', end.toISOString());
@@ -143,6 +167,28 @@
     // Avg opens = unique opens / emails sent (unique = recipients with ≥1 human open).
     const avgOpens = emailsSent > 0 ? openedRecipients / emailsSent : null;
 
+    // Daily open rate: for emails sent that day, unique opens / recipients that day.
+    const days = eachDay(start, end);
+    const byDay = new Map(days.map((d) => [dayKey(d), { recipients: 0, opened: 0 }]));
+    for (const email of data) {
+      const key = dayKey(email.sent_at);
+      const bucket = byDay.get(key);
+      if (!bucket) continue;
+      for (const recipient of email.tracked_recipients || []) {
+        bucket.recipients += 1;
+        const opened = (recipient.email_open_events || []).some((ev) => ev.classification === 'human');
+        if (opened) bucket.opened += 1;
+      }
+    }
+    const openSeries = {
+      values: days.map((d) => {
+        const bucket = byDay.get(dayKey(d));
+        if (!bucket || bucket.recipients === 0) return 0;
+        return Math.round((bucket.opened / bucket.recipients) * 1000) / 10;
+      }),
+      labels: days.map((d) => formatChartDayLabel(d)),
+    };
+
     return {
       emailsSent,
       sentRecipients,
@@ -151,6 +197,7 @@
       openRate: sentRecipients > 0 ? (openedRecipients / sentRecipients) * 100 : null,
       replyRate: sentRecipients > 0 ? (repliedRecipients / sentRecipients) * 100 : null,
       avgOpens,
+      openSeries,
     };
   }
 
@@ -162,6 +209,7 @@
         openRate: { value: '—', delta: '', up: true, sub: '' },
         replyRate: { value: '—', delta: '', up: true, sub: '' },
         avgOpens: { value: '—', delta: '', up: true, sub: 'per tracked email' },
+        openSeries: { values: [], labels: [] },
       };
     }
 
@@ -176,6 +224,7 @@
         openRate: emptyStat(),
         replyRate: emptyStat(),
         avgOpens: { value: '—', delta: '', up: true, sub: 'per tracked email' },
+        openSeries: { values: [], labels: [] },
       };
     }
 
@@ -215,7 +264,7 @@
       };
     }
 
-    return { emailsSent, openRate, replyRate, avgOpens };
+    return { emailsSent, openRate, replyRate, avgOpens, openSeries: current.openSeries || { values: [], labels: [] } };
   }
 
   function statsFor(p, emailsSent, openRate, replyRate, avgOpens) {
@@ -331,9 +380,11 @@
     const [openRate, setOpenRate] = useState(null);
     const [replyRate, setReplyRate] = useState(null);
     const [avgOpens, setAvgOpens] = useState(null);
+    const [openSeries, setOpenSeries] = useState({ values: [], labels: [] });
     const p = PERIODS[period === 'custom' ? '30d' : period];
     const stats = statsFor(p, emailsSent, openRate, replyRate, avgOpens);
-    const series = seriesFor(p);
+    const series = openSeries.values.length ? openSeries.values : seriesFor(p);
+    const seriesLabels = openSeries.labels.length === series.length ? openSeries.labels : null;
     const replySeries = replySeriesFor(p);
 
     useEffect(() => {
@@ -343,12 +394,14 @@
       setOpenRate(loading);
       setReplyRate(loading);
       setAvgOpens({ value: '…', delta: '', up: true, sub: 'per tracked email' });
+      setOpenSeries({ values: [], labels: [] });
       fetchAnalyticsStats(period, customRange).then((stats) => {
         if (cancelled) return;
         setEmailsSent(stats.emailsSent);
         setOpenRate(stats.openRate);
         setReplyRate(stats.replyRate);
         setAvgOpens(stats.avgOpens);
+        setOpenSeries(stats.openSeries || { values: [], labels: [] });
       });
       return () => { cancelled = true; };
     }, [period, customRange?.from, customRange?.to]);
@@ -386,8 +439,15 @@
       ),
       React.createElement('div', { className: 'card chart-card' },
         React.createElement('h3', null, 'Open rate over time'),
-        React.createElement('div', { className: 'cc-sub' }, 'Daily opens across all tracked emails · ' + (period === 'custom' ? (customLabel || 'custom range') : PERIODS[period].label.toLowerCase())),
-        React.createElement(window.Chart, { key: period + (customLabel || ''), data: series, height: 220, axis: true, fmt: v => v + '%' }),
+        React.createElement('div', { className: 'cc-sub' }, 'Daily open rate for emails sent · ' + (period === 'custom' ? (customLabel || 'custom range') : PERIODS[period].label.toLowerCase())),
+        React.createElement(window.Chart, {
+          key: 'or-' + period + (customLabel || '') + series.length,
+          data: series,
+          labels: seriesLabels,
+          height: 220,
+          axis: true,
+          fmt: (v) => v + '%',
+        }),
       ),
       React.createElement('div', { className: 'card chart-card' },
         React.createElement('h3', null, 'Reply rate over time'),

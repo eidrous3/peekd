@@ -153,49 +153,90 @@
   }
 
   // Interactive line chart — move across it to reveal the value at each point.
-  function Chart({ data, height = 84, axis = false, fmt = (v) => v, accent, accentSoft }) {
+  function Chart({ data, labels, height = 84, axis = false, fmt = (v) => v, accent, accentSoft }) {
     const [hi, setHi] = useState(null);
     const ref = useRef(null);
-    const n = data.length, max = Math.max(...data), min = Math.min(...data);
+    const series = Array.isArray(data) && data.length ? data : [0];
+    const n = series.length;
+    const max = Math.max(...series);
+    const min = Math.min(...series);
     const span = (max - min) || 1;
-    const W = 1000, H = height, padT = axis ? 16 : 10, padB = 8;
-    const xPx = (i) => (i / (n - 1)) * W;
+    const hasLabels = Array.isArray(labels) && labels.length === n;
+    const W = 1000;
+    const H = height;
+    const padT = axis ? 16 : 10;
+    const padB = hasLabels ? 4 : 8;
+    const xPx = (i) => (n <= 1 ? W / 2 : (i / (n - 1)) * W);
     const yPx = (v) => padT + (1 - (v - min) / span) * (H - padT - padB);
-    const pts = data.map((d, i) => [xPx(i), yPx(d)]);
+    const pts = series.map((d, i) => [xPx(i), yPx(d)]);
     const path = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
     const area = path + ` L ${W} ${H} L 0 ${H} Z`;
     const yTicks = axis ? [max, Math.round((max + min) / 2), min] : [];
 
+    const labelStep = (() => {
+      if (!hasLabels || n <= 7) return 1;
+      if (n <= 14) return 2;
+      if (n <= 31) return Math.ceil(n / 6);
+      return Math.ceil(n / 8);
+    })();
+    const showLabelAt = (i) => {
+      if (!hasLabels) return false;
+      if (n <= 7) return true;
+      return i === 0 || i === n - 1 || i % labelStep === 0;
+    };
+
     const onMove = (e) => {
+      if (!ref.current || n <= 1) { setHi(n <= 1 ? 0 : null); return; }
       const r = ref.current.getBoundingClientRect();
       const rel = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
       setHi(Math.round(rel * (n - 1)));
     };
 
-    const cstyle = { height: H };
+    const cstyle = { height: hasLabels ? H + 22 : H };
     if (accent) cstyle['--accent'] = accent;
     if (accentSoft) cstyle['--accent-soft'] = accentSoft;
+
+    const tipText = (i) => {
+      const value = fmt(series[i]);
+      if (hasLabels && labels[i]) return labels[i] + ' · ' + value;
+      return value;
+    };
+
+    const plot = React.createElement('div', { className: 'chart-plot', ref, onMouseMove: onMove, onMouseLeave: () => setHi(null) },
+      React.createElement('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', className: 'chart-svg' },
+        axis && yTicks.map((t, i) => { const y = yPx(t); return React.createElement('line', { key: i, x1: 0, x2: W, y1: y, y2: y, stroke: 'var(--line)', strokeWidth: 1, vectorEffect: 'non-scaling-stroke' }); }),
+        React.createElement('path', { d: area, fill: 'var(--accent-soft)' }),
+        React.createElement('path', { d: path, fill: 'none', stroke: 'var(--accent)', strokeWidth: axis ? 2 : 1.6, vectorEffect: 'non-scaling-stroke' }),
+        hi != null && React.createElement('line', { x1: pts[hi][0], x2: pts[hi][0], y1: 0, y2: H, stroke: 'var(--accent)', strokeWidth: 1, strokeDasharray: '3 3', vectorEffect: 'non-scaling-stroke', opacity: 0.4 }),
+        axis && pts.map((p, i) => React.createElement('circle', { key: i, cx: p[0], cy: p[1], r: 2.5, fill: 'var(--accent)' })),
+      ),
+      pts.map((p, i) => React.createElement('span', { key: i, className: 'chart-dot' + (hi === i ? ' on' : ''), style: { left: (p[0] / W * 100) + '%', top: (p[1] / H * 100) + '%' } })),
+      hi != null && (() => {
+        const leftPct = (pts[hi][0] / W * 100);
+        const tipStyle = {
+          left: leftPct + '%',
+          top: (pts[hi][1] / H * 100) + '%',
+          transform: leftPct < 12 ? 'translate(0, -150%)' : leftPct > 88 ? 'translate(-100%, -150%)' : 'translate(-50%, -150%)',
+        };
+        return React.createElement('span', { className: 'chart-tip', style: tipStyle }, tipText(hi));
+      })(),
+    );
+
+    const xAxis = hasLabels && React.createElement('div', { className: 'chart-x' },
+      labels.map((label, i) => {
+        if (!showLabelAt(i)) return null;
+        const transform = i === 0 ? 'translateX(0)' : i === n - 1 ? 'translateX(-100%)' : 'translateX(-50%)';
+        return React.createElement('span', {
+          key: i,
+          className: 'chart-x-label',
+          style: { left: (xPx(i) / W * 100) + '%', transform },
+        }, label);
+      }),
+    );
+
     return React.createElement('div', { className: 'chart' + (axis ? ' chart-axis' : ''), style: cstyle },
       axis && React.createElement('div', { className: 'chart-y' }, yTicks.map((t, i) => React.createElement('span', { key: i }, fmt(t)))),
-      React.createElement('div', { className: 'chart-plot', ref, onMouseMove: onMove, onMouseLeave: () => setHi(null) },
-        React.createElement('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', className: 'chart-svg' },
-          axis && yTicks.map((t, i) => { const y = yPx(t); return React.createElement('line', { key: i, x1: 0, x2: W, y1: y, y2: y, stroke: 'var(--line)', strokeWidth: 1, vectorEffect: 'non-scaling-stroke' }); }),
-          React.createElement('path', { d: area, fill: 'var(--accent-soft)' }),
-          React.createElement('path', { d: path, fill: 'none', stroke: 'var(--accent)', strokeWidth: axis ? 2 : 1.6, vectorEffect: 'non-scaling-stroke' }),
-          hi != null && React.createElement('line', { x1: pts[hi][0], x2: pts[hi][0], y1: 0, y2: H, stroke: 'var(--accent)', strokeWidth: 1, strokeDasharray: '3 3', vectorEffect: 'non-scaling-stroke', opacity: 0.4 }),
-          axis && pts.map((p, i) => React.createElement('circle', { key: i, cx: p[0], cy: p[1], r: 2.5, fill: 'var(--accent)' })),
-        ),
-        pts.map((p, i) => React.createElement('span', { key: i, className: 'chart-dot' + (hi === i ? ' on' : ''), style: { left: (p[0] / W * 100) + '%', top: (p[1] / H * 100) + '%' } })),
-        hi != null && (() => {
-          const leftPct = (pts[hi][0] / W * 100);
-          const tipStyle = {
-            left: leftPct + '%',
-            top: (pts[hi][1] / H * 100) + '%',
-            transform: leftPct < 12 ? 'translate(0, -150%)' : leftPct > 88 ? 'translate(-100%, -150%)' : 'translate(-50%, -150%)',
-          };
-          return React.createElement('span', { className: 'chart-tip', style: tipStyle }, fmt(data[hi]));
-        })(),
-      ),
+      React.createElement('div', { className: 'chart-main' }, plot, xAxis),
     );
   }
 
