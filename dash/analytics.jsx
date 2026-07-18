@@ -114,7 +114,7 @@
 
     const { data, error } = await client.sb
       .from('tracked_emails')
-      .select('id, tracked_recipients(id, email_open_events(classification))')
+      .select('id, tracked_recipients(id, is_replied, email_open_events(classification))')
       .eq('user_id', client.userId)
       .gte('sent_at', start.toISOString())
       .lte('sent_at', end.toISOString());
@@ -123,11 +123,13 @@
 
     let sentRecipients = 0;
     let openedRecipients = 0;
+    let repliedRecipients = 0;
     for (const email of data) {
       for (const recipient of email.tracked_recipients || []) {
         sentRecipients += 1;
         const opened = (recipient.email_open_events || []).some((ev) => ev.classification === 'human');
         if (opened) openedRecipients += 1;
+        if (recipient.is_replied) repliedRecipients += 1;
       }
     }
 
@@ -135,7 +137,9 @@
       emailsSent: data.length,
       sentRecipients,
       openedRecipients,
+      repliedRecipients,
       openRate: sentRecipients > 0 ? (openedRecipients / sentRecipients) * 100 : null,
+      replyRate: sentRecipients > 0 ? (repliedRecipients / sentRecipients) * 100 : null,
     };
   }
 
@@ -145,6 +149,7 @@
       return {
         emailsSent: { value: '0', delta: '', up: true, sub: '' },
         openRate: { value: '—', delta: '', up: true, sub: '' },
+        replyRate: { value: '—', delta: '', up: true, sub: '' },
       };
     }
 
@@ -154,7 +159,7 @@
     ]);
 
     if (!current || !prior) {
-      return { emailsSent: emptyStat(), openRate: emptyStat() };
+      return { emailsSent: emptyStat(), openRate: emptyStat(), replyRate: emptyStat() };
     }
 
     let emailsSent;
@@ -173,10 +178,18 @@
       openRate = comparisonStat(formatRate(current.openRate), delta, up);
     }
 
-    return { emailsSent, openRate };
+    let replyRate;
+    if (current.replyRate == null) {
+      replyRate = { value: '—', delta: '', up: true, sub: '' };
+    } else {
+      const { delta, up } = formatRateDelta(current.replyRate, prior.replyRate);
+      replyRate = comparisonStat(formatRate(current.replyRate), delta, up);
+    }
+
+    return { emailsSent, openRate, replyRate };
   }
 
-  function statsFor(p, emailsSent, openRate) {
+  function statsFor(p, emailsSent, openRate, replyRate) {
     return [
       {
         label: 'EMAILS SENT',
@@ -192,7 +205,13 @@
         up: openRate?.up ?? true,
         sub: openRate?.sub ?? '',
       },
-      { label: 'REPLY RATE', value: p.rr, delta: '+1.8%', up: true, sub: 'vs last period' },
+      {
+        label: 'REPLY RATE',
+        value: replyRate?.value ?? p.rr,
+        delta: replyRate?.delta ?? '',
+        up: replyRate?.up ?? true,
+        sub: replyRate?.sub ?? '',
+      },
       { label: 'AVG. OPENS', value: p.avg, delta: '', up: true, sub: 'per tracked email' },
     ];
   }
@@ -275,8 +294,9 @@
     const [customRange, setCustomRange] = useState(null);
     const [emailsSent, setEmailsSent] = useState(null);
     const [openRate, setOpenRate] = useState(null);
+    const [replyRate, setReplyRate] = useState(null);
     const p = PERIODS[period === 'custom' ? '30d' : period];
-    const stats = statsFor(p, emailsSent, openRate);
+    const stats = statsFor(p, emailsSent, openRate, replyRate);
     const series = seriesFor(p);
     const replySeries = replySeriesFor(p);
 
@@ -285,10 +305,12 @@
       const loading = { value: '…', delta: '', up: true, sub: '' };
       setEmailsSent(loading);
       setOpenRate(loading);
+      setReplyRate(loading);
       fetchAnalyticsStats(period, customRange).then((stats) => {
         if (cancelled) return;
         setEmailsSent(stats.emailsSent);
         setOpenRate(stats.openRate);
+        setReplyRate(stats.replyRate);
       });
       return () => { cancelled = true; };
     }, [period, customRange?.from, customRange?.to]);

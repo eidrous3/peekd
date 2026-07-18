@@ -290,6 +290,39 @@ export async function updateTrackedSendGmailIds(trackedEmailId, { gmailMessageId
   return { ok: true, trackedEmail: res.data[0] };
 }
 
+/** Mark a tracked recipient as replied (idempotent). */
+export async function markRecipientReplied({ trackedEmailId, gmailMessageId, recipientEmail, repliedAt } = {}) {
+  const email = normalizeEmail(recipientEmail);
+  if (!email) return { ok: false, error: 'email_required' };
+
+  let emailId = trackedEmailId || null;
+  if (!emailId && gmailMessageId) {
+    const lookup = await dbRequest(
+      `tracked_emails?gmail_message_id=eq.${encodeURIComponent(gmailMessageId)}&select=id&limit=1`,
+    );
+    emailId = lookup.ok && lookup.data?.[0]?.id ? lookup.data[0].id : null;
+  }
+  if (!emailId) return { ok: false, error: 'tracked_email_not_found' };
+
+  const repliedAtIso = repliedAt
+    ? new Date(repliedAt).toISOString()
+    : new Date().toISOString();
+
+  const res = await dbRequest(
+    `tracked_recipients?tracked_email_id=eq.${encodeURIComponent(emailId)}`
+      + `&email=eq.${encodeURIComponent(email)}`
+      + `&is_replied=eq.false`,
+    {
+      method: 'PATCH',
+      body: { is_replied: true, replied_at: repliedAtIso },
+      prefer: 'return=minimal',
+    },
+  );
+
+  if (!res.ok) return { ok: false, error: res.error || 'update_failed' };
+  return { ok: true };
+}
+
 function postgrestInFilter(values) {
   return `(${values.map((v) => `"${String(v).replace(/"/g, '\\"')}"`).join(',')})`;
 }

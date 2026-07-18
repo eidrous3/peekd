@@ -1,3 +1,5 @@
+import { markRecipientReplied } from './_tracking.mjs';
+
 const GMAIL_SCOPES = [
   'openid',
   'email',
@@ -456,7 +458,7 @@ export async function enrichMessagesWithReplies(accessToken, messages, accountEm
     if (thread) threadById.set(threadId, thread);
   }));
 
-  return messages.map((message) => {
+  return Promise.all(messages.map(async (message) => {
     if (!(message.gmailLabelIds || []).includes('SENT') || !message.threadId) return message;
 
     const thread = threadById.get(message.threadId);
@@ -468,6 +470,14 @@ export async function enrichMessagesWithReplies(accessToken, messages, accountEm
     });
 
     if (!reply) return message;
+
+    // Persist for analytics — fire and forget; inbox UI still updates even if DB write fails.
+    markRecipientReplied({
+      trackedEmailId: message.trackedEmailId || null,
+      gmailMessageId: message.id,
+      recipientEmail: reply.email,
+      repliedAt: reply.internalDate,
+    }).catch(() => {});
 
     const timeline = [...(message.timeline || [])];
     const hasReplyEvent = timeline.some((event) => event.type === 'replied');
@@ -486,7 +496,7 @@ export async function enrichMessagesWithReplies(accessToken, messages, accountEm
       badge: 'REPLIED',
       timeline,
     };
-  });
+  }));
 }
 
 export async function enrichInboxWithReplies(accounts, messages) {
