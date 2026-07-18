@@ -69,6 +69,12 @@
     return (Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)) + '%';
   }
 
+  function formatAvgOpens(value) {
+    if (value == null || Number.isNaN(value)) return '—';
+    const rounded = Math.round(value * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  }
+
   function formatDelta(current, prior) {
     if (prior === 0) {
       if (current === 0) return { delta: '0%', up: true };
@@ -133,13 +139,18 @@
       }
     }
 
+    const emailsSent = data.length;
+    // Avg opens = unique opens / emails sent (unique = recipients with ≥1 human open).
+    const avgOpens = emailsSent > 0 ? openedRecipients / emailsSent : null;
+
     return {
-      emailsSent: data.length,
+      emailsSent,
       sentRecipients,
       openedRecipients,
       repliedRecipients,
       openRate: sentRecipients > 0 ? (openedRecipients / sentRecipients) * 100 : null,
       replyRate: sentRecipients > 0 ? (repliedRecipients / sentRecipients) * 100 : null,
+      avgOpens,
     };
   }
 
@@ -150,6 +161,7 @@
         emailsSent: { value: '0', delta: '', up: true, sub: '' },
         openRate: { value: '—', delta: '', up: true, sub: '' },
         replyRate: { value: '—', delta: '', up: true, sub: '' },
+        avgOpens: { value: '—', delta: '', up: true, sub: 'per tracked email' },
       };
     }
 
@@ -159,7 +171,12 @@
     ]);
 
     if (!current || !prior) {
-      return { emailsSent: emptyStat(), openRate: emptyStat(), replyRate: emptyStat() };
+      return {
+        emailsSent: emptyStat(),
+        openRate: emptyStat(),
+        replyRate: emptyStat(),
+        avgOpens: { value: '—', delta: '', up: true, sub: 'per tracked email' },
+      };
     }
 
     let emailsSent;
@@ -186,10 +203,22 @@
       replyRate = comparisonStat(formatRate(current.replyRate), delta, up);
     }
 
-    return { emailsSent, openRate, replyRate };
+    let avgOpens;
+    if (current.avgOpens == null) {
+      avgOpens = { value: '—', delta: '', up: true, sub: 'per tracked email' };
+    } else {
+      avgOpens = {
+        value: formatAvgOpens(current.avgOpens),
+        delta: '',
+        up: true,
+        sub: 'per tracked email',
+      };
+    }
+
+    return { emailsSent, openRate, replyRate, avgOpens };
   }
 
-  function statsFor(p, emailsSent, openRate, replyRate) {
+  function statsFor(p, emailsSent, openRate, replyRate, avgOpens) {
     return [
       {
         label: 'EMAILS SENT',
@@ -212,7 +241,13 @@
         up: replyRate?.up ?? true,
         sub: replyRate?.sub ?? '',
       },
-      { label: 'AVG. OPENS', value: p.avg, delta: '', up: true, sub: 'per tracked email' },
+      {
+        label: 'AVG. OPENS',
+        value: avgOpens?.value ?? p.avg,
+        delta: avgOpens?.delta ?? '',
+        up: avgOpens?.up ?? true,
+        sub: avgOpens?.sub ?? 'per tracked email',
+      },
     ];
   }
   function seriesFor(p) {
@@ -295,8 +330,9 @@
     const [emailsSent, setEmailsSent] = useState(null);
     const [openRate, setOpenRate] = useState(null);
     const [replyRate, setReplyRate] = useState(null);
+    const [avgOpens, setAvgOpens] = useState(null);
     const p = PERIODS[period === 'custom' ? '30d' : period];
-    const stats = statsFor(p, emailsSent, openRate, replyRate);
+    const stats = statsFor(p, emailsSent, openRate, replyRate, avgOpens);
     const series = seriesFor(p);
     const replySeries = replySeriesFor(p);
 
@@ -306,11 +342,13 @@
       setEmailsSent(loading);
       setOpenRate(loading);
       setReplyRate(loading);
+      setAvgOpens({ value: '…', delta: '', up: true, sub: 'per tracked email' });
       fetchAnalyticsStats(period, customRange).then((stats) => {
         if (cancelled) return;
         setEmailsSent(stats.emailsSent);
         setOpenRate(stats.openRate);
         setReplyRate(stats.replyRate);
+        setAvgOpens(stats.avgOpens);
       });
       return () => { cancelled = true; };
     }, [period, customRange?.from, customRange?.to]);
