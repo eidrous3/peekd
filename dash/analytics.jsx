@@ -63,6 +63,12 @@
     return Number(n || 0).toLocaleString('en-US');
   }
 
+  function formatRate(pct) {
+    if (pct == null || Number.isNaN(pct)) return '—';
+    const rounded = Math.round(pct * 10) / 10;
+    return (Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)) + '%';
+  }
+
   function formatDelta(current, prior) {
     if (prior === 0) {
       if (current === 0) return { delta: '0%', up: true };
@@ -73,57 +79,119 @@
     return { delta: (up ? '+' : '') + pct + '%', up };
   }
 
-  async function countTrackedEmailsInRange(start, end) {
+  /** Absolute change in rate percentage points (e.g. 73.4 − 69.2 → +4.2%). */
+  function formatRateDelta(currentRate, priorRate) {
+    if (currentRate == null || priorRate == null) return { delta: '', up: true };
+    const pts = Math.round((currentRate - priorRate) * 10) / 10;
+    if (pts === 0) return { delta: '', up: true };
+    const up = pts > 0;
+    const text = (up ? '+' : '') + (Number.isInteger(pts) ? String(pts) : pts.toFixed(1)) + '%';
+    return { delta: text, up };
+  }
+
+  function emptyStat() {
+    return { value: '—', delta: '', up: true, sub: '' };
+  }
+
+  function comparisonStat(value, delta, up) {
+    if (!delta) return { value, delta: '', up: true, sub: '' };
+    return { value, delta, up, sub: 'vs last period' };
+  }
+
+  async function getAnalyticsClient() {
     const Auth = window.PeekdAuth;
     if (!Auth?.ready()) return null;
     const s = await Auth.ensureSession();
     if (!s?.user) return null;
     const sb = Auth.client();
     if (!sb) return null;
+    return { sb, userId: s.user.id };
+  }
 
-    const { count, error } = await sb
+  async function fetchWindowStats(start, end) {
+    const client = await getAnalyticsClient();
+    if (!client) return null;
+
+    const { data, error } = await client.sb
       .from('tracked_emails')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', s.user.id)
+      .select('id, tracked_recipients(id, email_open_events(classification))')
+      .eq('user_id', client.userId)
       .gte('sent_at', start.toISOString())
       .lte('sent_at', end.toISOString());
 
-    if (error) return null;
-    return count || 0;
+    if (error || !Array.isArray(data)) return null;
+
+    let sentRecipients = 0;
+    let openedRecipients = 0;
+    for (const email of data) {
+      for (const recipient of email.tracked_recipients || []) {
+        sentRecipients += 1;
+        const opened = (recipient.email_open_events || []).some((ev) => ev.classification === 'human');
+        if (opened) openedRecipients += 1;
+      }
+    }
+
+    return {
+      emailsSent: data.length,
+      sentRecipients,
+      openedRecipients,
+      openRate: sentRecipients > 0 ? (openedRecipients / sentRecipients) * 100 : null,
+    };
   }
 
-  async function fetchEmailsSentStat(period, customRange) {
+  async function fetchAnalyticsStats(period, customRange) {
     const range = resolvePeriodRange(period, customRange);
-    if (!range) return { value: '0', delta: '', up: true, sub: '' };
+    if (!range) {
+      return {
+        emailsSent: { value: '0', delta: '', up: true, sub: '' },
+        openRate: { value: '—', delta: '', up: true, sub: '' },
+      };
+    }
 
     const [current, prior] = await Promise.all([
-      countTrackedEmailsInRange(range.current.start, range.current.end),
-      countTrackedEmailsInRange(range.prior.start, range.prior.end),
+      fetchWindowStats(range.current.start, range.current.end),
+      fetchWindowStats(range.prior.start, range.prior.end),
     ]);
 
-    if (current == null || prior == null) {
-      return { value: '—', delta: '', up: true, sub: '' };
+    if (!current || !prior) {
+      return { emailsSent: emptyStat(), openRate: emptyStat() };
     }
 
-    // Same as last period — no comparison label. Also hide orphan "vs last period" when delta is blank.
-    if (current === prior) {
-      return { value: formatCount(current), delta: '', up: true, sub: '' };
+    let emailsSent;
+    if (current.emailsSent === prior.emailsSent) {
+      emailsSent = { value: formatCount(current.emailsSent), delta: '', up: true, sub: '' };
+    } else {
+      const { delta, up } = formatDelta(current.emailsSent, prior.emailsSent);
+      emailsSent = comparisonStat(formatCount(current.emailsSent), delta, up);
     }
 
-    const { delta, up } = formatDelta(current, prior);
-    return { value: formatCount(current), delta, up, sub: delta ? 'vs last period' : '' };
+    let openRate;
+    if (current.openRate == null) {
+      openRate = { value: '—', delta: '', up: true, sub: '' };
+    } else {
+      const { delta, up } = formatRateDelta(current.openRate, prior.openRate);
+      openRate = comparisonStat(formatRate(current.openRate), delta, up);
+    }
+
+    return { emailsSent, openRate };
   }
 
-  function statsFor(p, emailsSent) {
+  function statsFor(p, emailsSent, openRate) {
     return [
       {
         label: 'EMAILS SENT',
         value: emailsSent?.value ?? p.sent,
         delta: emailsSent?.delta ?? '',
         up: emailsSent?.up ?? true,
-        sub: emailsSent?.sub ?? 'vs last period',
+        sub: emailsSent?.sub ?? '',
       },
-      { label: 'OPEN RATE', value: p.or, delta: '+4.2%', up: true, sub: 'vs last period' },
+      {
+        label: 'OPEN RATE',
+        value: openRate?.value ?? p.or,
+        delta: openRate?.delta ?? '',
+        up: openRate?.up ?? true,
+        sub: openRate?.sub ?? '',
+      },
       { label: 'REPLY RATE', value: p.rr, delta: '+1.8%', up: true, sub: 'vs last period' },
       { label: 'AVG. OPENS', value: p.avg, delta: '', up: true, sub: 'per tracked email' },
     ];
@@ -206,16 +274,21 @@
     const [customLabel, setCustomLabel] = useState(null);
     const [customRange, setCustomRange] = useState(null);
     const [emailsSent, setEmailsSent] = useState(null);
+    const [openRate, setOpenRate] = useState(null);
     const p = PERIODS[period === 'custom' ? '30d' : period];
-    const stats = statsFor(p, emailsSent);
+    const stats = statsFor(p, emailsSent, openRate);
     const series = seriesFor(p);
     const replySeries = replySeriesFor(p);
 
     useEffect(() => {
       let cancelled = false;
-      setEmailsSent({ value: '…', delta: '', up: true, sub: 'vs last period' });
-      fetchEmailsSentStat(period, customRange).then((stat) => {
-        if (!cancelled) setEmailsSent(stat);
+      const loading = { value: '…', delta: '', up: true, sub: '' };
+      setEmailsSent(loading);
+      setOpenRate(loading);
+      fetchAnalyticsStats(period, customRange).then((stats) => {
+        if (cancelled) return;
+        setEmailsSent(stats.emailsSent);
+        setOpenRate(stats.openRate);
       });
       return () => { cancelled = true; };
     }, [period, customRange?.from, customRange?.to]);
