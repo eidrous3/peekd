@@ -167,9 +167,9 @@
     // Avg opens = unique opens / emails sent (unique = recipients with ≥1 human open).
     const avgOpens = emailsSent > 0 ? openedRecipients / emailsSent : null;
 
-    // Daily open rate: for emails sent that day, unique opens / recipients that day.
+    // Daily rates: for emails sent that day, unique opens|replies / recipients that day.
     const days = eachDay(start, end);
-    const byDay = new Map(days.map((d) => [dayKey(d), { recipients: 0, opened: 0 }]));
+    const byDay = new Map(days.map((d) => [dayKey(d), { recipients: 0, opened: 0, replied: 0 }]));
     for (const email of data) {
       const key = dayKey(email.sent_at);
       const bucket = byDay.get(key);
@@ -178,16 +178,17 @@
         bucket.recipients += 1;
         const opened = (recipient.email_open_events || []).some((ev) => ev.classification === 'human');
         if (opened) bucket.opened += 1;
+        if (recipient.is_replied) bucket.replied += 1;
       }
     }
-    const openSeries = {
-      values: days.map((d) => {
-        const bucket = byDay.get(dayKey(d));
-        if (!bucket || bucket.recipients === 0) return 0;
-        return Math.round((bucket.opened / bucket.recipients) * 1000) / 10;
-      }),
-      labels: days.map((d) => formatChartDayLabel(d)),
-    };
+    const dayLabels = days.map((d) => formatChartDayLabel(d));
+    const rateSeries = (field) => days.map((d) => {
+      const bucket = byDay.get(dayKey(d));
+      if (!bucket || bucket.recipients === 0) return 0;
+      return Math.round((bucket[field] / bucket.recipients) * 1000) / 10;
+    });
+    const openSeries = { values: rateSeries('opened'), labels: dayLabels };
+    const replySeries = { values: rateSeries('replied'), labels: dayLabels };
 
     return {
       emailsSent,
@@ -198,6 +199,7 @@
       replyRate: sentRecipients > 0 ? (repliedRecipients / sentRecipients) * 100 : null,
       avgOpens,
       openSeries,
+      replySeries,
     };
   }
 
@@ -210,6 +212,7 @@
         replyRate: { value: '—', delta: '', up: true, sub: '' },
         avgOpens: { value: '—', delta: '', up: true, sub: 'per tracked email' },
         openSeries: { values: [], labels: [] },
+        replySeries: { values: [], labels: [] },
       };
     }
 
@@ -225,6 +228,7 @@
         replyRate: emptyStat(),
         avgOpens: { value: '—', delta: '', up: true, sub: 'per tracked email' },
         openSeries: { values: [], labels: [] },
+        replySeries: { values: [], labels: [] },
       };
     }
 
@@ -264,7 +268,14 @@
       };
     }
 
-    return { emailsSent, openRate, replyRate, avgOpens, openSeries: current.openSeries || { values: [], labels: [] } };
+    return {
+      emailsSent,
+      openRate,
+      replyRate,
+      avgOpens,
+      openSeries: current.openSeries || { values: [], labels: [] },
+      replySeries: current.replySeries || { values: [], labels: [] },
+    };
   }
 
   function statsFor(p, emailsSent, openRate, replyRate, avgOpens) {
@@ -381,11 +392,14 @@
     const [replyRate, setReplyRate] = useState(null);
     const [avgOpens, setAvgOpens] = useState(null);
     const [openSeries, setOpenSeries] = useState({ values: [], labels: [] });
+    const [replySeriesLive, setReplySeriesLive] = useState({ values: [], labels: [] });
     const p = PERIODS[period === 'custom' ? '30d' : period];
     const stats = statsFor(p, emailsSent, openRate, replyRate, avgOpens);
     const series = openSeries.values.length ? openSeries.values : seriesFor(p);
     const seriesLabels = openSeries.labels.length === series.length ? openSeries.labels : null;
-    const replySeries = replySeriesFor(p);
+    const replySeries = replySeriesLive.values.length ? replySeriesLive.values : replySeriesFor(p);
+    const replySeriesLabels = replySeriesLive.labels.length === replySeries.length ? replySeriesLive.labels : null;
+    const periodLabel = period === 'custom' ? (customLabel || 'custom range') : PERIODS[period].label.toLowerCase();
 
     useEffect(() => {
       let cancelled = false;
@@ -395,6 +409,7 @@
       setReplyRate(loading);
       setAvgOpens({ value: '…', delta: '', up: true, sub: 'per tracked email' });
       setOpenSeries({ values: [], labels: [] });
+      setReplySeriesLive({ values: [], labels: [] });
       fetchAnalyticsStats(period, customRange).then((stats) => {
         if (cancelled) return;
         setEmailsSent(stats.emailsSent);
@@ -402,6 +417,7 @@
         setReplyRate(stats.replyRate);
         setAvgOpens(stats.avgOpens);
         setOpenSeries(stats.openSeries || { values: [], labels: [] });
+        setReplySeriesLive(stats.replySeries || { values: [], labels: [] });
       });
       return () => { cancelled = true; };
     }, [period, customRange?.from, customRange?.to]);
@@ -439,7 +455,7 @@
       ),
       React.createElement('div', { className: 'card chart-card' },
         React.createElement('h3', null, 'Open rate over time'),
-        React.createElement('div', { className: 'cc-sub' }, 'Daily open rate for emails sent · ' + (period === 'custom' ? (customLabel || 'custom range') : PERIODS[period].label.toLowerCase())),
+        React.createElement('div', { className: 'cc-sub' }, 'Daily open rate for emails sent · ' + periodLabel),
         React.createElement(window.Chart, {
           key: 'or-' + period + (customLabel || '') + series.length,
           data: series,
@@ -451,8 +467,17 @@
       ),
       React.createElement('div', { className: 'card chart-card' },
         React.createElement('h3', null, 'Reply rate over time'),
-        React.createElement('div', { className: 'cc-sub' }, 'Daily replies across all tracked emails · ' + (period === 'custom' ? (customLabel || 'custom range') : PERIODS[period].label.toLowerCase())),
-        React.createElement(window.Chart, { key: 'r' + period + (customLabel || ''), data: replySeries, height: 220, axis: true, fmt: v => v + '%', accent: '#22c55e', accentSoft: 'rgba(34,197,94,0.08)' }),
+        React.createElement('div', { className: 'cc-sub' }, 'Daily reply rate for emails sent · ' + periodLabel),
+        React.createElement(window.Chart, {
+          key: 'rr-' + period + (customLabel || '') + replySeries.length,
+          data: replySeries,
+          labels: replySeriesLabels,
+          height: 220,
+          axis: true,
+          fmt: (v) => v + '%',
+          accent: '#22c55e',
+          accentSoft: 'rgba(34,197,94,0.08)',
+        }),
       ),
       React.createElement('div', { className: 'analytics-cols' },
         React.createElement('div', { className: 'card chart-card' },
