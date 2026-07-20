@@ -78,7 +78,7 @@
     return [String(first || '').trim(), String(last || '').trim()].filter(Boolean).join(' ');
   }
 
-  const TOP_RECIPIENTS_LIMIT = 7;
+  const TOP_RECIPIENTS_LIMIT = 14;
 
   /** Resolve current + prior windows of equal length for period comparison. */
   function resolvePeriodRange(period, customRange) {
