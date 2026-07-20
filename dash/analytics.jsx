@@ -79,6 +79,22 @@
   }
 
   const TOP_RECIPIENTS_LIMIT = 14;
+  const LINK_PERF_LIMIT = 10;
+
+  function displayUrlForLink(url) {
+    try {
+      const parsed = new URL(url);
+      const host = parsed.host.replace(/^www\./i, '');
+      const path = parsed.pathname === '/' ? '' : parsed.pathname;
+      return (host + path) || host;
+    } catch {
+      return String(url || '').replace(/^https?:\/\//i, '').slice(0, 80);
+    }
+  }
+
+  function isCountableClick(event) {
+    return event?.classification !== 'likely_proxy';
+  }
 
   /** Resolve current + prior windows of equal length for period comparison. */
   function resolvePeriodRange(period, customRange) {
@@ -199,7 +215,7 @@
 
     const { data, error } = await client.sb
       .from('tracked_emails')
-      .select('id, sent_at, tracked_recipients(id, email, is_replied, email_open_events(classification))')
+      .select('id, sent_at, tracked_recipients(id, email, is_replied, email_open_events(classification)), tracked_links(id, original_url, email_click_events(id, classification, ip))')
       .eq('user_id', client.userId)
       .gte('sent_at', start.toISOString())
       .lte('sent_at', end.toISOString());
@@ -210,15 +226,22 @@
     let openedRecipients = 0;
     let repliedRecipients = 0;
     const byRecipient = new Map();
+    const byLink = new Map();
     const days = eachDay(start, end);
     const byDay = new Map(days.map((d) => [dayKey(d), { recipients: 0, opened: 0, replied: 0 }]));
 
     for (const email of data) {
       const dayBucket = byDay.get(dayKey(email.sent_at));
-      for (const recipient of email.tracked_recipients || []) {
+      const recipients = email.tracked_recipients || [];
+      const recipientCount = recipients.length;
+      let viewedOnEmail = 0;
+      for (const recipient of recipients) {
         sentRecipients += 1;
         const opened = (recipient.email_open_events || []).some((ev) => ev.classification === 'human');
-        if (opened) openedRecipients += 1;
+        if (opened) {
+          openedRecipients += 1;
+          viewedOnEmail += 1;
+        }
         if (recipient.is_replied) repliedRecipients += 1;
 
         if (dayBucket) {
@@ -233,6 +256,35 @@
         cur.sent += 1;
         if (opened) cur.opened += 1;
         byRecipient.set(addr, cur);
+      }
+
+      for (const link of email.tracked_links || []) {
+        const url = displayUrlForLink(link.original_url);
+        if (!url) continue;
+        const cur = byLink.get(url) || {
+          url,
+          clicks: 0,
+          clickedRecipients: 0,
+          viewedRecipients: 0,
+        };
+        const events = (link.email_click_events || []).filter(isCountableClick);
+        cur.clicks += events.length;
+        cur.viewedRecipients += viewedOnEmail;
+
+        // Attribute clickers to recipients: 1:1 send is exact; multi-recipient uses distinct IPs.
+        const clickIps = new Set();
+        for (let i = 0; i < events.length; i++) {
+          const ev = events[i];
+          clickIps.add(String(ev.ip || ev.id || ('anon:' + link.id + ':' + i)).trim());
+        }
+        let clickedOnEmail = 0;
+        if (events.length > 0) {
+          clickedOnEmail = recipientCount <= 1
+            ? 1
+            : Math.min(clickIps.size, recipientCount);
+        }
+        cur.clickedRecipients += clickedOnEmail;
+        byLink.set(url, cur);
       }
     }
 
@@ -266,6 +318,26 @@
       .sort((a, b) => b.rate - a.rate || b.sent - a.sent)
       .slice(0, TOP_RECIPIENTS_LIMIT);
 
+    // Link performance: aggregate by display URL across sends in this window.
+    // clicks = countable events; unique = recipients who clicked;
+    // CTR = recipients who clicked / recipients who viewed (opened) emails with that URL.
+    const linkPerformance = [...byLink.values()]
+      .filter((row) => row.clicks > 0)
+      .map((row) => {
+        const unique = row.clickedRecipients;
+        const ctr = row.viewedRecipients > 0
+          ? Math.min(100, Math.round((unique / row.viewedRecipients) * 100))
+          : 0;
+        return {
+          url: row.url,
+          clicks: row.clicks,
+          unique,
+          ctr,
+        };
+      })
+      .sort((a, b) => b.clicks - a.clicks || b.unique - a.unique)
+      .slice(0, LINK_PERF_LIMIT);
+
     return {
       emailsSent,
       sentRecipients,
@@ -277,6 +349,7 @@
       openSeries,
       replySeries,
       topRecipients,
+      linkPerformance,
     };
   }
 
@@ -291,6 +364,7 @@
         openSeries: { values: [], labels: [] },
         replySeries: { values: [], labels: [] },
         topRecipients: [],
+        linkPerformance: [],
       };
     }
 
@@ -308,6 +382,7 @@
         openSeries: { values: [], labels: [] },
         replySeries: { values: [], labels: [] },
         topRecipients: [],
+        linkPerformance: [],
       };
     }
 
@@ -358,6 +433,7 @@
       openSeries: current.openSeries || { values: [], labels: [] },
       replySeries: current.replySeries || { values: [], labels: [] },
       topRecipients,
+      linkPerformance: current.linkPerformance || [],
     };
   }
 
@@ -409,14 +485,6 @@
     }
     return arr;
   }
-
-  const LINK_DATA = [
-    { url: 'getpeekd.com/demo', clicks: 24, unique: 18, ctr: 13 },
-    { url: 'calendly.com/saied/30min', clicks: 17, unique: 14, ctr: 9 },
-    { url: 'docs.google.com/proposal', clicks: 12, unique: 10, ctr: 7 },
-    { url: 'loom.com/share/design-review', clicks: 8, unique: 7, ctr: 4 },
-    { url: 'getpeekd.com/pricing', clicks: 5, unique: 5, ctr: 3 },
-  ];
 
   function DateFilter({ period, customLabel, onSelect }) {
     const [open, setOpen] = useState(false);
@@ -477,6 +545,7 @@
     const [openSeries, setOpenSeries] = useState({ values: [], labels: [] });
     const [replySeriesLive, setReplySeriesLive] = useState({ values: [], labels: [] });
     const [topRecipients, setTopRecipients] = useState(null);
+    const [linkPerformance, setLinkPerformance] = useState(null);
     const p = PERIODS[period === 'custom' ? '30d' : period];
     const stats = statsFor(p, emailsSent, openRate, replyRate, avgOpens);
     const series = openSeries.values.length ? openSeries.values : seriesFor(p);
@@ -485,6 +554,8 @@
     const replySeriesLabels = replySeriesLive.labels.length === replySeries.length ? replySeriesLive.labels : null;
     const periodLabel = period === 'custom' ? (customLabel || 'custom range') : PERIODS[period].label.toLowerCase();
     const topList = Array.isArray(topRecipients) ? topRecipients : [];
+    const linkList = Array.isArray(linkPerformance) ? linkPerformance : [];
+    const maxLinkCtr = Math.max(...linkList.map((l) => l.ctr), 1);
 
     useEffect(() => {
       let cancelled = false;
@@ -496,6 +567,7 @@
       setOpenSeries({ values: [], labels: [] });
       setReplySeriesLive({ values: [], labels: [] });
       setTopRecipients(null);
+      setLinkPerformance(null);
       fetchAnalyticsStats(period, customRange).then((stats) => {
         if (cancelled) return;
         setEmailsSent(stats.emailsSent);
@@ -505,6 +577,7 @@
         setOpenSeries(stats.openSeries || { values: [], labels: [] });
         setReplySeriesLive(stats.replySeries || { values: [], labels: [] });
         setTopRecipients(stats.topRecipients || []);
+        setLinkPerformance(stats.linkPerformance || []);
       });
       return () => { cancelled = true; };
     }, [period, customRange?.from, customRange?.to]);
@@ -598,7 +671,7 @@
       ),
       React.createElement('div', { className: 'card chart-card' },
         React.createElement('h3', null, 'Link performance'),
-        React.createElement('div', { className: 'cc-sub' }, 'Most clicked links across all tracked emails'),
+        React.createElement('div', { className: 'cc-sub' }, 'Most clicked links · ' + periodLabel),
         React.createElement('div', { className: 'link-perf-wrap' },
           React.createElement('table', { className: 'link-perf' },
             React.createElement('thead', null, React.createElement('tr', null,
@@ -607,15 +680,21 @@
               React.createElement('th', { className: 'lp-num' }, 'UNIQUE'),
               React.createElement('th', { className: 'lp-num' }, 'CTR'))),
             React.createElement('tbody', null,
-              LINK_DATA.map((l, i) => React.createElement('tr', { key: i },
-                React.createElement('td', null, React.createElement('span', { className: 'lp-url' },
-                  React.createElement(Icon, { name: 'link', size: 14 }),
-                  React.createElement('span', { className: 'lp-url-text' }, l.url.length > 40 ? l.url.slice(0, 40) + '…' : l.url))),
-                React.createElement('td', { className: 'lp-num' }, React.createElement('b', null, l.clicks)),
-                React.createElement('td', { className: 'lp-num muted' }, l.unique),
-                React.createElement('td', { className: 'lp-num' }, React.createElement('span', { className: 'lp-ctr' },
-                  React.createElement('span', { className: 'lp-ctr-bar', style: { width: (l.ctr / 13 * 100) + '%' } }),
-                  React.createElement('span', { className: 'lp-ctr-val' }, l.ctr + '%'))))),
+              linkPerformance == null
+                ? React.createElement('tr', null,
+                    React.createElement('td', { colSpan: 4, className: 'muted' }, 'Loading…'))
+                : linkList.length
+                  ? linkList.map((l, i) => React.createElement('tr', { key: l.url || i },
+                      React.createElement('td', null, React.createElement('span', { className: 'lp-url' },
+                        React.createElement(Icon, { name: 'link', size: 14 }),
+                        React.createElement('span', { className: 'lp-url-text' }, l.url.length > 40 ? l.url.slice(0, 40) + '…' : l.url))),
+                      React.createElement('td', { className: 'lp-num' }, React.createElement('b', null, l.clicks)),
+                      React.createElement('td', { className: 'lp-num muted' }, l.unique),
+                      React.createElement('td', { className: 'lp-num' }, React.createElement('span', { className: 'lp-ctr' },
+                        React.createElement('span', { className: 'lp-ctr-bar', style: { width: (l.ctr / maxLinkCtr * 100) + '%' } }),
+                        React.createElement('span', { className: 'lp-ctr-val' }, l.ctr + '%')))))
+                  : React.createElement('tr', null,
+                      React.createElement('td', { colSpan: 4, className: 'muted' }, 'No link clicks in this period')),
             ),
           ),
           free && React.createElement('div', { className: 'heatmap-blur' },
