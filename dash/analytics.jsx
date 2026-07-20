@@ -3,7 +3,6 @@
   const { useState, useEffect, useRef } = React;
   const Icon = window.Icon;
   const { Avatar } = window;
-  const D = window.PeekdData;
 
   const PERIODS = {
     '7d':  { label: 'Last 7 days',   sent: '89',    or: '68.2%', rr: '28.4%', avg: '2.1', orNum: 68, points: 7, days: 7 },
@@ -55,6 +54,31 @@
   function formatChartDayLabel(date) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
+
+  function normalizeEmail(email) {
+    return String(email || '').trim().toLowerCase();
+  }
+
+  function displayNameFromEmail(email) {
+    const local = normalizeEmail(email).split('@')[0] || 'Recipient';
+    return local.split(/[._-]+/).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') || local;
+  }
+
+  function initialsFromNameOrEmail(name, email) {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    const local = normalizeEmail(email).split('@')[0] || '';
+    const chunks = local.split(/[._-]+/).filter(Boolean);
+    if (chunks.length >= 2) return (chunks[0][0] + chunks[1][0]).toUpperCase();
+    return local.slice(0, 2).toUpperCase() || '?';
+  }
+
+  function fullName(first, last) {
+    return [String(first || '').trim(), String(last || '').trim()].filter(Boolean).join(' ');
+  }
+
+  const TOP_RECIPIENTS_LIMIT = 7;
 
   /** Resolve current + prior windows of equal length for period comparison. */
   function resolvePeriodRange(period, customRange) {
@@ -138,13 +162,44 @@
     return { sb, userId: s.user.id };
   }
 
+  async function enrichRecipientNames(client, rows) {
+    if (!client || !rows.length) return rows;
+    const emails = rows.map((r) => r.email).filter(Boolean);
+    if (!emails.length) return rows;
+
+    const { data, error } = await client.sb
+      .from('people')
+      .select('email, first_name, last_name')
+      .eq('user_id', client.userId)
+      .in('email', emails);
+
+    if (error || !Array.isArray(data)) return rows;
+
+    const byEmail = new Map();
+    for (const person of data) {
+      const email = normalizeEmail(person.email);
+      if (!email) continue;
+      const name = fullName(person.first_name, person.last_name);
+      if (name) byEmail.set(email, name);
+    }
+
+    return rows.map((row) => {
+      const name = byEmail.get(row.email) || row.name;
+      return {
+        ...row,
+        name,
+        initials: initialsFromNameOrEmail(name, row.email),
+      };
+    });
+  }
+
   async function fetchWindowStats(start, end) {
     const client = await getAnalyticsClient();
     if (!client) return null;
 
     const { data, error } = await client.sb
       .from('tracked_emails')
-      .select('id, sent_at, tracked_recipients(id, is_replied, email_open_events(classification))')
+      .select('id, sent_at, tracked_recipients(id, email, is_replied, email_open_events(classification))')
       .eq('user_id', client.userId)
       .gte('sent_at', start.toISOString())
       .lte('sent_at', end.toISOString());
@@ -154,12 +209,30 @@
     let sentRecipients = 0;
     let openedRecipients = 0;
     let repliedRecipients = 0;
+    const byRecipient = new Map();
+    const days = eachDay(start, end);
+    const byDay = new Map(days.map((d) => [dayKey(d), { recipients: 0, opened: 0, replied: 0 }]));
+
     for (const email of data) {
+      const dayBucket = byDay.get(dayKey(email.sent_at));
       for (const recipient of email.tracked_recipients || []) {
         sentRecipients += 1;
         const opened = (recipient.email_open_events || []).some((ev) => ev.classification === 'human');
         if (opened) openedRecipients += 1;
         if (recipient.is_replied) repliedRecipients += 1;
+
+        if (dayBucket) {
+          dayBucket.recipients += 1;
+          if (opened) dayBucket.opened += 1;
+          if (recipient.is_replied) dayBucket.replied += 1;
+        }
+
+        const addr = normalizeEmail(recipient.email);
+        if (!addr) continue;
+        const cur = byRecipient.get(addr) || { email: addr, sent: 0, opened: 0 };
+        cur.sent += 1;
+        if (opened) cur.opened += 1;
+        byRecipient.set(addr, cur);
       }
     }
 
@@ -167,20 +240,6 @@
     // Avg opens = unique opens / emails sent (unique = recipients with ≥1 human open).
     const avgOpens = emailsSent > 0 ? openedRecipients / emailsSent : null;
 
-    // Daily rates: for emails sent that day, unique opens|replies / recipients that day.
-    const days = eachDay(start, end);
-    const byDay = new Map(days.map((d) => [dayKey(d), { recipients: 0, opened: 0, replied: 0 }]));
-    for (const email of data) {
-      const key = dayKey(email.sent_at);
-      const bucket = byDay.get(key);
-      if (!bucket) continue;
-      for (const recipient of email.tracked_recipients || []) {
-        bucket.recipients += 1;
-        const opened = (recipient.email_open_events || []).some((ev) => ev.classification === 'human');
-        if (opened) bucket.opened += 1;
-        if (recipient.is_replied) bucket.replied += 1;
-      }
-    }
     const dayLabels = days.map((d) => formatChartDayLabel(d));
     const rateSeries = (field) => days.map((d) => {
       const bucket = byDay.get(dayKey(d));
@@ -189,6 +248,23 @@
     });
     const openSeries = { values: rateSeries('opened'), labels: dayLabels };
     const replySeries = { values: rateSeries('replied'), labels: dayLabels };
+
+    // Top recipients by open rate in this window: opened sends / sent sends.
+    const topRecipients = [...byRecipient.values()]
+      .filter((r) => r.sent > 0)
+      .map((r) => {
+        const rate = Math.round((r.opened / r.sent) * 100);
+        const name = displayNameFromEmail(r.email);
+        return {
+          email: r.email,
+          name,
+          initials: initialsFromNameOrEmail(name, r.email),
+          rate,
+          sent: r.sent,
+        };
+      })
+      .sort((a, b) => b.rate - a.rate || b.sent - a.sent)
+      .slice(0, TOP_RECIPIENTS_LIMIT);
 
     return {
       emailsSent,
@@ -200,6 +276,7 @@
       avgOpens,
       openSeries,
       replySeries,
+      topRecipients,
     };
   }
 
@@ -213,6 +290,7 @@
         avgOpens: { value: '—', delta: '', up: true, sub: 'per tracked email' },
         openSeries: { values: [], labels: [] },
         replySeries: { values: [], labels: [] },
+        topRecipients: [],
       };
     }
 
@@ -229,6 +307,7 @@
         avgOpens: { value: '—', delta: '', up: true, sub: 'per tracked email' },
         openSeries: { values: [], labels: [] },
         replySeries: { values: [], labels: [] },
+        topRecipients: [],
       };
     }
 
@@ -268,6 +347,9 @@
       };
     }
 
+    const client = await getAnalyticsClient();
+    const topRecipients = await enrichRecipientNames(client, current.topRecipients || []);
+
     return {
       emailsSent,
       openRate,
@@ -275,6 +357,7 @@
       avgOpens,
       openSeries: current.openSeries || { values: [], labels: [] },
       replySeries: current.replySeries || { values: [], labels: [] },
+      topRecipients,
     };
   }
 
@@ -393,6 +476,7 @@
     const [avgOpens, setAvgOpens] = useState(null);
     const [openSeries, setOpenSeries] = useState({ values: [], labels: [] });
     const [replySeriesLive, setReplySeriesLive] = useState({ values: [], labels: [] });
+    const [topRecipients, setTopRecipients] = useState(null);
     const p = PERIODS[period === 'custom' ? '30d' : period];
     const stats = statsFor(p, emailsSent, openRate, replyRate, avgOpens);
     const series = openSeries.values.length ? openSeries.values : seriesFor(p);
@@ -400,6 +484,7 @@
     const replySeries = replySeriesLive.values.length ? replySeriesLive.values : replySeriesFor(p);
     const replySeriesLabels = replySeriesLive.labels.length === replySeries.length ? replySeriesLive.labels : null;
     const periodLabel = period === 'custom' ? (customLabel || 'custom range') : PERIODS[period].label.toLowerCase();
+    const topList = Array.isArray(topRecipients) ? topRecipients : [];
 
     useEffect(() => {
       let cancelled = false;
@@ -410,6 +495,7 @@
       setAvgOpens({ value: '…', delta: '', up: true, sub: 'per tracked email' });
       setOpenSeries({ values: [], labels: [] });
       setReplySeriesLive({ values: [], labels: [] });
+      setTopRecipients(null);
       fetchAnalyticsStats(period, customRange).then((stats) => {
         if (cancelled) return;
         setEmailsSent(stats.emailsSent);
@@ -418,6 +504,7 @@
         setAvgOpens(stats.avgOpens);
         setOpenSeries(stats.openSeries || { values: [], labels: [] });
         setReplySeriesLive(stats.replySeries || { values: [], labels: [] });
+        setTopRecipients(stats.topRecipients || []);
       });
       return () => { cancelled = true; };
     }, [period, customRange?.from, customRange?.to]);
@@ -482,13 +569,17 @@
       React.createElement('div', { className: 'analytics-cols' },
         React.createElement('div', { className: 'card chart-card' },
           React.createElement('h3', null, 'Top recipients'),
-          React.createElement('div', { className: 'cc-sub' }, 'By open rate'),
-          D.topRecipients.map((r, i) => React.createElement('div', { key: i, className: 'recip-row' },
-            React.createElement(Avatar, { initials: r.initials, size: 28 }),
-            React.createElement('span', { className: 'rr-name' }, r.name),
-            React.createElement('span', { className: 'rr-bar' }, React.createElement('span', { style: { width: r.rate + '%' } })),
-            React.createElement('span', { className: 'rr-val' }, r.rate + '%'),
-          )),
+          React.createElement('div', { className: 'cc-sub' }, 'By open rate · ' + periodLabel),
+          topRecipients == null
+            ? React.createElement('div', { className: 'cc-sub', style: { marginTop: 12 } }, 'Loading…')
+            : topList.length
+              ? topList.map((r, i) => React.createElement('div', { key: r.email || i, className: 'recip-row' },
+                  React.createElement(Avatar, { initials: r.initials, size: 28 }),
+                  React.createElement('span', { className: 'rr-name' }, r.name),
+                  React.createElement('span', { className: 'rr-bar' }, React.createElement('span', { style: { width: r.rate + '%' } })),
+                  React.createElement('span', { className: 'rr-val' }, r.rate + '%'),
+                ))
+              : React.createElement('div', { className: 'cc-sub', style: { marginTop: 12 } }, 'No tracked recipients in this period'),
         ),
         React.createElement('div', { className: 'card chart-card' },
           React.createElement('h3', null, 'Best send times'),
