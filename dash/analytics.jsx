@@ -712,16 +712,16 @@
   function Heatmap() {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const dayFull = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
-    // 8 × 3-hour buckets covering a full 24h day (local).
+    // 8 × 3-hour buckets covering a full 24h day, starting at 6 AM (local).
     const hours = [
-      ['12–3a', '12–3 AM'],
-      ['3–6a', '3–6 AM'],
       ['6–9a', '6–9 AM'],
       ['9–12p', '9 AM–12 PM'],
       ['12–3p', '12–3 PM'],
       ['3–6p', '3–6 PM'],
       ['6–9p', '6–9 PM'],
       ['9–12a', '9 PM–12 AM'],
+      ['12–3a', '12–3 AM'],
+      ['3–6a', '3–6 AM'],
     ];
     const seed = (r, c) => (Math.sin(r * 12.9898 + c * 78.233) * 43758.5453 % 1 + 1) % 1;
     return React.createElement('div', { className: 'heatmap-grid' },
