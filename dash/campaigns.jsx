@@ -240,12 +240,14 @@
     const toList = () => setMode('list');
 
     const addEmail = (raw) => {
-      const email = String(raw || '').trim().toLowerCase();
-      if (!email) return;
-      if (Store?.isEmail && !Store.isEmail(email)) return;
-      if (emails.includes(email)) { setDraft(''); return; }
+      const email = String(raw || '').trim().toLowerCase().replace(/[,;]+$/g, '');
+      if (!email) return false;
+      const Store = campaignsStore();
+      if (Store?.isEmail && !Store.isEmail(email)) return false;
+      if (emails.includes(email)) { setDraft(''); return true; }
       setEmails([...emails, email]);
       setDraft('');
+      return true;
     };
 
     const createList = async () => {
@@ -275,11 +277,35 @@
             React.createElement('input', {
               placeholder: emails.length ? '' : 'Add email…',
               value: draft,
-              onChange: (e) => setDraft(e.target.value),
+              onChange: (e) => {
+                const value = e.target.value;
+                // Space / comma / semicolon after text → commit as a pill.
+                if (/[\s,;]/.test(value)) {
+                  const parts = value.split(/[\s,;]+/).filter(Boolean);
+                  if (!parts.length) { setDraft(''); return; }
+                  let next = [...emails];
+                  const Store = campaignsStore();
+                  const endsWithSep = /[\s,;]$/.test(value);
+                  const complete = endsWithSep ? parts : parts.slice(0, -1);
+                  const remainder = endsWithSep ? '' : (parts[parts.length - 1] || '');
+                  for (const part of complete) {
+                    const email = part.trim().toLowerCase();
+                    if (!email) continue;
+                    if (Store?.isEmail && !Store.isEmail(email)) continue;
+                    if (!next.includes(email)) next.push(email);
+                  }
+                  setEmails(next);
+                  setDraft(remainder);
+                  return;
+                }
+                setDraft(value);
+              },
               onKeyDown: (e) => {
-                if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
+                if (e.key === 'Enter' || e.key === 'Tab') {
                   e.preventDefault();
-                  addEmail(draft.replace(/,/g, ''));
+                  addEmail(draft);
+                } else if (e.key === 'Backspace' && !draft && emails.length) {
+                  setEmails(emails.slice(0, -1));
                 }
               },
               onBlur: () => addEmail(draft),
