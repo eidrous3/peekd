@@ -140,6 +140,7 @@
 .heatmap-blur .hb-title{font-size:16px;font-weight:500;color:var(--fg)}
 .heatmap-blur .hb-sub{font-size:13px;color:var(--fg-dim);max-width:220px;line-height:1.5;margin-bottom:10px}
 .heat-cell{position:relative;aspect-ratio:1;width:100%;border-radius:8px;background:color-mix(in srgb,var(--accent) calc(var(--cell,1) * 100%),transparent)}
+.heat-cell.heat-empty{background:color-mix(in srgb,var(--fg-mute) 8%,transparent)}
 .heat-cell.heat-best{box-shadow:inset 0 0 0 2px var(--accent-2)}
 .heat-lbl{font-size:10.5px;color:var(--fg-mute);display:flex;align-items:center}
 .heat-day{justify-content:center;font-weight:600}

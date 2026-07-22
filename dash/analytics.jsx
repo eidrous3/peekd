@@ -81,6 +81,75 @@
   const TOP_RECIPIENTS_LIMIT = 14;
   const LINK_PERF_LIMIT = 10;
 
+  const HEAT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const HEAT_DAY_FULL = {
+    Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday',
+    Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday',
+  };
+  // 8 × 3-hour buckets covering a full 24h day, starting at 6 AM (local).
+  const HEAT_HOURS = [
+    { key: '6-9a', label: '6–9a', tip: '6–9 AM', startHour: 6 },
+    { key: '9-12p', label: '9–12p', tip: '9 AM–12 PM', startHour: 9 },
+    { key: '12-3p', label: '12–3p', tip: '12–3 PM', startHour: 12 },
+    { key: '3-6p', label: '3–6p', tip: '3–6 PM', startHour: 15 },
+    { key: '6-9p', label: '6–9p', tip: '6–9 PM', startHour: 18 },
+    { key: '9-12a', label: '9–12a', tip: '9 PM–12 AM', startHour: 21 },
+    { key: '12-3a', label: '12–3a', tip: '12–3 AM', startHour: 0 },
+    { key: '3-6a', label: '3–6a', tip: '3–6 AM', startHour: 3 },
+  ];
+
+  function heatDayIndex(date) {
+    const jsDay = date.getDay(); // 0 = Sun … 6 = Sat
+    return jsDay === 0 ? 6 : jsDay - 1; // Mon = 0 … Sun = 6
+  }
+
+  function heatHourIndex(date) {
+    const h = date.getHours();
+    if (h >= 6 && h < 9) return 0;
+    if (h >= 9 && h < 12) return 1;
+    if (h >= 12 && h < 15) return 2;
+    if (h >= 15 && h < 18) return 3;
+    if (h >= 18 && h < 21) return 4;
+    if (h >= 21) return 5;
+    if (h < 3) return 6;
+    return 7; // 3–6 AM
+  }
+
+  function emptyHeatCell() {
+    return { emailsSent: 0, uniqueOpens: 0, opens: 0 };
+  }
+
+  function buildSendTimesHeatmap(cells, emailsSent, openedRecipients) {
+    const avgRate = emailsSent > 0 ? openedRecipients / emailsSent : 0;
+    let maxRate = 0;
+    const grid = HEAT_HOURS.map((hour, hourIdx) =>
+      HEAT_DAYS.map((day, dayIdx) => {
+        const cell = cells[hourIdx][dayIdx];
+        const rate = cell.emailsSent > 0 ? cell.uniqueOpens / cell.emailsSent : 0;
+        if (rate > maxRate) maxRate = rate;
+        return {
+          day,
+          hour: hour.label,
+          hourTip: hour.tip,
+          emailsSent: cell.emailsSent,
+          uniqueOpens: cell.uniqueOpens,
+          opens: cell.opens,
+          rate,
+          best: false,
+        };
+      }),
+    );
+
+    for (const row of grid) {
+      for (const cell of row) {
+        cell.best = cell.emailsSent > 0 && avgRate > 0 && cell.rate > avgRate;
+        cell.intensity = maxRate > 0 ? Math.min(1, cell.rate / maxRate) : 0;
+      }
+    }
+
+    return { grid, avgRate, maxRate };
+  }
+
   function displayUrlForLink(url) {
     try {
       const parsed = new URL(url);
@@ -227,6 +296,7 @@
     let repliedRecipients = 0;
     const byRecipient = new Map();
     const byLink = new Map();
+    const heatCells = HEAT_HOURS.map(() => HEAT_DAYS.map(() => emptyHeatCell()));
     const days = eachDay(start, end);
     const byDay = new Map(days.map((d) => [dayKey(d), { recipients: 0, opened: 0, replied: 0 }]));
 
@@ -235,12 +305,17 @@
       const recipients = email.tracked_recipients || [];
       const recipientCount = recipients.length;
       let viewedOnEmail = 0;
+      let uniqueOpensOnEmail = 0;
+      let opensOnEmail = 0;
       for (const recipient of recipients) {
         sentRecipients += 1;
-        const opened = (recipient.email_open_events || []).some((ev) => ev.classification === 'human');
+        const humanEvents = (recipient.email_open_events || []).filter((ev) => ev.classification === 'human');
+        const opened = humanEvents.length > 0;
         if (opened) {
           openedRecipients += 1;
           viewedOnEmail += 1;
+          uniqueOpensOnEmail += 1;
+          opensOnEmail += humanEvents.length;
         }
         if (recipient.is_replied) repliedRecipients += 1;
 
@@ -256,6 +331,14 @@
         cur.sent += 1;
         if (opened) cur.opened += 1;
         byRecipient.set(addr, cur);
+      }
+
+      const sentAt = email.sent_at ? new Date(email.sent_at) : null;
+      if (sentAt && !Number.isNaN(sentAt.getTime())) {
+        const heat = heatCells[heatHourIndex(sentAt)][heatDayIndex(sentAt)];
+        heat.emailsSent += 1;
+        heat.uniqueOpens += uniqueOpensOnEmail;
+        heat.opens += opensOnEmail;
       }
 
       for (const link of email.tracked_links || []) {
@@ -338,6 +421,8 @@
       .sort((a, b) => b.clicks - a.clicks || b.unique - a.unique)
       .slice(0, LINK_PERF_LIMIT);
 
+    const sendTimes = buildSendTimesHeatmap(heatCells, emailsSent, openedRecipients);
+
     return {
       emailsSent,
       sentRecipients,
@@ -350,6 +435,7 @@
       replySeries,
       topRecipients,
       linkPerformance,
+      sendTimes,
     };
   }
 
@@ -365,6 +451,7 @@
         replySeries: { values: [], labels: [] },
         topRecipients: [],
         linkPerformance: [],
+        sendTimes: null,
       };
     }
 
@@ -383,6 +470,7 @@
         replySeries: { values: [], labels: [] },
         topRecipients: [],
         linkPerformance: [],
+        sendTimes: null,
       };
     }
 
@@ -434,6 +522,7 @@
       replySeries: current.replySeries || { values: [], labels: [] },
       topRecipients,
       linkPerformance: current.linkPerformance || [],
+      sendTimes: current.sendTimes || null,
     };
   }
 
@@ -546,6 +635,7 @@
     const [replySeriesLive, setReplySeriesLive] = useState({ values: [], labels: [] });
     const [topRecipients, setTopRecipients] = useState(null);
     const [linkPerformance, setLinkPerformance] = useState(null);
+    const [sendTimes, setSendTimes] = useState(null);
     const p = PERIODS[period === 'custom' ? '30d' : period];
     const stats = statsFor(p, emailsSent, openRate, replyRate, avgOpens);
     const series = openSeries.values.length ? openSeries.values : seriesFor(p);
@@ -568,6 +658,7 @@
       setReplySeriesLive({ values: [], labels: [] });
       setTopRecipients(null);
       setLinkPerformance(null);
+      setSendTimes(null);
       fetchAnalyticsStats(period, customRange).then((stats) => {
         if (cancelled) return;
         setEmailsSent(stats.emailsSent);
@@ -578,6 +669,7 @@
         setReplySeriesLive(stats.replySeries || { values: [], labels: [] });
         setTopRecipients(stats.topRecipients || []);
         setLinkPerformance(stats.linkPerformance || []);
+        setSendTimes(stats.sendTimes || null);
       });
       return () => { cancelled = true; };
     }, [period, customRange?.from, customRange?.to]);
@@ -656,9 +748,9 @@
         ),
         React.createElement('div', { className: 'card chart-card' },
           React.createElement('h3', null, 'Best send times'),
-          React.createElement('div', { className: 'cc-sub' }, 'Opens by day & hour'),
+          React.createElement('div', { className: 'cc-sub' }, 'Unique opens per send by day & hour · ' + periodLabel),
           React.createElement('div', { className: 'heatmap-container' },
-            React.createElement(Heatmap, null),
+            React.createElement(Heatmap, { data: sendTimes }),
             free && React.createElement('div', { className: 'heatmap-blur' },
               React.createElement('div', { className: 'hb-ico' }, React.createElement(Icon, { name: 'lock', size: 22 })),
               React.createElement('div', { className: 'hb-title' }, 'Best send times'),
@@ -709,34 +801,39 @@
     );
   }
 
-  function Heatmap() {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const dayFull = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
-    // 8 × 3-hour buckets covering a full 24h day, starting at 6 AM (local).
-    const hours = [
-      ['6–9a', '6–9 AM'],
-      ['9–12p', '9 AM–12 PM'],
-      ['12–3p', '12–3 PM'],
-      ['3–6p', '3–6 PM'],
-      ['6–9p', '6–9 PM'],
-      ['9–12a', '9 PM–12 AM'],
-      ['12–3a', '12–3 AM'],
-      ['3–6a', '3–6 AM'],
-    ];
-    const seed = (r, c) => (Math.sin(r * 12.9898 + c * 78.233) * 43758.5453 % 1 + 1) % 1;
+  function Heatmap({ data }) {
+    const grid = data?.grid;
+    const avgRate = data?.avgRate || 0;
+    const avgPct = Math.round(avgRate * 100);
+
     return React.createElement('div', { className: 'heatmap-grid' },
       React.createElement('span', null),
-      days.map(d => React.createElement('span', { key: d, className: 'heat-lbl heat-day' }, d)),
-      hours.map(([hr, hLong], r) => [
-        React.createElement('span', { key: 'l' + r, className: 'heat-lbl heat-time' }, hr),
-        ...days.map((d, c) => {
-          const s = seed(r, c);
-          const opens = Math.round(2 + s * 13);
-          const best = opens >= 11;
-          return React.createElement('div', { key: r + '-' + c, className: 'heat-cell' + (best ? ' heat-best' : ''), style: { '--cell': (0.15 + s * 0.85).toFixed(3) } },
+      HEAT_DAYS.map((d) => React.createElement('span', { key: d, className: 'heat-lbl heat-day' }, d)),
+      HEAT_HOURS.map((hour, r) => [
+        React.createElement('span', { key: 'l' + r, className: 'heat-lbl heat-time' }, hour.label),
+        ...HEAT_DAYS.map((d, c) => {
+          const cell = grid?.[r]?.[c];
+          const intensity = cell ? cell.intensity : 0;
+          const opens = cell?.opens || 0;
+          const emails = cell?.emailsSent || 0;
+          const ratePct = cell ? Math.round(cell.rate * 100) : 0;
+          const best = !!(cell && cell.best);
+          const tipBody = !cell || emails === 0
+            ? 'No sends in this slot'
+            : (opens + ' open' + (opens === 1 ? '' : 's')
+              + ' · ' + ratePct + '% unique/send'
+              + (best ? ' · Best time to send' : ''));
+          return React.createElement('div', {
+            key: r + '-' + c,
+            className: 'heat-cell' + (best ? ' heat-best' : '') + (emails === 0 ? ' heat-empty' : ''),
+            style: { '--cell': (emails === 0 ? 0.06 : Math.max(0.12, intensity)).toFixed(3) },
+          },
             React.createElement('span', { className: 'heat-tip' },
-              React.createElement('b', { className: 'day-time' }, dayFull[d] + ' ' + hLong),
-              React.createElement('span', { className: 'opens' }, opens + ' opens' + (best ? ' · Best time to send' : ''))),
+              React.createElement('b', { className: 'day-time' }, HEAT_DAY_FULL[d] + ' ' + hour.tip),
+              React.createElement('span', { className: 'opens' }, tipBody),
+              emails > 0 && avgRate > 0 && React.createElement('span', { className: 'opens' },
+                'Avg ' + avgPct + '% · ' + emails + ' send' + (emails === 1 ? '' : 's')),
+            ),
           );
         }),
       ]),
