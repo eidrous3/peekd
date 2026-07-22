@@ -2,13 +2,33 @@
 (function () {
   const { useState, useEffect, useRef } = React;
   const Icon = window.Icon;
+  const { Avatar } = window;
   const D = window.PeekdData;
+  const Store = window.PeekdCampaigns;
+  const Lists = window.PeekdLists;
 
   function CampaignsPage({ free, onUpgrade, toast, setHeaderExtra, setHeaderCTA, seed, clearSeed }) {
-    const [campaigns, setCampaigns] = useState(D.campaigns);
+    const [campaigns, setCampaigns] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
+    const [launching, setLaunching] = useState(false);
     const [seedList, setSeedList] = useState(null);
     const [selId, setSelId] = useState(null);
+
+    const refresh = React.useCallback(async () => {
+      if (!Store?.fetchCampaigns) {
+        setCampaigns([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      const res = await Store.fetchCampaigns();
+      if (res.ok) setCampaigns(res.campaigns);
+      else if (toast) toast(res.error || 'Could not load campaigns');
+      setLoading(false);
+    }, [toast]);
+
+    useEffect(() => { refresh(); }, [refresh]);
 
     React.useEffect(() => {
       if (seed && !free) { setSeedList(seed); setCreating(true); clearSeed && clearSeed(); }
@@ -25,6 +45,43 @@
       return () => setHeaderCTA(null);
     }, [free, selId]);
 
+    const patchCampaign = (id, next) => {
+      setCampaigns((prev) => prev.map((c) => (c.id === id ? (typeof next === 'function' ? next(c) : next) : c)));
+    };
+
+    const toggleStatus = async (id) => {
+      const current = campaigns.find((c) => c.id === id);
+      if (!current || !Store?.updateCampaignStatus) return;
+      const nextStatus = current.status === 'PAUSED' ? 'active' : 'paused';
+      const res = await Store.updateCampaignStatus(id, nextStatus);
+      if (!res.ok) { toast(res.error || 'Could not update campaign'); return; }
+      patchCampaign(id, res.campaign);
+    };
+
+    const removeCampaign = async (id) => {
+      if (!Store?.deleteCampaign) return;
+      const res = await Store.deleteCampaign(id);
+      if (!res.ok) { toast(res.error || 'Could not delete campaign'); return; }
+      setCampaigns((prev) => prev.filter((c) => c.id !== id));
+      if (selId === id) setSelId(null);
+      toast('Campaign deleted');
+    };
+
+    const rename = async (id, newName) => {
+      if (!Store?.renameCampaign || !newName) return;
+      const res = await Store.renameCampaign(id, newName);
+      if (!res.ok) { toast(res.error || 'Could not rename campaign'); return; }
+      patchCampaign(id, res.campaign);
+    };
+
+    const duplicate = async (id) => {
+      if (!Store?.duplicateCampaign) return;
+      const res = await Store.duplicateCampaign(id);
+      if (!res.ok) { toast(res.error || 'Could not duplicate campaign'); return; }
+      setCampaigns((prev) => [res.campaign, ...prev]);
+      toast('Campaign duplicated ✓');
+    };
+
     if (free) return React.createElement('div', { className: 'page-pad' },
       React.createElement('div', { className: 'gate' },
         React.createElement('div', { className: 'gate-ico' }, React.createElement(Icon, { name: 'lock', size: 28 })),
@@ -38,27 +95,48 @@
     const selected = campaigns.find(c => c.id === selId);
     if (selected) return React.createElement(CampaignDetail, {
       c: selected, onBack: () => setSelId(null), toast,
-      onToggleStatus: () => setCampaigns(campaigns.map(c => c.id === selId ? { ...c, status: c.status === 'PAUSED' ? 'ACTIVE' : 'PAUSED' } : c)),
-      onDelete: () => { setCampaigns(campaigns.filter(c => c.id !== selId)); setSelId(null); toast('Campaign deleted'); },
-      onRename: (newName) => setCampaigns(campaigns.map(c => c.id === selId ? { ...c, name: newName } : c)),
+      onToggleStatus: () => toggleStatus(selected.id),
+      onDelete: () => removeCampaign(selected.id),
+      onRename: (newName) => rename(selected.id, newName),
+      onDuplicate: () => duplicate(selected.id),
     });
 
     return React.createElement('div', { className: 'page-pad' },
+      loading && React.createElement('div', { className: 'muted', style: { marginBottom: 12 } }, 'Loading campaigns…'),
+      !loading && !campaigns.length && React.createElement('div', { className: 'card', style: { padding: 28, textAlign: 'center' } },
+        React.createElement('h3', { style: { margin: '0 0 8px' } }, 'No campaigns yet'),
+        React.createElement('p', { className: 'muted', style: { margin: '0 0 16px' } }, 'Create a sequence, pick recipients, and launch.'),
+        React.createElement('button', { className: 'btn btn-primary', onClick: () => setCreating(true) },
+          React.createElement(Icon, { name: 'plus', size: 16 }), 'Create campaign'),
+      ),
       campaigns.map(c => React.createElement(CampaignCard, {
         key: c.id, c,
         onClick: () => setSelId(c.id),
-        onToggleStatus: () => setCampaigns(campaigns.map(x => x.id === c.id ? { ...x, status: x.status === 'PAUSED' ? 'ACTIVE' : 'PAUSED' } : x)),
-        onDelete: () => { setCampaigns(campaigns.filter(x => x.id !== c.id)); toast('Campaign deleted'); },
-        onDuplicate: () => { setCampaigns([{ ...c, id: 'c' + Date.now(), name: c.name + ' (copy)', created: 'Today' }, ...campaigns]); toast('Campaign duplicated ✓'); },
-        onRename: (newName) => setCampaigns(campaigns.map(x => x.id === c.id ? { ...x, name: newName } : x)),
+        onToggleStatus: () => toggleStatus(c.id),
+        onDelete: () => removeCampaign(c.id),
+        onDuplicate: () => duplicate(c.id),
+        onRename: (newName) => rename(c.id, newName),
         toast,
       })),
       creating && React.createElement(CreateCampaign, {
         initialListId: seedList ? seedList.id : null,
-        onClose: () => { setCreating(false); setSeedList(null); },
-        onLaunch: (name) => {
-          setCampaigns([{ id: 'c' + Date.now(), name: name || 'Untitled campaign', status: 'ACTIVE', created: 'Today', step: 1, steps: 3, recipients: 0, openRate: 0, replies: 0 }, ...campaigns]);
-          setCreating(false); setSeedList(null); toast('Campaign launched ✓');
+        launching,
+        onClose: () => { if (!launching) { setCreating(false); setSeedList(null); } },
+        onLaunch: async (payload) => {
+          if (!Store?.createCampaign || launching) return;
+          setLaunching(true);
+          const res = await Store.createCampaign(payload);
+          setLaunching(false);
+          if (!res.ok) {
+            toast(res.error === 'recipients_required' ? 'Add at least one recipient'
+              : res.error === 'steps_required' ? 'Add at least one step'
+                : (res.error || 'Could not launch campaign'));
+            return;
+          }
+          setCampaigns((prev) => [res.campaign, ...prev]);
+          setCreating(false);
+          setSeedList(null);
+          toast('Campaign launched ✓');
         },
       }),
     );
@@ -70,7 +148,7 @@
     const [editing, setEditing] = useState(false);
     const moreRef = useRef(null);
     const paused = c.status === 'PAUSED';
-    const pct = Math.round((c.step / c.steps) * 100);
+    const pct = Math.round((c.step / Math.max(c.steps, 1)) * 100);
     const orClass = c.openRate > 50 ? 'stat-up' : c.openRate >= 20 ? 'stat-amber' : 'stat-down';
     useEffect(() => {
       if (!moreOpen) return;
@@ -123,7 +201,7 @@
       ),
       editing && React.createElement('div', { onClick: e => e.stopPropagation(), onMouseDown: e => e.stopPropagation() },
         React.createElement(EditCampaign, {
-          c, steps: buildSteps(c), recipients: buildRecipients(),
+          c, steps: buildSteps(c), recipients: buildRecipients(c),
           onClose: () => setEditing(false),
           onSave: (newName) => { if (newName && newName !== c.name) onRename(newName); setEditing(false); toast('Campaign updated ✓'); },
         }),
@@ -142,29 +220,70 @@
 
   // Shared recipient selector — "Add individually" pills OR "Use a saved list".
   function RecipientPicker({ mode, setMode, emails, setEmails, listId, setListId }) {
-    const [extra, setExtra] = useState([]);
+    const [lists, setLists] = useState([]);
+    const [draft, setDraft] = useState('');
     const [creating, setCreating] = useState(false);
     const [newName, setNewName] = useState('');
-    const lists = D.lists.concat(extra);
     const sel = lists.find(l => l.id === listId);
-    const toIndividual = () => { setMode('individual'); setListId(null); setEmails([]); };
+
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        if (!Lists?.fetchLists) return;
+        const res = await Lists.fetchLists();
+        if (!cancelled && res.ok) setLists(res.lists || []);
+      })();
+      return () => { cancelled = true; };
+    }, []);
+
+    const toIndividual = () => { setMode('individual'); setListId(null); };
     const toList = () => setMode('list');
-    const createList = () => {
+
+    const addEmail = (raw) => {
+      const email = String(raw || '').trim().toLowerCase();
+      if (!email) return;
+      if (Store?.isEmail && !Store.isEmail(email)) return;
+      if (emails.includes(email)) { setDraft(''); return; }
+      setEmails([...emails, email]);
+      setDraft('');
+    };
+
+    const createList = async () => {
       const nm = newName.trim();
       if (!nm) { setCreating(false); return; }
-      const id = 'l' + Date.now();
-      setExtra([...extra, { id, name: nm, count: 0 }]);
-      setListId(id); setNewName(''); setCreating(false);
+      if (Lists?.createList) {
+        const res = await Lists.createList(nm);
+        if (res.ok) {
+          setLists((prev) => [res.list, ...prev]);
+          setListId(res.list.id);
+          setNewName('');
+          setCreating(false);
+          return;
+        }
+      }
+      setCreating(false);
     };
+
     return React.createElement(React.Fragment, null,
       React.createElement('div', { className: 'tabs', style: { width: 'fit-content', marginBottom: 10 } },
         React.createElement('button', { className: 'tab' + (mode === 'individual' ? ' active' : ''), onClick: toIndividual }, 'Add individually'),
         React.createElement('button', { className: 'tab' + (mode === 'list' ? ' active' : ''), onClick: toList }, 'Use a saved list')),
       mode === 'individual'
         ? React.createElement('div', { className: 'pill-input' },
-            emails.map((em, i) => React.createElement('span', { key: i, className: 'email-pill' }, em,
+            emails.map((em, i) => React.createElement('span', { key: em, className: 'email-pill' }, em,
               React.createElement('span', { className: 'pill-x', onClick: () => setEmails(emails.filter((_, j) => j !== i)) }, React.createElement(Icon, { name: 'x', size: 11 })))),
-            React.createElement('input', { placeholder: emails.length ? '' : 'Add email…' }))
+            React.createElement('input', {
+              placeholder: emails.length ? '' : 'Add email…',
+              value: draft,
+              onChange: (e) => setDraft(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
+                  e.preventDefault();
+                  addEmail(draft.replace(/,/g, ''));
+                }
+              },
+              onBlur: () => addEmail(draft),
+            }))
         : React.createElement('div', null,
             React.createElement('div', { className: 'list-pick' },
               lists.map((l) => React.createElement('button', {
@@ -174,7 +293,7 @@
               },
                 React.createElement('span', { className: 'lp-radio' + (listId === l.id ? ' on' : '') }),
                 React.createElement('span', { className: 'lp-name' }, l.name),
-                React.createElement('span', { className: 'lp-count' }, l.count + ' people'))),
+                React.createElement('span', { className: 'lp-count' }, (l.count || 0) + ' people'))),
               creating
                 ? React.createElement('div', { className: 'lp-create-row' },
                     React.createElement('input', { className: 'input', autoFocus: true, placeholder: 'List name…', value: newName, onChange: e => setNewName(e.target.value), onKeyDown: e => { if (e.key === 'Enter') createList(); if (e.key === 'Escape') setCreating(false); } }),
@@ -182,30 +301,61 @@
                 : React.createElement('button', { type: 'button', className: 'lp-create-link', onClick: () => setCreating(true) },
                     React.createElement(Icon, { name: 'plus', size: 13 }), 'Create new list')),
             sel
-              ? React.createElement('div', { className: 'lp-summary' }, React.createElement(Icon, { name: 'check', size: 13 }), sel.name + ' selected · ' + sel.count + ' recipients')
+              ? React.createElement('div', { className: 'lp-summary' }, React.createElement(Icon, { name: 'check', size: 13 }), sel.name + ' selected · ' + (sel.count || 0) + ' recipients')
               : React.createElement('div', { className: 'lp-summary muted-summary' }, '0 recipients selected'),
           ),
     );
   }
 
-  function CreateCampaign({ onClose, onLaunch, initialListId }) {
+  function CreateCampaign({ onClose, onLaunch, initialListId, launching }) {
     const [step, setStep] = useState(1);
     const [name, setName] = useState('');
-    const [seqSteps, setSeqSteps] = useState([{ subject: '', timing: 'now', days: 3 }]);
+    const [seqSteps, setSeqSteps] = useState([{ subject: '', message: '', timing: 'now', days: 3 }]);
     const [rmode, setRmode] = useState(initialListId ? 'list' : 'individual');
     const [listId, setListId] = useState(initialListId || null);
-    const [emails, setEmails] = useState(['raj@acmecorp.com', 'lena@designstudio.de']);
+    const [emails, setEmails] = useState([]);
+    const [fromEmail, setFromEmail] = useState('');
+    const [fromOpen, setFromOpen] = useState(false);
+    const [accounts, setAccounts] = useState([]);
 
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    React.useEffect(() => { document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey); }, []);
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        const I = window.PeekdIntegrations;
+        if (!I?.fetchGmailAccounts) return;
+        const res = await I.fetchGmailAccounts();
+        if (cancelled || !res.ok) return;
+        const list = res.accounts || [];
+        setAccounts(list);
+        const primary = list.find((a) => a.is_primary) || list[0];
+        if (primary?.email) setFromEmail(primary.email);
+      })();
+      return () => { cancelled = true; };
+    }, []);
 
-    return React.createElement('div', { className: 'backdrop', onMouseDown: onClose },
+    const onKey = (e) => { if (e.key === 'Escape' && !launching) onClose(); };
+    React.useEffect(() => { document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey); }, [launching]);
+
+    const canNext = step !== 1 || (rmode === 'individual' ? emails.length > 0 : !!listId);
+
+    const launch = () => {
+      onLaunch({
+        name: name || 'Untitled campaign',
+        fromEmail,
+        timezone: Store?.clientTimezone ? Store.clientTimezone() : undefined,
+        sourceListId: rmode === 'list' ? listId : null,
+        emails: rmode === 'individual' ? emails : [],
+        steps: seqSteps,
+      });
+    };
+
+    return React.createElement('div', { className: 'backdrop', onMouseDown: () => { if (!launching) onClose(); } },
       React.createElement('div', { className: 'modal wide', onMouseDown: e => e.stopPropagation() },
         React.createElement('div', { className: 'modal-head' },
           React.createElement('h3', null, 'New Campaign'),
           React.createElement('div', { className: 'flex center gap12' },
             React.createElement('span', { className: 'pill-tag' }, 'STEP ' + step + ' OF 3'),
-            React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose }, React.createElement(Icon, { name: 'x', size: 16 }))),
+            React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose, disabled: launching }, React.createElement(Icon, { name: 'x', size: 16 }))),
         ),
         React.createElement('div', { className: 'modal-body' },
           React.createElement(StepInd, { step }),
@@ -213,7 +363,23 @@
             React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'CAMPAIGN NAME'),
               React.createElement('input', { className: 'input', placeholder: 'Q2 Outreach — Enterprise', value: name, onChange: e => setName(e.target.value) })),
             React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'FROM'),
-              React.createElement('button', { className: 'select', style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, 'john@gmail.com', React.createElement(Icon, { name: 'chevDown', size: 14 }))),
+              React.createElement('div', { style: { position: 'relative' } },
+                React.createElement('button', {
+                  type: 'button',
+                  className: 'select',
+                  style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
+                  onClick: () => setFromOpen(!fromOpen),
+                }, fromEmail || 'Connect a Gmail account', React.createElement(Icon, { name: 'chevDown', size: 14 })),
+                fromOpen && React.createElement('div', { className: 'more-menu', style: { left: 0, right: 0, top: 'calc(100% + 4px)' } },
+                  accounts.length
+                    ? accounts.map((a) => React.createElement('button', {
+                      key: a.id,
+                      type: 'button',
+                      onClick: () => { setFromEmail(a.email); setFromOpen(false); },
+                    }, a.email + (a.is_primary ? ' · Primary' : '')))
+                    : React.createElement('button', { type: 'button', disabled: true }, 'No connected accounts'),
+                ),
+              )),
             React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'RECIPIENTS'),
               React.createElement(RecipientPicker, { mode: rmode, setMode: setRmode, emails, setEmails, listId, setListId }),
             ),
@@ -222,16 +388,16 @@
             React.createElement('h4', { style: { margin: '0 0 14px', fontSize: 15 } }, 'Build Your Sequence'),
             seqSteps.map((s, i) => React.createElement('div', { key: i, className: 'seq-step' },
               React.createElement('h4', null, 'Step ' + (i + 1)),
-              React.createElement('input', { className: 'input', placeholder: 'Subject', style: { marginBottom: 8 }, value: s.subject, onChange: e => { const n = [...seqSteps]; n[i].subject = e.target.value; setSeqSteps(n); } }),
-              React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => { const n = [...seqSteps]; n[i].message = v; setSeqSteps(n); }, minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
+              React.createElement('input', { className: 'input', placeholder: 'Subject', style: { marginBottom: 8 }, value: s.subject, onChange: e => { const n = [...seqSteps]; n[i] = { ...n[i], subject: e.target.value }; setSeqSteps(n); } }),
+              React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => { const n = [...seqSteps]; n[i] = { ...n[i], message: v }; setSeqSteps(n); }, minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
               React.createElement('div', { className: 'flex gap12' },
-                React.createElement('label', { className: 'radio-line', onClick: () => { const n = [...seqSteps]; n[i].timing = 'now'; setSeqSteps(n); } },
+                React.createElement('label', { className: 'radio-line', onClick: () => { const n = [...seqSteps]; n[i] = { ...n[i], timing: 'now' }; setSeqSteps(n); } },
                   React.createElement('span', { className: 'radio-dot' + (s.timing === 'now' ? ' on' : '') }), 'Immediately'),
-                React.createElement('label', { className: 'radio-line', onClick: () => { const n = [...seqSteps]; n[i].timing = 'wait'; setSeqSteps(n); } },
-                  React.createElement('span', { className: 'radio-dot' + (s.timing === 'wait' ? ' on' : '') }), 'Wait ', React.createElement('input', { className: 'input', style: { width: 48, height: 28, padding: '0 8px' }, value: s.days, onChange: e => { const n = [...seqSteps]; n[i].days = e.target.value; setSeqSteps(n); } }), ' days'),
+                React.createElement('label', { className: 'radio-line', onClick: () => { const n = [...seqSteps]; n[i] = { ...n[i], timing: 'wait' }; setSeqSteps(n); } },
+                  React.createElement('span', { className: 'radio-dot' + (s.timing === 'wait' ? ' on' : '') }), 'Wait ', React.createElement('input', { className: 'input', style: { width: 48, height: 28, padding: '0 8px' }, value: s.days, onChange: e => { const n = [...seqSteps]; n[i] = { ...n[i], days: e.target.value }; setSeqSteps(n); } }), ' days'),
               ),
             )),
-            seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, { subject: '', timing: 'now', days: 3 }]) },
+            seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, { subject: '', message: '', timing: 'now', days: 3 }]) },
               React.createElement(Icon, { name: 'plus', size: 14 }), 'Add step'),
             React.createElement('p', { className: 'muted', style: { fontSize: 12.5, marginTop: 14 } }, 'Sequence pauses automatically when a recipient replies.'),
           ),
@@ -239,16 +405,18 @@
             React.createElement('h4', { style: { margin: '0 0 14px', fontSize: 15 } }, 'Review & Launch'),
             React.createElement('div', { className: 'seq-step' },
               React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Campaign'), React.createElement('b', null, name || 'Untitled campaign')),
-              React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Recipients'), React.createElement('b', null, emails.length)),
-              React.createElement('div', { className: 'flex between' }, React.createElement('span', { className: 'muted' }, 'Steps'), React.createElement('b', null, seqSteps.length)),
+              React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'From'), React.createElement('b', null, fromEmail || '—')),
+              React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Recipients'), React.createElement('b', null, rmode === 'individual' ? emails.length : 'List selected')),
+              React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Steps'), React.createElement('b', null, seqSteps.length)),
+              React.createElement('div', { className: 'flex between' }, React.createElement('span', { className: 'muted' }, 'Timezone'), React.createElement('b', null, Store?.clientTimezone ? Store.clientTimezone() : '—')),
             ),
           ),
         ),
         React.createElement('div', { className: 'modal-foot' },
-          step > 1 && React.createElement('button', { className: 'btn btn-ghost', onClick: () => setStep(step - 1) }, React.createElement(Icon, { name: 'chevLeft', size: 15 }), 'Back'),
+          step > 1 && React.createElement('button', { className: 'btn btn-ghost', disabled: launching, onClick: () => setStep(step - 1) }, React.createElement(Icon, { name: 'chevLeft', size: 15 }), 'Back'),
           step < 3
-            ? React.createElement('button', { className: 'btn btn-primary', disabled: step === 1 && (rmode === 'individual' ? emails.length === 0 : !listId), onClick: () => setStep(step + 1) }, 'Next', React.createElement(Icon, { name: 'arrowRight', size: 15 }))
-            : React.createElement('button', { className: 'btn btn-primary', onClick: () => onLaunch(name) }, '🚀 Launch Campaign'),
+            ? React.createElement('button', { className: 'btn btn-primary', disabled: !canNext, onClick: () => setStep(step + 1) }, 'Next', React.createElement(Icon, { name: 'arrowRight', size: 15 }))
+            : React.createElement('button', { className: 'btn btn-primary', disabled: launching || !fromEmail, onClick: launch }, launching ? 'Launching…' : 'Launch Campaign'),
         ),
       ),
     );
@@ -258,7 +426,36 @@
   const STEP_SUBJECTS = ['Introduction to Peekd', 'Quick follow-up', 'Last check-in', 'Closing the loop', 'Final note'];
   const STEP_WAITS = [3, 5, 7, 4];
 
+  function formatStepSentLabel(step) {
+    if (step.sentAt) {
+      const d = new Date(step.sentAt);
+      if (!Number.isNaN(d.getTime())) {
+        return 'Sent ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
+    }
+    if (step.scheduledAt && (step.status === 'scheduled' || step.status === 'pending')) {
+      const d = new Date(step.scheduledAt);
+      if (!Number.isNaN(d.getTime())) {
+        return 'Scheduled · ' + d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      }
+    }
+    if (step.state === 'pending') return 'Scheduled · not sent yet';
+    return 'Pending';
+  }
+
   function buildSteps(c) {
+    if (Array.isArray(c.stepRows) && c.stepRows.length) {
+      return c.stepRows.map((s) => ({
+        n: s.n,
+        state: s.state,
+        subject: s.subject || ('Step ' + s.n),
+        wait: s.wait,
+        openRate: null,
+        replies: null,
+        sentLabel: formatStepSentLabel(s),
+        bodyHtml: s.bodyHtml || '',
+      }));
+    }
     const out = [];
     for (let i = 1; i <= c.steps; i++) {
       let state = i < c.step ? 'completed' : i === c.step ? (c.status === 'PAUSED' ? 'paused' : 'active') : 'pending';
@@ -274,7 +471,38 @@
     return out;
   }
 
-  function buildRecipients() {
+  function initialsFromEmail(email) {
+    const local = String(email || '').split('@')[0] || '';
+    const parts = local.split(/[._-]+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return local.slice(0, 2).toUpperCase() || '?';
+  }
+
+  function nameFromEmail(email) {
+    const local = String(email || '').split('@')[0] || 'Recipient';
+    return local.split(/[._-]+/).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') || local;
+  }
+
+  function buildRecipients(c) {
+    if (Array.isArray(c.recipientRows) && c.recipientRows.length) {
+      return c.recipientRows.map((r) => {
+        const status = r.status === 'REPLIED' ? 'REPLIED'
+          : r.status === 'COMPLETED' ? 'OPENED'
+            : r.status === 'PAUSED' ? 'PENDING'
+              : 'PENDING';
+        return {
+          p: {
+            initials: initialsFromEmail(r.email),
+            name: nameFromEmail(r.email),
+            email: r.email,
+            sent: c.step || 1,
+          },
+          status,
+          step: c.step || 1,
+          rate: 0,
+        };
+      });
+    }
     const p = D.people;
     return [
       { p: p[0], status: 'REPLIED', step: 2, rate: 83 },
@@ -287,7 +515,7 @@
 
   const RSTATUS = { REPLIED: 'b-replied', OPENED: 'b-opened', PENDING: 'b-sent', 'NO OPENS': 'b-unresp' };
 
-  function CampaignDetail({ c, onBack, onToggleStatus, onDelete, onRename, toast }) {
+  function CampaignDetail({ c, onBack, onToggleStatus, onDelete, onRename, onDuplicate, toast }) {
     const [moreOpen, setMoreOpen] = useState(false);
     const [confirmDel, setConfirmDel] = useState(false);
     const [editing, setEditing] = useState(false);
@@ -295,8 +523,8 @@
     const [person, setPerson] = useState(null);
     const paused = c.status === 'PAUSED';
     const steps = buildSteps(c);
-    const recipients = buildRecipients();
-    const pct = Math.round((c.step / c.steps) * 100);
+    const recipients = buildRecipients(c);
+    const pct = Math.round((c.step / Math.max(c.steps, 1)) * 100);
     const filtered = recipients.filter(r => {
       if (rTab === 'All') return true;
       if (rTab === 'Opened') return r.status === 'OPENED';
@@ -322,7 +550,7 @@
           React.createElement('button', { className: 'btn btn-ghost', onClick: () => setMoreOpen(!moreOpen) }, React.createElement(Icon, { name: 'dots', size: 16 }), 'More'),
           moreOpen && React.createElement('div', { className: 'more-menu' },
             React.createElement('button', { onClick: () => { setMoreOpen(false); setEditing(true); } }, React.createElement(Icon, { name: 'edit', size: 14 }), 'Edit campaign'),
-            React.createElement('button', { onClick: () => { setMoreOpen(false); toast('Campaign duplicated'); } }, React.createElement(Icon, { name: 'grid', size: 14 }), 'Duplicate'),
+            React.createElement('button', { onClick: () => { setMoreOpen(false); onDuplicate && onDuplicate(); } }, React.createElement(Icon, { name: 'grid', size: 14 }), 'Duplicate'),
             React.createElement('button', { onClick: () => { setMoreOpen(false); onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); } }, React.createElement(Icon, { name: paused ? 'arrowRight' : 'clock', size: 14 }), paused ? 'Resume' : 'Pause'),
             React.createElement('div', { className: 'divider', style: { margin: '4px 0' } }),
             React.createElement('button', { className: 'danger', onClick: () => { setMoreOpen(false); setConfirmDel(true); } }, React.createElement(Icon, { name: 'trash', size: 14 }), 'Delete campaign'),
@@ -423,14 +651,12 @@
 
   function EditCampaign({ c, steps, recipients, onClose, onSave }) {
     const [name, setName] = useState(c.name);
-    const [emails, setEmails] = useState(recipients.map(r => r.p.email));
-    const [rmode, setRmode] = useState('individual');
-    // Pre-select the list this campaign was originally created with (deterministic per campaign).
-    const presetList = D.lists.length ? D.lists[Math.abs((c.id || '').split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)) % D.lists.length] : null;
-    const [listId, setListId] = useState(presetList ? presetList.id : null);
+    const [emails, setEmails] = useState(recipients.map(r => r.p?.email).filter(Boolean));
+    const [rmode, setRmode] = useState(c.sourceListId ? 'list' : 'individual');
+    const [listId, setListId] = useState(c.sourceListId || null);
     const [seqSteps, setSeqSteps] = useState(steps.map(s => ({
       subject: s.subject,
-      message: 'Hi there — following up on ' + s.subject.toLowerCase() + '. Let me know your thoughts.',
+      message: s.bodyHtml || ('Hi there — following up on ' + String(s.subject || '').toLowerCase() + '. Let me know your thoughts.'),
       timing: s.wait == null ? 'now' : 'wait',
       days: s.wait == null ? 3 : s.wait,
     })));
@@ -448,7 +674,7 @@
             React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'CAMPAIGN NAME'),
               React.createElement('input', { className: 'input', value: name, onChange: e => setName(e.target.value) })),
             React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'FROM'),
-              React.createElement('button', { className: 'select', style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, 'john@gmail.com', React.createElement(Icon, { name: 'chevDown', size: 14 }))),
+              React.createElement('button', { className: 'select', style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, c.fromEmail || '—', React.createElement(Icon, { name: 'chevDown', size: 14 }))),
             React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'RECIPIENTS'),
               React.createElement(RecipientPicker, { mode: rmode, setMode: setRmode, emails, setEmails, listId, setListId }),
             ),
