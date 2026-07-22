@@ -208,16 +208,35 @@
 
     if (campErr) return { ok: false, error: campErr.message };
 
-    const stepRows = stepsIn.map((step, i) => {
+    const stepRows = [];
+    for (let i = 0; i < stepsIn.length; i++) {
+      const step = stepsIn[i];
       const position = i + 1;
-      const delayDays = step.timing === 'wait' ? Math.max(0, parseInt(step.days, 10) || 0) : 0;
+      let delayDays = 0;
       let scheduledAt = null;
       let status = 'pending';
-      if (position === 1) {
-        scheduledAt = delayDays === 0 ? now.toISOString() : addDaysIso(now, delayDays);
+
+      if (step.timing === 'at') {
+        const raw = step.at || step.scheduledAt || step.scheduled_at;
+        const parsed = raw ? new Date(raw) : null;
+        if (!parsed || Number.isNaN(parsed.getTime())) {
+          await sb.from('campaigns').delete().eq('id', campaign.id).eq('user_id', s.user.id);
+          return { ok: false, error: 'schedule_required' };
+        }
+        scheduledAt = parsed.toISOString();
+        status = 'scheduled';
+      } else if (step.timing === 'wait') {
+        delayDays = Math.max(0, parseInt(step.days, 10) || 0);
+        if (position === 1) {
+          scheduledAt = delayDays === 0 ? now.toISOString() : addDaysIso(now, delayDays);
+          status = 'scheduled';
+        }
+      } else if (position === 1) {
+        scheduledAt = now.toISOString();
         status = 'scheduled';
       }
-      return {
+
+      stepRows.push({
         campaign_id: campaign.id,
         position,
         subject: String(step.subject || '').trim(),
@@ -225,8 +244,8 @@
         delay_days: delayDays,
         scheduled_at: scheduledAt,
         status,
-      };
-    });
+      });
+    }
 
     const { error: stepsErr } = await sb.from('campaign_steps').insert(stepRows);
     if (stepsErr) {
@@ -342,12 +361,25 @@
 
     if (error || !data) return { ok: false, error: error?.message || 'not_found' };
 
-    const steps = sortSteps(data.campaign_steps).map((s) => ({
-      subject: s.subject,
-      message: s.body_html,
-      timing: s.delay_days > 0 ? 'wait' : 'now',
-      days: s.delay_days || 0,
-    }));
+    const steps = sortSteps(data.campaign_steps).map((s) => {
+      const delayDays = s.delay_days || 0;
+      if (delayDays > 0) {
+        return { subject: s.subject, message: s.body_html, timing: 'wait', days: delayDays, at: '' };
+      }
+      if (s.scheduled_at && !s.sent_at) {
+        const t = new Date(s.scheduled_at).getTime();
+        if (!Number.isNaN(t) && t > Date.now() + 60_000) {
+          return {
+            subject: s.subject,
+            message: s.body_html,
+            timing: 'at',
+            days: 3,
+            at: s.scheduled_at,
+          };
+        }
+      }
+      return { subject: s.subject, message: s.body_html, timing: 'now', days: 3, at: '' };
+    });
     const emails = (data.campaign_recipients || []).map((r) => r.email);
 
     return createCampaign({

@@ -130,6 +130,7 @@
           if (!res.ok) {
             toast(res.error === 'recipients_required' ? 'Add at least one recipient'
               : res.error === 'steps_required' ? 'Add at least one step'
+                : res.error === 'schedule_required' ? 'Pick a date and time for scheduled steps'
                 : (res.error || 'Could not launch campaign'));
             return;
           }
@@ -209,6 +210,71 @@
     );
   }
 
+  function toDatetimeLocalValue(value) {
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+      + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function defaultScheduleAt() {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return toDatetimeLocalValue(d);
+  }
+
+  function emptySeqStep(timing) {
+    return { subject: '', message: '', timing: timing || 'now', days: 3, at: defaultScheduleAt() };
+  }
+
+  function StepTiming({ step, onChange }) {
+    const setTiming = (timing) => {
+      const next = { timing };
+      if (timing === 'at' && !step.at) next.at = defaultScheduleAt();
+      onChange(next);
+    };
+    return React.createElement('div', { className: 'seq-timing' },
+      React.createElement('label', { className: 'radio-line', onClick: () => setTiming('now') },
+        React.createElement('span', { className: 'radio-dot' + (step.timing === 'now' ? ' on' : '') }), 'Immediately'),
+      React.createElement('label', { className: 'radio-line', onClick: () => setTiming('wait') },
+        React.createElement('span', { className: 'radio-dot' + (step.timing === 'wait' ? ' on' : '') }), 'Wait ',
+        React.createElement('input', {
+          className: 'input',
+          style: { width: 48, height: 28, padding: '0 8px' },
+          value: step.days,
+          onClick: (e) => e.stopPropagation(),
+          onFocus: () => setTiming('wait'),
+          onChange: (e) => onChange({ timing: 'wait', days: e.target.value }),
+        }), ' days'),
+      React.createElement('label', { className: 'radio-line', onClick: () => setTiming('at') },
+        React.createElement('span', { className: 'radio-dot' + (step.timing === 'at' ? ' on' : '') }), 'At ',
+        React.createElement('input', {
+          type: 'datetime-local',
+          className: 'input seq-at-input',
+          value: step.at || '',
+          onClick: (e) => e.stopPropagation(),
+          onFocus: () => setTiming('at'),
+          onChange: (e) => onChange({ timing: 'at', at: e.target.value }),
+        })),
+    );
+  }
+
+  function timingFromSavedStep(s) {
+    const delay = s.delayDays != null ? s.delayDays : s.wait;
+    if (delay != null && delay > 0) {
+      return { timing: 'wait', days: delay, at: defaultScheduleAt() };
+    }
+    if (s.scheduledAt && !s.sentAt) {
+      const t = new Date(s.scheduledAt).getTime();
+      if (!Number.isNaN(t) && t > Date.now() + 60_000) {
+        return { timing: 'at', days: 3, at: toDatetimeLocalValue(s.scheduledAt) };
+      }
+    }
+    return { timing: 'now', days: 3, at: defaultScheduleAt() };
+  }
+
   function StepInd({ step }) {
     return React.createElement('div', { className: 'steps-ind' },
       [1, 2, 3].map((n, i) => [
@@ -239,15 +305,46 @@
     const toIndividual = () => { setMode('individual'); setListId(null); };
     const toList = () => setMode('list');
 
+    const isValidEmail = (email) => {
+      if (Store?.isEmail) return Store.isEmail(email);
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    };
+
     const addEmail = (raw) => {
       const email = String(raw || '').trim().toLowerCase().replace(/[,;]+$/g, '');
       if (!email) return false;
-      const Store = campaignsStore();
-      if (Store?.isEmail && !Store.isEmail(email)) return false;
+      if (!isValidEmail(email)) return false;
       if (emails.includes(email)) { setDraft(''); return true; }
       setEmails([...emails, email]);
       setDraft('');
       return true;
+    };
+
+    const commitFromValue = (value) => {
+      const parts = String(value || '').split(/[\s,;]+/).filter(Boolean);
+      if (!parts.length) { setDraft(''); return true; }
+      const endsWithSep = /[\s,;]$/.test(value);
+      const complete = endsWithSep ? parts : parts.slice(0, -1);
+      const remainder = endsWithSep ? '' : (parts[parts.length - 1] || '');
+      if (!complete.length) {
+        setDraft(remainder);
+        return false;
+      }
+      let next = [...emails];
+      let added = false;
+      for (const part of complete) {
+        const email = part.trim().toLowerCase();
+        if (!email || !isValidEmail(email)) continue;
+        if (!next.includes(email)) {
+          next.push(email);
+          added = true;
+        } else {
+          added = true;
+        }
+      }
+      setEmails(next);
+      setDraft(remainder);
+      return added;
     };
 
     const createList = async () => {
@@ -279,28 +376,20 @@
               value: draft,
               onChange: (e) => {
                 const value = e.target.value;
-                // Space / comma / semicolon after text → commit as a pill.
                 if (/[\s,;]/.test(value)) {
-                  const parts = value.split(/[\s,;]+/).filter(Boolean);
-                  if (!parts.length) { setDraft(''); return; }
-                  let next = [...emails];
-                  const Store = campaignsStore();
-                  const endsWithSep = /[\s,;]$/.test(value);
-                  const complete = endsWithSep ? parts : parts.slice(0, -1);
-                  const remainder = endsWithSep ? '' : (parts[parts.length - 1] || '');
-                  for (const part of complete) {
-                    const email = part.trim().toLowerCase();
-                    if (!email) continue;
-                    if (Store?.isEmail && !Store.isEmail(email)) continue;
-                    if (!next.includes(email)) next.push(email);
-                  }
-                  setEmails(next);
-                  setDraft(remainder);
+                  commitFromValue(value);
                   return;
                 }
                 setDraft(value);
               },
               onKeyDown: (e) => {
+                if (e.key === ' ' || e.key === ',' || e.key === ';') {
+                  if (draft.trim()) {
+                    e.preventDefault();
+                    addEmail(draft);
+                  }
+                  return;
+                }
                 if (e.key === 'Enter' || e.key === 'Tab') {
                   e.preventDefault();
                   addEmail(draft);
@@ -336,7 +425,7 @@
   function CreateCampaign({ onClose, onLaunch, initialListId, launching }) {
     const [step, setStep] = useState(1);
     const [name, setName] = useState('');
-    const [seqSteps, setSeqSteps] = useState([{ subject: '', message: '', timing: 'now', days: 3 }]);
+    const [seqSteps, setSeqSteps] = useState([emptySeqStep('now')]);
     const [rmode, setRmode] = useState(initialListId ? 'list' : 'individual');
     const [listId, setListId] = useState(initialListId || null);
     const [emails, setEmails] = useState([]);
@@ -416,14 +505,16 @@
               React.createElement('h4', null, 'Step ' + (i + 1)),
               React.createElement('input', { className: 'input', placeholder: 'Subject', style: { marginBottom: 8 }, value: s.subject, onChange: e => { const n = [...seqSteps]; n[i] = { ...n[i], subject: e.target.value }; setSeqSteps(n); } }),
               React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => { const n = [...seqSteps]; n[i] = { ...n[i], message: v }; setSeqSteps(n); }, minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
-              React.createElement('div', { className: 'flex gap12' },
-                React.createElement('label', { className: 'radio-line', onClick: () => { const n = [...seqSteps]; n[i] = { ...n[i], timing: 'now' }; setSeqSteps(n); } },
-                  React.createElement('span', { className: 'radio-dot' + (s.timing === 'now' ? ' on' : '') }), 'Immediately'),
-                React.createElement('label', { className: 'radio-line', onClick: () => { const n = [...seqSteps]; n[i] = { ...n[i], timing: 'wait' }; setSeqSteps(n); } },
-                  React.createElement('span', { className: 'radio-dot' + (s.timing === 'wait' ? ' on' : '') }), 'Wait ', React.createElement('input', { className: 'input', style: { width: 48, height: 28, padding: '0 8px' }, value: s.days, onChange: e => { const n = [...seqSteps]; n[i] = { ...n[i], days: e.target.value }; setSeqSteps(n); } }), ' days'),
-              ),
+              React.createElement(StepTiming, {
+                step: s,
+                onChange: (patch) => {
+                  const n = [...seqSteps];
+                  n[i] = { ...n[i], ...patch };
+                  setSeqSteps(n);
+                },
+              }),
             )),
-            seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, { subject: '', message: '', timing: 'now', days: 3 }]) },
+            seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep(seqSteps.length ? 'wait' : 'now')]) },
               React.createElement(Icon, { name: 'plus', size: 14 }), 'Add step'),
             React.createElement('p', { className: 'muted', style: { fontSize: 12.5, marginTop: 14 } }, 'Sequence pauses automatically when a recipient replies.'),
           ),
@@ -476,6 +567,9 @@
         state: s.state,
         subject: s.subject || ('Step ' + s.n),
         wait: s.wait,
+        delayDays: s.delayDays,
+        scheduledAt: s.scheduledAt,
+        sentAt: s.sentAt,
         openRate: null,
         replies: null,
         sentLabel: formatStepSentLabel(s),
@@ -680,14 +774,19 @@
     const [emails, setEmails] = useState(recipients.map(r => r.p?.email).filter(Boolean));
     const [rmode, setRmode] = useState(c.sourceListId ? 'list' : 'individual');
     const [listId, setListId] = useState(c.sourceListId || null);
-    const [seqSteps, setSeqSteps] = useState(steps.map(s => ({
-      subject: s.subject,
-      message: s.bodyHtml || ('Hi there — following up on ' + String(s.subject || '').toLowerCase() + '. Let me know your thoughts.'),
-      timing: s.wait == null ? 'now' : 'wait',
-      days: s.wait == null ? 3 : s.wait,
-    })));
+    const [seqSteps, setSeqSteps] = useState(steps.map(s => {
+      const t = timingFromSavedStep(s);
+      return {
+        subject: s.subject,
+        message: s.bodyHtml || ('Hi there — following up on ' + String(s.subject || '').toLowerCase() + '. Let me know your thoughts.'),
+        timing: t.timing,
+        days: t.days,
+        at: t.at,
+      };
+    }));
     React.useEffect(() => { const k = e => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, []);
     const upd = (i, key, val) => { const n = seqSteps.map((s, j) => j === i ? { ...s, [key]: val } : s); setSeqSteps(n); };
+    const patchStep = (i, patch) => { setSeqSteps(seqSteps.map((s, j) => j === i ? { ...s, ...patch } : s)); };
 
     return React.createElement('div', { className: 'backdrop', onMouseDown: onClose },
       React.createElement('div', { className: 'modal wide', onMouseDown: e => e.stopPropagation() },
@@ -713,15 +812,9 @@
               seqSteps.length > 1 && React.createElement('button', { className: 'row-act', onClick: () => setSeqSteps(seqSteps.filter((_, j) => j !== i)) }, React.createElement(Icon, { name: 'trash', size: 14 }))),
             React.createElement('input', { className: 'input', placeholder: 'Subject', style: { marginBottom: 8 }, value: s.subject, onChange: e => upd(i, 'subject', e.target.value) }),
             React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => upd(i, 'message', v), minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
-            React.createElement('div', { className: 'flex gap12' },
-              React.createElement('label', { className: 'radio-line', onClick: () => upd(i, 'timing', 'now') },
-                React.createElement('span', { className: 'radio-dot' + (s.timing === 'now' ? ' on' : '') }), 'Immediately'),
-              React.createElement('label', { className: 'radio-line', onClick: () => upd(i, 'timing', 'wait') },
-                React.createElement('span', { className: 'radio-dot' + (s.timing === 'wait' ? ' on' : '') }), 'Wait ',
-                React.createElement('input', { className: 'input', style: { width: 48, height: 28, padding: '0 8px' }, value: s.days, onChange: e => upd(i, 'days', e.target.value) }), ' days'),
-            ),
+            React.createElement(StepTiming, { step: s, onChange: (patch) => patchStep(i, patch) }),
           )),
-          seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, { subject: '', message: '', timing: 'wait', days: 3 }]) },
+          seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('wait')]) },
             React.createElement(Icon, { name: 'plus', size: 14 }), 'Add step'),
         ),
         React.createElement('div', { className: 'modal-foot' },
