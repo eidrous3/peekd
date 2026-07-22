@@ -226,7 +226,7 @@
   }
 
   function emptySeqStep(timing) {
-    return { subject: '', message: '', timing: timing || 'now', days: 3, at: defaultScheduleAt() };
+    return { subject: '', message: '', timing: timing || 'now', at: defaultScheduleAt() };
   }
 
   function StepTiming({ step, onChange }) {
@@ -238,16 +238,6 @@
     return React.createElement('div', { className: 'seq-timing' },
       React.createElement('label', { className: 'radio-line', onClick: () => setTiming('now') },
         React.createElement('span', { className: 'radio-dot' + (step.timing === 'now' ? ' on' : '') }), 'Immediately'),
-      React.createElement('label', { className: 'radio-line', onClick: () => setTiming('wait') },
-        React.createElement('span', { className: 'radio-dot' + (step.timing === 'wait' ? ' on' : '') }), 'Wait ',
-        React.createElement('input', {
-          className: 'input',
-          style: { width: 48, height: 28, padding: '0 8px' },
-          value: step.days,
-          onClick: (e) => e.stopPropagation(),
-          onFocus: () => setTiming('wait'),
-          onChange: (e) => onChange({ timing: 'wait', days: e.target.value }),
-        }), ' days'),
       React.createElement('label', { className: 'radio-line', onClick: () => setTiming('at') },
         React.createElement('span', { className: 'radio-dot' + (step.timing === 'at' ? ' on' : '') }), 'At ',
         React.createElement('input', {
@@ -262,17 +252,20 @@
   }
 
   function timingFromSavedStep(s) {
-    const delay = s.delayDays != null ? s.delayDays : s.wait;
-    if (delay != null && delay > 0) {
-      return { timing: 'wait', days: delay, at: defaultScheduleAt() };
-    }
     if (s.scheduledAt && !s.sentAt) {
       const t = new Date(s.scheduledAt).getTime();
       if (!Number.isNaN(t) && t > Date.now() + 60_000) {
-        return { timing: 'at', days: 3, at: toDatetimeLocalValue(s.scheduledAt) };
+        return { timing: 'at', at: toDatetimeLocalValue(s.scheduledAt) };
       }
     }
-    return { timing: 'now', days: 3, at: defaultScheduleAt() };
+    const delay = s.delayDays != null ? s.delayDays : s.wait;
+    if (delay != null && delay > 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + Number(delay));
+      d.setHours(9, 0, 0, 0);
+      return { timing: 'at', at: toDatetimeLocalValue(d) };
+    }
+    return { timing: 'now', at: defaultScheduleAt() };
   }
 
   function StepInd({ step }) {
@@ -514,7 +507,7 @@
                 },
               }),
             )),
-            seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep(seqSteps.length ? 'wait' : 'now')]) },
+            seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('at')]) },
               React.createElement(Icon, { name: 'plus', size: 14 }), 'Add step'),
             React.createElement('p', { className: 'muted', style: { fontSize: 12.5, marginTop: 14 } }, 'Sequence pauses automatically when a recipient replies.'),
           ),
@@ -692,7 +685,7 @@
       React.createElement('div', { className: 'cd-section-title' }, 'SEQUENCE STEPS'),
       React.createElement('div', { className: 'seq-timeline' },
         steps.map((s, i) => React.createElement('div', { key: i },
-          s.wait != null && React.createElement('div', { className: 'seq-wait' }, React.createElement(Icon, { name: 'chevDown', size: 14 }), 'Wait ' + s.wait + ' days'),
+          i > 0 && React.createElement('div', { className: 'seq-wait' }, React.createElement(Icon, { name: 'chevDown', size: 14 })),
           React.createElement('div', { className: 'seq-card seq-' + s.state },
             React.createElement('div', { className: 'seq-card-head' },
               React.createElement('span', { className: 'seq-ico' },
@@ -706,9 +699,7 @@
             ),
             React.createElement('div', { className: 'seq-subject' }, 'Subject: "' + s.subject + '"'),
             React.createElement('div', { className: 'seq-meta' },
-              s.state === 'pending'
-                ? React.createElement('span', null, 'Scheduled · not sent yet')
-                : React.createElement('span', null, s.sentLabel + ' · Open rate: ' + s.openRate + '% · Replies: ' + s.replies)),
+              React.createElement('span', null, s.sentLabel || (s.state === 'pending' ? 'Scheduled · not sent yet' : 'Pending'))),
           ),
         )),
       ),
@@ -780,7 +771,6 @@
         subject: s.subject,
         message: s.bodyHtml || ('Hi there — following up on ' + String(s.subject || '').toLowerCase() + '. Let me know your thoughts.'),
         timing: t.timing,
-        days: t.days,
         at: t.at,
       };
     }));
@@ -814,7 +804,7 @@
             React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => upd(i, 'message', v), minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
             React.createElement(StepTiming, { step: s, onChange: (patch) => patchStep(i, patch) }),
           )),
-          seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('wait')]) },
+          seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('at')]) },
             React.createElement(Icon, { name: 'plus', size: 14 }), 'Add step'),
         ),
         React.createElement('div', { className: 'modal-foot' },

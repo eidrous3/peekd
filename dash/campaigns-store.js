@@ -104,12 +104,6 @@
     };
   }
 
-  function addDaysIso(base, days) {
-    const d = new Date(base.getTime());
-    d.setDate(d.getDate() + Number(days || 0));
-    return d.toISOString();
-  }
-
   async function resolveRecipientRows(sb, userId, { emails, listId }) {
     const map = new Map();
 
@@ -225,12 +219,6 @@
         }
         scheduledAt = parsed.toISOString();
         status = 'scheduled';
-      } else if (step.timing === 'wait') {
-        delayDays = Math.max(0, parseInt(step.days, 10) || 0);
-        if (position === 1) {
-          scheduledAt = delayDays === 0 ? now.toISOString() : addDaysIso(now, delayDays);
-          status = 'scheduled';
-        }
       } else if (position === 1) {
         scheduledAt = now.toISOString();
         status = 'scheduled';
@@ -362,10 +350,6 @@
     if (error || !data) return { ok: false, error: error?.message || 'not_found' };
 
     const steps = sortSteps(data.campaign_steps).map((s) => {
-      const delayDays = s.delay_days || 0;
-      if (delayDays > 0) {
-        return { subject: s.subject, message: s.body_html, timing: 'wait', days: delayDays, at: '' };
-      }
       if (s.scheduled_at && !s.sent_at) {
         const t = new Date(s.scheduled_at).getTime();
         if (!Number.isNaN(t) && t > Date.now() + 60_000) {
@@ -373,12 +357,22 @@
             subject: s.subject,
             message: s.body_html,
             timing: 'at',
-            days: 3,
             at: s.scheduled_at,
           };
         }
       }
-      return { subject: s.subject, message: s.body_html, timing: 'now', days: 3, at: '' };
+      if ((s.delay_days || 0) > 0) {
+        const d = new Date();
+        d.setDate(d.getDate() + Number(s.delay_days));
+        d.setHours(9, 0, 0, 0);
+        return {
+          subject: s.subject,
+          message: s.body_html,
+          timing: 'at',
+          at: d.toISOString(),
+        };
+      }
+      return { subject: s.subject, message: s.body_html, timing: 'now', at: '' };
     });
     const emails = (data.campaign_recipients || []).map((r) => r.email);
 

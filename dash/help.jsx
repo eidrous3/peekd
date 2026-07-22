@@ -34,7 +34,7 @@
     ]},
     { cat: 'Campaigns', items: [
       { t: 'Creating your first campaign', body: [
-        'Go to Campaigns → Create campaign. Choose recipients (or a saved List), write your sequence of steps, and set the wait time between each. Peekd handles the sending cadence for you.',
+        'Go to Campaigns → Create campaign. Choose recipients (or a saved List), write your sequence of steps, and schedule each one for a specific time. Peekd handles the sending for you.',
         'Every step is tracked individually, so you can watch open and reply rates climb step by step and adjust the messaging that isn\'t landing.' ] },
       { t: 'How auto-pause on reply works', body: [
         'When a recipient replies, Peekd automatically removes them from the remaining steps of the campaign — no more awkward follow-ups to someone who already responded.',
