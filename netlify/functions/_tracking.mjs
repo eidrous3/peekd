@@ -213,22 +213,28 @@ export async function createTrackedSend({
   gmailMessageId,
   gmailThreadId,
   sentAt,
+  campaignId,
+  campaignStepId,
 }) {
   const recipients = [...new Set((Array.isArray(to) ? to : []).map(normalizeEmail).filter(Boolean))];
   if (!userId || !fromEmail || !subject || !recipients.length) {
     return { ok: false, error: 'invalid_tracked_send' };
   }
 
+  const body = {
+    user_id: userId,
+    from_email: normalizeEmail(fromEmail),
+    subject: String(subject).trim(),
+    gmail_message_id: gmailMessageId || null,
+    gmail_thread_id: gmailThreadId || null,
+    sent_at: sentAt || new Date().toISOString(),
+  };
+  if (campaignId) body.campaign_id = campaignId;
+  if (campaignStepId) body.campaign_step_id = campaignStepId;
+
   const emailRes = await dbRequest('tracked_emails', {
     method: 'POST',
-    body: {
-      user_id: userId,
-      from_email: normalizeEmail(fromEmail),
-      subject: String(subject).trim(),
-      gmail_message_id: gmailMessageId || null,
-      gmail_thread_id: gmailThreadId || null,
-      sent_at: sentAt || new Date().toISOString(),
-    },
+    body,
     prefer: 'return=representation',
   });
 

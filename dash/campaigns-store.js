@@ -61,10 +61,11 @@
     return sorted[idx].position || idx + 1;
   }
 
-  function toUiCampaign(row) {
+  function toUiCampaign(row, openStats) {
     const steps = sortSteps(row.campaign_steps);
     const recipients = Array.isArray(row.campaign_recipients) ? row.campaign_recipients : [];
-    const replies = recipients.filter((r) => r.status === 'replied').length;
+    const replies = recipients.filter((r) => r.status === 'replied' || r.replied_at).length;
+    const stats = openStats || { sent: 0, opened: 0, openRate: 0, byStep: {} };
     return {
       id: row.id,
       name: row.name || 'Untitled campaign',
@@ -74,26 +75,32 @@
       step: currentStepNumber(steps),
       steps: steps.length,
       recipients: recipients.length,
-      openRate: 0,
+      openRate: stats.openRate,
+      emailsSent: stats.sent,
+      emailsOpened: stats.opened,
       replies,
       fromEmail: row.from_email || '',
       sourceListId: row.source_list_id || null,
       timezone: row.timezone || 'UTC',
-      stepRows: steps.map((s) => ({
-        id: s.id,
-        n: s.position,
-        subject: s.subject || '',
-        bodyHtml: s.body_html || '',
-        wait: s.position === 1 ? null : (s.delay_days || 0),
-        delayDays: s.delay_days || 0,
-        scheduledAt: s.scheduled_at || null,
-        sentAt: s.sent_at || null,
-        status: s.status || 'pending',
-        state: s.status === 'sent' ? 'completed'
-          : s.status === 'skipped' ? 'pending'
-            : (statusToUi(row.status) === 'PAUSED' && s.status !== 'sent' ? 'paused'
-              : (s.status === 'scheduled' || s.status === 'pending' ? (currentStepNumber(steps) === s.position ? 'active' : 'pending') : 'pending')),
-      })),
+      stepRows: steps.map((s) => {
+        const stepStat = stats.byStep[s.id] || { sent: 0, opened: 0, openRate: null };
+        return {
+          id: s.id,
+          n: s.position,
+          subject: s.subject || '',
+          bodyHtml: s.body_html || '',
+          wait: s.position === 1 ? null : (s.delay_days || 0),
+          delayDays: s.delay_days || 0,
+          scheduledAt: s.scheduled_at || null,
+          sentAt: s.sent_at || null,
+          status: s.status || 'pending',
+          openRate: s.status === 'sent' ? (stepStat.openRate == null ? 0 : stepStat.openRate) : null,
+          state: s.status === 'sent' ? 'completed'
+            : s.status === 'skipped' ? 'pending'
+              : (statusToUi(row.status) === 'PAUSED' && s.status !== 'sent' ? 'paused'
+                : (s.status === 'scheduled' || s.status === 'pending' ? (currentStepNumber(steps) === s.position ? 'active' : 'pending') : 'pending')),
+        };
+      }),
       recipientRows: recipients.map((r) => ({
         id: r.id,
         email: r.email,
@@ -102,6 +109,108 @@
         repliedAt: r.replied_at || null,
       })),
     };
+  }
+
+  function hasHumanOpen(events) {
+    return (events || []).some((ev) => ev.classification === 'human');
+  }
+
+  // Open rate = opened recipient-sends / sent recipient-sends for steps already sent (excludes future steps).
+  function openStatsFromTracked(campaignRows, trackedEmails) {
+    const byCampaign = new Map();
+    for (const camp of campaignRows || []) {
+      const sentSteps = sortSteps(camp.campaign_steps).filter((s) => s.status === 'sent');
+      const recipSet = new Set((camp.campaign_recipients || []).map((r) => normalizeEmail(r.email)).filter(Boolean));
+      const sentSubjects = new Set(sentSteps.map((s) => String(s.subject || '').trim()).filter(Boolean));
+      const stepIds = new Set(sentSteps.map((s) => s.id));
+      const createdMs = camp.created_at ? new Date(camp.created_at).getTime() - 60_000 : 0;
+
+      let sent = 0;
+      let opened = 0;
+      const byStep = {};
+      for (const step of sentSteps) byStep[step.id] = { sent: 0, opened: 0, openRate: 0 };
+
+      for (const te of trackedEmails || []) {
+        const linked = te.campaign_id === camp.id
+          || (te.campaign_step_id && stepIds.has(te.campaign_step_id));
+        const subjectMatch = sentSubjects.has(String(te.subject || '').trim());
+        const sentAtMs = te.sent_at ? new Date(te.sent_at).getTime() : 0;
+        const fallback = !te.campaign_id && !te.campaign_step_id
+          && subjectMatch
+          && sentAtMs >= createdMs;
+        if (!linked && !fallback) continue;
+
+        const stepId = te.campaign_step_id && stepIds.has(te.campaign_step_id)
+          ? te.campaign_step_id
+          : (sentSteps.find((s) => s.subject === te.subject)?.id || null);
+
+        for (const recip of te.tracked_recipients || []) {
+          const email = normalizeEmail(recip.email);
+          if (!recipSet.has(email)) continue;
+          sent += 1;
+          const didOpen = hasHumanOpen(recip.email_open_events);
+          if (didOpen) opened += 1;
+          if (stepId && byStep[stepId]) {
+            byStep[stepId].sent += 1;
+            if (didOpen) byStep[stepId].opened += 1;
+          }
+        }
+      }
+
+      for (const id of Object.keys(byStep)) {
+        const s = byStep[id];
+        s.openRate = s.sent > 0 ? Math.round((s.opened / s.sent) * 100) : 0;
+      }
+
+      byCampaign.set(camp.id, {
+        sent,
+        opened,
+        openRate: sent > 0 ? Math.round((opened / sent) * 100) : 0,
+        byStep,
+      });
+    }
+    return byCampaign;
+  }
+
+  async function fetchTrackedForCampaigns(sb, userId, campaigns) {
+    if (!campaigns?.length) return [];
+    const campaignIds = campaigns.map((c) => c.id).filter(Boolean);
+    const subjects = [];
+    for (const c of campaigns) {
+      for (const s of c.campaign_steps || []) {
+        if (s.status === 'sent' && s.subject) subjects.push(String(s.subject).trim());
+      }
+    }
+    const uniqueSubjects = [...new Set(subjects.filter(Boolean))];
+    const baseSelect = 'id, subject, from_email, sent_at, tracked_recipients(email, email_open_events(classification))';
+    const linkedSelect = 'id, subject, from_email, sent_at, campaign_id, campaign_step_id, tracked_recipients(email, email_open_events(classification))';
+    const byId = new Map();
+
+    if (campaignIds.length) {
+      const linked = await sb
+        .from('tracked_emails')
+        .select(linkedSelect)
+        .eq('user_id', userId)
+        .in('campaign_id', campaignIds);
+      if (!linked.error) {
+        for (const row of linked.data || []) byId.set(row.id, row);
+      }
+    }
+
+    if (uniqueSubjects.length) {
+      const bySubject = await sb
+        .from('tracked_emails')
+        .select(baseSelect)
+        .eq('user_id', userId)
+        .in('subject', uniqueSubjects);
+      if (!bySubject.error) {
+        for (const row of bySubject.data || []) {
+          if (!byId.has(row.id)) byId.set(row.id, row);
+        }
+      }
+    }
+
+    return [...byId.values()];
   }
 
   function addDaysToDate(base, days) {
@@ -166,9 +275,13 @@
 
     if (error) return { ok: false, error: error.message, campaigns: [] };
 
+    const rows = data || [];
+    const tracked = await fetchTrackedForCampaigns(sb, s.user.id, rows);
+    const openByCampaign = openStatsFromTracked(rows, tracked);
+
     return {
       ok: true,
-      campaigns: (data || []).map(toUiCampaign),
+      campaigns: rows.map((row) => toUiCampaign(row, openByCampaign.get(row.id))),
     };
   }
 
@@ -276,6 +389,8 @@
           subject: row.subject,
           html: row.body_html,
           trackLinks: true,
+          campaignId: campaign.id,
+          campaignStepId: row.id,
         }).catch(() => ({ ok: false }))));
         if (results.some((r) => r && r.ok)) sentStepIds.push(row.id);
       }
@@ -295,8 +410,12 @@
       .eq('user_id', s.user.id)
       .single();
 
-    if (fetchErr) return { ok: true, campaign: toUiCampaign({ ...campaign, campaign_steps: stepRows, campaign_recipients: recipientRows }) };
-    return { ok: true, campaign: toUiCampaign(full) };
+    if (fetchErr) {
+      return { ok: true, campaign: toUiCampaign({ ...campaign, campaign_steps: stepRows, campaign_recipients: recipientRows }) };
+    }
+    const tracked = await fetchTrackedForCampaigns(sb, s.user.id, [full]);
+    const openByCampaign = openStatsFromTracked([full], tracked);
+    return { ok: true, campaign: toUiCampaign(full, openByCampaign.get(full.id)) };
   }
 
   async function updateCampaignStatus(id, status) {

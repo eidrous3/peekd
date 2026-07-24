@@ -35,7 +35,7 @@
     };
   }
 
-  async function sendEmail({ fromEmail, to, subject, html, addBranding, trackLinks, attachments }) {
+  async function sendEmail({ fromEmail, to, subject, html, addBranding, trackLinks, attachments, campaignId, campaignStepId }) {
     const s = await session();
     if (!s?.access_token) return { ok: false, error: 'no_session' };
 
@@ -57,6 +57,8 @@
         track: true,
         trackLinks: trackLinks === true,
         addBranding: !!addBranding,
+        campaignId: campaignId || null,
+        campaignStepId: campaignStepId || null,
         attachments: Array.isArray(attachments)
           ? attachments.map((a) => ({
             filename: a.filename || a.name,
