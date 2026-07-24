@@ -213,6 +213,31 @@
     return { subject: '', message: '', timing: timing || 'now', days: 3 };
   }
 
+  function previewSendDate(step) {
+    const d = new Date();
+    if (step.timing === 'after' || step.timing === 'wait') {
+      d.setDate(d.getDate() + Math.max(0, parseInt(step.days, 10) || 0));
+    }
+    return d;
+  }
+
+  function formatPreviewSend(step) {
+    const d = previewSendDate(step);
+    const when = d.toLocaleString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    if (step.timing === 'after' || step.timing === 'wait') {
+      const n = Math.max(0, parseInt(step.days, 10) || 0);
+      return 'After ' + n + ' day' + (n === 1 ? '' : 's') + ' · ' + when;
+    }
+    return 'Immediately · ' + when;
+  }
+
   function StepTiming({ step, onChange }) {
     const setTiming = (timing) => {
       const next = { timing };
@@ -400,6 +425,7 @@
     const [fromEmail, setFromEmail] = useState('');
     const [fromOpen, setFromOpen] = useState(false);
     const [accounts, setAccounts] = useState([]);
+    const [expandedSteps, setExpandedSteps] = useState({});
 
     useEffect(() => {
       let cancelled = false;
@@ -492,8 +518,28 @@
               React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Campaign'), React.createElement('b', null, name || 'Untitled campaign')),
               React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'From'), React.createElement('b', null, fromEmail || '—')),
               React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Recipients'), React.createElement('b', null, rmode === 'individual' ? emails.length : 'List selected')),
-              React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Steps'), React.createElement('b', null, seqSteps.length)),
-              React.createElement('div', { className: 'flex between' }, React.createElement('span', { className: 'muted' }, 'Timezone'), React.createElement('b', null, Store?.clientTimezone ? Store.clientTimezone() : '—')),
+              React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Timezone'), React.createElement('b', null, Store?.clientTimezone ? Store.clientTimezone() : '—')),
+              React.createElement('div', { style: { marginTop: 4 } },
+                React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } },
+                  React.createElement('span', { className: 'muted' }, 'Steps'),
+                  React.createElement('b', null, seqSteps.length)),
+                seqSteps.map((s, i) => {
+                  const open = !!expandedSteps[i];
+                  return React.createElement('div', { key: i, className: 'review-step' + (open ? ' open' : '') },
+                    React.createElement('button', {
+                      type: 'button',
+                      className: 'review-step-toggle',
+                      onClick: () => setExpandedSteps((prev) => ({ ...prev, [i]: !prev[i] })),
+                    },
+                      React.createElement('span', { className: 'review-step-plus' }, open ? '−' : '+'),
+                      React.createElement('span', { className: 'review-step-label' }, 'Step ' + (i + 1)),
+                      React.createElement('span', { className: 'review-step-subj muted' }, s.subject || 'Untitled')),
+                    open && React.createElement('div', { className: 'review-step-body' },
+                      React.createElement('div', { className: 'review-step-when' }, formatPreviewSend(s)),
+                    ),
+                  );
+                }),
+              ),
             ),
           ),
         ),
