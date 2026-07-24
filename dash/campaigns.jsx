@@ -495,19 +495,30 @@
           ),
           step === 2 && React.createElement('div', null,
             React.createElement('h4', { style: { margin: '0 0 14px', fontSize: 15 } }, 'Build Your Sequence'),
-            seqSteps.map((s, i) => React.createElement('div', { key: i, className: 'seq-step' },
-              React.createElement('h4', null, 'Step ' + (i + 1)),
-              React.createElement('input', { className: 'input', placeholder: 'Subject', style: { marginBottom: 8 }, value: s.subject, onChange: e => { const n = [...seqSteps]; n[i] = { ...n[i], subject: e.target.value }; setSeqSteps(n); } }),
-              React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => { const n = [...seqSteps]; n[i] = { ...n[i], message: v }; setSeqSteps(n); }, minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
-              React.createElement(StepTiming, {
-                step: s,
-                onChange: (patch) => {
-                  const n = [...seqSteps];
-                  n[i] = { ...n[i], ...patch };
-                  setSeqSteps(n);
-                },
-              }),
-            )),
+            seqSteps.map((s, i) => {
+              const open = !!expandedSteps[i];
+              return React.createElement('div', { key: i, className: 'seq-step' },
+                React.createElement('div', { className: 'seq-step-head' },
+                  React.createElement('h4', { style: { margin: 0 } }, 'Step ' + (i + 1)),
+                  React.createElement('button', {
+                    type: 'button',
+                    className: 'seq-step-plus' + (open ? ' open' : ''),
+                    title: open ? 'Hide send time' : 'Show send time',
+                    onClick: () => setExpandedSteps((prev) => ({ ...prev, [i]: !prev[i] })),
+                  }, open ? '−' : '+')),
+                open && React.createElement('div', { className: 'seq-step-when' }, formatPreviewSend(s)),
+                React.createElement('input', { className: 'input', placeholder: 'Subject', style: { marginBottom: 8 }, value: s.subject, onChange: e => { const n = [...seqSteps]; n[i] = { ...n[i], subject: e.target.value }; setSeqSteps(n); } }),
+                React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => { const n = [...seqSteps]; n[i] = { ...n[i], message: v }; setSeqSteps(n); }, minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
+                React.createElement(StepTiming, {
+                  step: s,
+                  onChange: (patch) => {
+                    const n = [...seqSteps];
+                    n[i] = { ...n[i], ...patch };
+                    setSeqSteps(n);
+                  },
+                }),
+              );
+            }),
             seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('after')]) },
               React.createElement(Icon, { name: 'plus', size: 14 }), 'Add step'),
             React.createElement('p', { className: 'muted', style: { fontSize: 12.5, marginTop: 14 } }, 'Sequence pauses automatically when a recipient replies.'),
@@ -518,28 +529,12 @@
               React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Campaign'), React.createElement('b', null, name || 'Untitled campaign')),
               React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'From'), React.createElement('b', null, fromEmail || '—')),
               React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Recipients'), React.createElement('b', null, rmode === 'individual' ? emails.length : 'List selected')),
-              React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Timezone'), React.createElement('b', null, Store?.clientTimezone ? Store.clientTimezone() : '—')),
-              React.createElement('div', { style: { marginTop: 4 } },
-                React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } },
-                  React.createElement('span', { className: 'muted' }, 'Steps'),
-                  React.createElement('b', null, seqSteps.length)),
-                seqSteps.map((s, i) => {
-                  const open = !!expandedSteps[i];
-                  return React.createElement('div', { key: i, className: 'review-step' + (open ? ' open' : '') },
-                    React.createElement('button', {
-                      type: 'button',
-                      className: 'review-step-toggle',
-                      onClick: () => setExpandedSteps((prev) => ({ ...prev, [i]: !prev[i] })),
-                    },
-                      React.createElement('span', { className: 'review-step-plus' }, open ? '−' : '+'),
-                      React.createElement('span', { className: 'review-step-label' }, 'Step ' + (i + 1)),
-                      React.createElement('span', { className: 'review-step-subj muted' }, s.subject || 'Untitled')),
-                    open && React.createElement('div', { className: 'review-step-body' },
-                      React.createElement('div', { className: 'review-step-when' }, formatPreviewSend(s)),
-                    ),
-                  );
-                }),
-              ),
+              React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Steps'), React.createElement('b', null, seqSteps.length)),
+              React.createElement('div', { className: 'flex between', style: { marginBottom: 10 } }, React.createElement('span', { className: 'muted' }, 'Timezone'), React.createElement('b', null, Store?.clientTimezone ? Store.clientTimezone() : '—')),
+              seqSteps.map((s, i) => React.createElement('div', { key: i, className: 'review-step-line' },
+                React.createElement('span', { className: 'review-step-label' }, 'Step ' + (i + 1)),
+                React.createElement('span', { className: 'muted' }, formatPreviewSend(s)),
+              )),
             ),
           ),
         ),
