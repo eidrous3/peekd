@@ -209,21 +209,22 @@
     if (campErr) return { ok: false, error: campErr.message };
 
     const stepRows = [];
+    const immediatePositions = new Set();
     for (let i = 0; i < stepsIn.length; i++) {
       const step = stepsIn[i];
       const position = i + 1;
-      const afterDays = (step.timing === 'after' || step.timing === 'wait')
-        ? Math.max(0, parseInt(step.days, 10) || 0)
-        : 0;
-      let delayDays = afterDays;
+      // Only step 1 may send immediately; follow-ups always wait N days.
+      const isAfter = position > 1 || step.timing === 'after' || step.timing === 'wait';
+      const afterDays = isAfter ? Math.max(position > 1 ? 1 : 0, parseInt(step.days, 10) || 0) : 0;
       let scheduledAt = null;
       let status = 'pending';
 
-      if (step.timing === 'after' || step.timing === 'wait') {
+      if (isAfter) {
         // Absolute send time from the client's current local time + N days.
         scheduledAt = addDaysFromClientNow(afterDays);
         status = 'scheduled';
-      } else if (position === 1) {
+      } else {
+        immediatePositions.add(position);
         scheduledAt = addDaysFromClientNow(0);
         status = 'scheduled';
       }
@@ -233,13 +234,16 @@
         position,
         subject: String(step.subject || '').trim(),
         body_html: String(step.message || step.bodyHtml || step.body_html || ''),
-        delay_days: delayDays,
+        delay_days: afterDays,
         scheduled_at: scheduledAt,
         status,
       });
     }
 
-    const { error: stepsErr } = await sb.from('campaign_steps').insert(stepRows);
+    const { data: insertedSteps, error: stepsErr } = await sb
+      .from('campaign_steps')
+      .insert(stepRows)
+      .select(STEP_COLUMNS);
     if (stepsErr) {
       await sb.from('campaigns').delete().eq('id', campaign.id).eq('user_id', s.user.id);
       return { ok: false, error: stepsErr.message };
@@ -256,6 +260,30 @@
     if (recipErr) {
       await sb.from('campaigns').delete().eq('id', campaign.id).eq('user_id', s.user.id);
       return { ok: false, error: recipErr.message };
+    }
+
+    // Immediate steps go out right now via Gmail with the tracking pixel.
+    if (immediatePositions.size && fromEmail && window.PeekdGmail?.sendEmail) {
+      const toEmails = recipientRows.map((r) => r.email);
+      const sentStepIds = [];
+      for (const row of sortSteps(insertedSteps)) {
+        if (!immediatePositions.has(row.position)) continue;
+        const results = await Promise.all(toEmails.map((email) => window.PeekdGmail.sendEmail({
+          fromEmail,
+          to: [email],
+          subject: row.subject,
+          html: row.body_html,
+          trackLinks: true,
+        }).catch(() => ({ ok: false }))));
+        if (results.some((r) => r && r.ok)) sentStepIds.push(row.id);
+      }
+      if (sentStepIds.length) {
+        await sb
+          .from('campaign_steps')
+          .update({ status: 'sent', sent_at: new Date().toISOString() })
+          .in('id', sentStepIds)
+          .eq('campaign_id', campaign.id);
+      }
     }
 
     const { data: full, error: fetchErr } = await sb

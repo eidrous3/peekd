@@ -213,16 +213,22 @@
     return { subject: '', message: '', timing: timing || 'now', days: 3 };
   }
 
-  function previewSendDate(step) {
+  // Only the first step can go out immediately; follow-ups always wait N days.
+  function stepTiming(step, index) {
+    if (index > 0) return 'after';
+    return step.timing === 'after' || step.timing === 'wait' ? 'after' : 'now';
+  }
+
+  function previewSendDate(step, index) {
     const d = new Date();
-    if (step.timing === 'after' || step.timing === 'wait') {
+    if (stepTiming(step, index) === 'after') {
       d.setDate(d.getDate() + Math.max(0, parseInt(step.days, 10) || 0));
     }
     return d;
   }
 
-  function formatPreviewSend(step) {
-    const d = previewSendDate(step);
+  function formatPreviewSend(step, index) {
+    const d = previewSendDate(step, index);
     const when = d.toLocaleString('en-US', {
       weekday: 'short',
       month: 'short',
@@ -231,24 +237,27 @@
       hour: 'numeric',
       minute: '2-digit',
     });
-    if (step.timing === 'after' || step.timing === 'wait') {
+    if (stepTiming(step, index) === 'after') {
       const n = Math.max(0, parseInt(step.days, 10) || 0);
       return 'After ' + n + ' day' + (n === 1 ? '' : 's') + ' · ' + when;
     }
     return 'Immediately · ' + when;
   }
 
-  function StepTiming({ step, onChange }) {
-    const setTiming = (timing) => {
-      const next = { timing };
-      if (timing === 'after' && (step.days == null || step.days === '')) next.days = 3;
-      onChange(next);
+  function StepTiming({ step, index, onChange }) {
+    const timing = stepTiming(step, index);
+    const setTiming = (next) => {
+      if (index > 0) return;
+      const patch = { timing: next };
+      if (next === 'after' && (step.days == null || step.days === '')) patch.days = 3;
+      onChange(patch);
     };
     return React.createElement('div', { className: 'seq-timing' },
-      React.createElement('label', { className: 'radio-line', onClick: () => setTiming('now') },
-        React.createElement('span', { className: 'radio-dot' + (step.timing === 'now' ? ' on' : '') }), 'Immediately'),
+      index === 0 && React.createElement('label', { className: 'radio-line', onClick: () => setTiming('now') },
+        React.createElement('span', { className: 'radio-dot' + (timing === 'now' ? ' on' : '') }), 'Immediately'),
       React.createElement('label', { className: 'radio-line', onClick: () => setTiming('after') },
-        React.createElement('span', { className: 'radio-dot' + (step.timing === 'after' ? ' on' : '') }), 'After ',
+        index === 0 && React.createElement('span', { className: 'radio-dot' + (timing === 'after' ? ' on' : '') }),
+        'After ',
         React.createElement('input', {
           className: 'input',
           style: { width: 48, height: 28, padding: '0 8px' },
@@ -256,15 +265,14 @@
           onClick: (e) => e.stopPropagation(),
           onFocus: () => setTiming('after'),
           onChange: (e) => onChange({ timing: 'after', days: e.target.value }),
-        }), ' days'),
+        }), index === 0 ? ' days' : ' days from the previous step'),
     );
   }
 
-  function timingFromSavedStep(s) {
+  function timingFromSavedStep(s, index) {
     const delay = s.delayDays != null ? s.delayDays : s.wait;
-    if (delay != null && delay > 0) {
-      return { timing: 'after', days: delay };
-    }
+    if (index > 0) return { timing: 'after', days: delay != null && delay > 0 ? delay : 3 };
+    if (delay != null && delay > 0) return { timing: 'after', days: delay };
     return { timing: 'now', days: 3 };
   }
 
@@ -506,11 +514,12 @@
                     title: open ? 'Hide send time' : 'Show send time',
                     onClick: () => setExpandedSteps((prev) => ({ ...prev, [i]: !prev[i] })),
                   }, open ? '−' : '+')),
-                open && React.createElement('div', { className: 'seq-step-when' }, formatPreviewSend(s)),
+                open && React.createElement('div', { className: 'seq-step-when' }, formatPreviewSend(s, i)),
                 React.createElement('input', { className: 'input', placeholder: 'Subject', style: { marginBottom: 8 }, value: s.subject, onChange: e => { const n = [...seqSteps]; n[i] = { ...n[i], subject: e.target.value }; setSeqSteps(n); } }),
                 React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => { const n = [...seqSteps]; n[i] = { ...n[i], message: v }; setSeqSteps(n); }, minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
                 React.createElement(StepTiming, {
                   step: s,
+                  index: i,
                   onChange: (patch) => {
                     const n = [...seqSteps];
                     n[i] = { ...n[i], ...patch };
@@ -533,7 +542,7 @@
               React.createElement('div', { className: 'flex between', style: { marginBottom: 10 } }, React.createElement('span', { className: 'muted' }, 'Timezone'), React.createElement('b', null, Store?.clientTimezone ? Store.clientTimezone() : '—')),
               seqSteps.map((s, i) => React.createElement('div', { key: i, className: 'review-step-line' },
                 React.createElement('span', { className: 'review-step-label' }, 'Step ' + (i + 1)),
-                React.createElement('span', { className: 'muted' }, formatPreviewSend(s)),
+                React.createElement('span', { className: 'muted' }, formatPreviewSend(s, i)),
               )),
             ),
           ),
@@ -782,8 +791,8 @@
     const [emails, setEmails] = useState(recipients.map(r => r.p?.email).filter(Boolean));
     const [rmode, setRmode] = useState(c.sourceListId ? 'list' : 'individual');
     const [listId, setListId] = useState(c.sourceListId || null);
-    const [seqSteps, setSeqSteps] = useState(steps.map(s => {
-      const t = timingFromSavedStep(s);
+    const [seqSteps, setSeqSteps] = useState(steps.map((s, i) => {
+      const t = timingFromSavedStep(s, i);
       return {
         subject: s.subject,
         message: s.bodyHtml || ('Hi there — following up on ' + String(s.subject || '').toLowerCase() + '. Let me know your thoughts.'),
@@ -819,7 +828,7 @@
               seqSteps.length > 1 && React.createElement('button', { className: 'row-act', onClick: () => setSeqSteps(seqSteps.filter((_, j) => j !== i)) }, React.createElement(Icon, { name: 'trash', size: 14 }))),
             React.createElement('input', { className: 'input', placeholder: 'Subject', style: { marginBottom: 8 }, value: s.subject, onChange: e => upd(i, 'subject', e.target.value) }),
             React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => upd(i, 'message', v), minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
-            React.createElement(StepTiming, { step: s, onChange: (patch) => patchStep(i, patch) }),
+            React.createElement(StepTiming, { step: s, index: i, onChange: (patch) => patchStep(i, patch) }),
           )),
           seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('after')]) },
             React.createElement(Icon, { name: 'plus', size: 14 }), 'Add step'),
