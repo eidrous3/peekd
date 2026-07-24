@@ -104,11 +104,10 @@
     };
   }
 
-  function addDaysFromClientNow(days) {
-    // Client-local "now" + N calendar days (respects browser timezone).
-    const d = new Date();
+  function addDaysToDate(base, days) {
+    const d = new Date(base.getTime());
     d.setDate(d.getDate() + Math.max(0, Number(days) || 0));
-    return d.toISOString();
+    return d;
   }
 
   async function resolveRecipientRows(sb, userId, { emails, listId }) {
@@ -210,22 +209,25 @@
 
     const stepRows = [];
     const immediatePositions = new Set();
+    // Cursor starts at client "now"; each follow-up adds its delay onto the prior step's send time.
+    let scheduleCursor = new Date();
     for (let i = 0; i < stepsIn.length; i++) {
       const step = stepsIn[i];
       const position = i + 1;
-      // Only step 1 may send immediately; follow-ups always wait N days.
+      // Only step 1 may send immediately; follow-ups always wait N days after the previous step.
       const isAfter = position > 1 || step.timing === 'after' || step.timing === 'wait';
       const afterDays = isAfter ? Math.max(position > 1 ? 1 : 0, parseInt(step.days, 10) || 0) : 0;
       let scheduledAt = null;
       let status = 'pending';
 
       if (isAfter) {
-        // Absolute send time from the client's current local time + N days.
-        scheduledAt = addDaysFromClientNow(afterDays);
+        scheduleCursor = addDaysToDate(scheduleCursor, afterDays);
+        scheduledAt = scheduleCursor.toISOString();
         status = 'scheduled';
       } else {
         immediatePositions.add(position);
-        scheduledAt = addDaysFromClientNow(0);
+        scheduleCursor = new Date();
+        scheduledAt = scheduleCursor.toISOString();
         status = 'scheduled';
       }
 

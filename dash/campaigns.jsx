@@ -213,22 +213,31 @@
     return { subject: '', message: '', timing: timing || 'now', days: 3 };
   }
 
-  // Only the first step can go out immediately; follow-ups always wait N days.
+  // Only the first step can go out immediately; follow-ups always wait N days after the previous step.
   function stepTiming(step, index) {
     if (index > 0) return 'after';
     return step.timing === 'after' || step.timing === 'wait' ? 'after' : 'now';
   }
 
-  function previewSendDate(step, index) {
+  function stepDelayDays(step, index) {
+    if (stepTiming(step, index) !== 'after') return 0;
+    const n = parseInt(step.days, 10);
+    if (Number.isNaN(n) || n < 0) return index > 0 ? 1 : 0;
+    return index > 0 ? Math.max(1, n) : n;
+  }
+
+  // Absolute send date: cumulative delays from launch (step 2 after step 1, step 3 after step 2, …).
+  function previewSendDate(steps, index) {
     const d = new Date();
-    if (stepTiming(step, index) === 'after') {
-      d.setDate(d.getDate() + Math.max(0, parseInt(step.days, 10) || 0));
-    }
+    let total = 0;
+    for (let i = 0; i <= index; i++) total += stepDelayDays(steps[i], i);
+    d.setDate(d.getDate() + total);
     return d;
   }
 
-  function formatPreviewSend(step, index) {
-    const d = previewSendDate(step, index);
+  function formatPreviewSend(step, index, steps) {
+    const list = Array.isArray(steps) ? steps : [step];
+    const d = previewSendDate(list, index);
     const when = d.toLocaleString('en-US', {
       weekday: 'short',
       month: 'short',
@@ -238,8 +247,9 @@
       minute: '2-digit',
     });
     if (stepTiming(step, index) === 'after') {
-      const n = Math.max(0, parseInt(step.days, 10) || 0);
-      return 'After ' + n + ' day' + (n === 1 ? '' : 's') + ' · ' + when;
+      const n = stepDelayDays(step, index);
+      const rel = index > 0 ? ' from the previous step' : '';
+      return 'After ' + n + ' day' + (n === 1 ? '' : 's') + rel + ' · ' + when;
     }
     return 'Immediately · ' + when;
   }
@@ -514,7 +524,7 @@
                     title: open ? 'Hide send time' : 'Show send time',
                     onClick: () => setExpandedSteps((prev) => ({ ...prev, [i]: !prev[i] })),
                   }, open ? '−' : '+')),
-                open && React.createElement('div', { className: 'seq-step-when' }, formatPreviewSend(s, i)),
+                open && React.createElement('div', { className: 'seq-step-when' }, formatPreviewSend(s, i, seqSteps)),
                 React.createElement('input', { className: 'input', placeholder: 'Subject', style: { marginBottom: 8 }, value: s.subject, onChange: e => { const n = [...seqSteps]; n[i] = { ...n[i], subject: e.target.value }; setSeqSteps(n); } }),
                 React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => { const n = [...seqSteps]; n[i] = { ...n[i], message: v }; setSeqSteps(n); }, minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
                 React.createElement(StepTiming, {
@@ -542,7 +552,7 @@
               React.createElement('div', { className: 'flex between', style: { marginBottom: 10 } }, React.createElement('span', { className: 'muted' }, 'Timezone'), React.createElement('b', null, Store?.clientTimezone ? Store.clientTimezone() : '—')),
               seqSteps.map((s, i) => React.createElement('div', { key: i, className: 'review-step-line' },
                 React.createElement('span', { className: 'review-step-label' }, 'Step ' + (i + 1)),
-                React.createElement('span', { className: 'muted' }, formatPreviewSend(s, i)),
+                React.createElement('span', { className: 'muted' }, formatPreviewSend(s, i, seqSteps)),
               )),
             ),
           ),
