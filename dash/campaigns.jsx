@@ -130,7 +130,6 @@
           if (!res.ok) {
             toast(res.error === 'recipients_required' ? 'Add at least one recipient'
               : res.error === 'steps_required' ? 'Add at least one step'
-                : res.error === 'schedule_required' ? 'Pick a date and time for scheduled steps'
                 : (res.error || 'Could not launch campaign'));
             return;
           }
@@ -210,62 +209,38 @@
     );
   }
 
-  function toDatetimeLocalValue(value) {
-    const d = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(d.getTime())) return '';
-    const pad = (n) => String(n).padStart(2, '0');
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
-      + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-  }
-
-  function defaultScheduleAt() {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(9, 0, 0, 0);
-    return toDatetimeLocalValue(d);
-  }
-
   function emptySeqStep(timing) {
-    return { subject: '', message: '', timing: timing || 'now', at: defaultScheduleAt() };
+    return { subject: '', message: '', timing: timing || 'now', days: 3 };
   }
 
   function StepTiming({ step, onChange }) {
     const setTiming = (timing) => {
       const next = { timing };
-      if (timing === 'at' && !step.at) next.at = defaultScheduleAt();
+      if (timing === 'after' && (step.days == null || step.days === '')) next.days = 3;
       onChange(next);
     };
     return React.createElement('div', { className: 'seq-timing' },
       React.createElement('label', { className: 'radio-line', onClick: () => setTiming('now') },
         React.createElement('span', { className: 'radio-dot' + (step.timing === 'now' ? ' on' : '') }), 'Immediately'),
-      React.createElement('label', { className: 'radio-line', onClick: () => setTiming('at') },
-        React.createElement('span', { className: 'radio-dot' + (step.timing === 'at' ? ' on' : '') }), 'At ',
+      React.createElement('label', { className: 'radio-line', onClick: () => setTiming('after') },
+        React.createElement('span', { className: 'radio-dot' + (step.timing === 'after' ? ' on' : '') }), 'After ',
         React.createElement('input', {
-          type: 'datetime-local',
-          className: 'input seq-at-input',
-          value: step.at || '',
+          className: 'input',
+          style: { width: 48, height: 28, padding: '0 8px' },
+          value: step.days == null ? 3 : step.days,
           onClick: (e) => e.stopPropagation(),
-          onFocus: () => setTiming('at'),
-          onChange: (e) => onChange({ timing: 'at', at: e.target.value }),
-        })),
+          onFocus: () => setTiming('after'),
+          onChange: (e) => onChange({ timing: 'after', days: e.target.value }),
+        }), ' days'),
     );
   }
 
   function timingFromSavedStep(s) {
-    if (s.scheduledAt && !s.sentAt) {
-      const t = new Date(s.scheduledAt).getTime();
-      if (!Number.isNaN(t) && t > Date.now() + 60_000) {
-        return { timing: 'at', at: toDatetimeLocalValue(s.scheduledAt) };
-      }
-    }
     const delay = s.delayDays != null ? s.delayDays : s.wait;
     if (delay != null && delay > 0) {
-      const d = new Date();
-      d.setDate(d.getDate() + Number(delay));
-      d.setHours(9, 0, 0, 0);
-      return { timing: 'at', at: toDatetimeLocalValue(d) };
+      return { timing: 'after', days: delay };
     }
-    return { timing: 'now', at: defaultScheduleAt() };
+    return { timing: 'now', days: 3 };
   }
 
   function StepInd({ step }) {
@@ -507,7 +482,7 @@
                 },
               }),
             )),
-            seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('at')]) },
+            seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('after')]) },
               React.createElement(Icon, { name: 'plus', size: 14 }), 'Add step'),
             React.createElement('p', { className: 'muted', style: { fontSize: 12.5, marginTop: 14 } }, 'Sequence pauses automatically when a recipient replies.'),
           ),
@@ -685,7 +660,8 @@
       React.createElement('div', { className: 'cd-section-title' }, 'SEQUENCE STEPS'),
       React.createElement('div', { className: 'seq-timeline' },
         steps.map((s, i) => React.createElement('div', { key: i },
-          i > 0 && React.createElement('div', { className: 'seq-wait' }, React.createElement(Icon, { name: 'chevDown', size: 14 })),
+          s.wait != null && s.wait > 0 && React.createElement('div', { className: 'seq-wait' }, React.createElement(Icon, { name: 'chevDown', size: 14 }), 'After ' + s.wait + ' days'),
+          i > 0 && !(s.wait > 0) && React.createElement('div', { className: 'seq-wait' }, React.createElement(Icon, { name: 'chevDown', size: 14 })),
           React.createElement('div', { className: 'seq-card seq-' + s.state },
             React.createElement('div', { className: 'seq-card-head' },
               React.createElement('span', { className: 'seq-ico' },
@@ -771,7 +747,7 @@
         subject: s.subject,
         message: s.bodyHtml || ('Hi there — following up on ' + String(s.subject || '').toLowerCase() + '. Let me know your thoughts.'),
         timing: t.timing,
-        at: t.at,
+        days: t.days,
       };
     }));
     React.useEffect(() => { const k = e => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, []);
@@ -804,7 +780,7 @@
             React.createElement('div', { style: { marginBottom: 10 } }, React.createElement(window.RichEditor, { value: s.message || '', onChange: v => upd(i, 'message', v), minHeight: 120, mergeTags: true, placeholder: 'Message…' })),
             React.createElement(StepTiming, { step: s, onChange: (patch) => patchStep(i, patch) }),
           )),
-          seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('at')]) },
+          seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('after')]) },
             React.createElement(Icon, { name: 'plus', size: 14 }), 'Add step'),
         ),
         React.createElement('div', { className: 'modal-foot' },
