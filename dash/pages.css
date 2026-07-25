@@ -238,7 +238,8 @@ tr.clickable{cursor:pointer}
 .seq-card.seq-active{box-shadow:0 0 0 3px var(--accent-soft)}
 .seq-card.seq-paused{background:var(--warn-soft)}
 .seq-card.seq-pending{opacity:.72}
-.seq-card-head{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.seq-card-head{display:flex;align-items:center;gap:9px;margin-bottom:8px;flex-wrap:wrap}
+.seq-publish-btn{margin-left:auto}
 .seq-ico{display:grid;place-items:center;flex:0 0 auto}
 .seq-completed .seq-ico{color:var(--good)}
 .seq-active .seq-ico{color:var(--accent)}

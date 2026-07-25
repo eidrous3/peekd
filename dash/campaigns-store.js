@@ -551,6 +551,100 @@
     });
   }
 
+  async function publishCampaignStep(campaignId, stepId) {
+    if (!campaignId || !stepId) return { ok: false, error: 'invalid_input' };
+    if (!window.PeekdGmail?.sendEmail) return { ok: false, error: 'gmail_unavailable' };
+
+    const s = await session();
+    if (!s?.user) return { ok: false, error: 'no_session' };
+
+    const sb = window.PeekdAuth.client();
+    if (!sb) return { ok: false, error: 'not_configured' };
+
+    const { data, error } = await sb
+      .from('campaigns')
+      .select(FETCH_SELECT)
+      .eq('id', campaignId)
+      .eq('user_id', s.user.id)
+      .single();
+
+    if (error || !data) return { ok: false, error: error?.message || 'not_found' };
+    if (String(data.status || '').toLowerCase() === 'paused') {
+      return { ok: false, error: 'campaign_paused' };
+    }
+
+    const steps = sortSteps(data.campaign_steps);
+    const step = steps.find((row) => row.id === stepId);
+    if (!step) return { ok: false, error: 'step_not_found' };
+    if (step.status === 'sent') return { ok: false, error: 'already_sent' };
+
+    const currentPos = currentStepNumber(steps);
+    if (step.position !== currentPos) return { ok: false, error: 'not_current_step' };
+
+    const fromEmail = normalizeEmail(data.from_email);
+    if (!fromEmail) return { ok: false, error: 'from_required' };
+
+    const toEmails = (data.campaign_recipients || [])
+      .filter((r) => r.status !== 'replied' && r.status !== 'paused')
+      .map((r) => normalizeEmail(r.email))
+      .filter(isEmail);
+
+    if (!toEmails.length) return { ok: false, error: 'recipients_required' };
+
+    const results = await Promise.all(toEmails.map((email) => window.PeekdGmail.sendEmail({
+      fromEmail,
+      to: [email],
+      subject: step.subject || '',
+      html: step.body_html || '',
+      trackLinks: true,
+      campaignId,
+      campaignStepId: step.id,
+    }).catch(() => ({ ok: false }))));
+
+    const sentCount = results.filter((r) => r && r.ok).length;
+    if (!sentCount) return { ok: false, error: 'send_failed' };
+
+    const sentAt = new Date();
+    const { error: stepErr } = await sb
+      .from('campaign_steps')
+      .update({ status: 'sent', sent_at: sentAt.toISOString() })
+      .eq('id', step.id)
+      .eq('campaign_id', campaignId);
+
+    if (stepErr) return { ok: false, error: stepErr.message };
+
+    // Re-chain later steps from this send time (N days after previous step).
+    let cursor = sentAt;
+    for (const later of steps) {
+      if (later.position <= step.position) continue;
+      if (later.status === 'sent' || later.status === 'skipped') continue;
+      const delay = Math.max(1, Number(later.delay_days) || 1);
+      cursor = addDaysToDate(cursor, delay);
+      await sb
+        .from('campaign_steps')
+        .update({
+          scheduled_at: cursor.toISOString(),
+          status: later.status === 'pending' ? 'scheduled' : later.status,
+        })
+        .eq('id', later.id)
+        .eq('campaign_id', campaignId);
+    }
+
+    const { data: full, error: fetchErr } = await sb
+      .from('campaigns')
+      .select(FETCH_SELECT)
+      .eq('id', campaignId)
+      .eq('user_id', s.user.id)
+      .single();
+
+    if (fetchErr || !full) {
+      return { ok: true, sentCount, campaign: toUiCampaign(data) };
+    }
+    const tracked = await fetchTrackedForCampaigns(sb, s.user.id, [full]);
+    const openByCampaign = openStatsFromTracked([full], tracked);
+    return { ok: true, sentCount, campaign: toUiCampaign(full, openByCampaign.get(full.id)) };
+  }
+
   window.PeekdCampaigns = {
     fetchCampaigns,
     createCampaign,
@@ -558,6 +652,7 @@
     renameCampaign,
     deleteCampaign,
     duplicateCampaign,
+    publishCampaignStep,
     clientTimezone,
     isEmail,
   };

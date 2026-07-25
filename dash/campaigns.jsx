@@ -82,6 +82,24 @@
       toast('Campaign duplicated ✓');
     };
 
+    const publishStep = async (campaignId, stepId) => {
+      if (!Store?.publishCampaignStep) return { ok: false };
+      const res = await Store.publishCampaignStep(campaignId, stepId);
+      if (!res.ok) {
+        const msg = res.error === 'campaign_paused' ? 'Resume the campaign first'
+          : res.error === 'already_sent' ? 'This step was already sent'
+            : res.error === 'not_current_step' ? 'Only the current active step can be published'
+              : res.error === 'recipients_required' ? 'No active recipients to send to'
+                : res.error === 'gmail_unavailable' || res.error === 'send_failed' ? 'Could not send via Gmail'
+                  : (res.error || 'Could not publish step');
+        toast(msg);
+        return res;
+      }
+      patchCampaign(campaignId, res.campaign);
+      toast('Step published · ' + (res.sentCount || 0) + ' sent ✓');
+      return res;
+    };
+
     if (free) return React.createElement('div', { className: 'page-pad' },
       React.createElement('div', { className: 'gate' },
         React.createElement('div', { className: 'gate-ico' }, React.createElement(Icon, { name: 'lock', size: 28 })),
@@ -99,6 +117,7 @@
       onDelete: () => removeCampaign(selected.id),
       onRename: (newName) => rename(selected.id, newName),
       onDuplicate: () => duplicate(selected.id),
+      onPublishStep: (stepId) => publishStep(selected.id, stepId),
     });
 
     return React.createElement('div', { className: 'page-pad' },
@@ -591,6 +610,7 @@
   function buildSteps(c) {
     if (Array.isArray(c.stepRows) && c.stepRows.length) {
       return c.stepRows.map((s) => ({
+        id: s.id,
         n: s.n,
         state: s.state,
         subject: s.subject || ('Step ' + s.n),
@@ -663,16 +683,27 @@
 
   const RSTATUS = { REPLIED: 'b-replied', OPENED: 'b-opened', PENDING: 'b-sent', 'NO OPENS': 'b-unresp' };
 
-  function CampaignDetail({ c, onBack, onToggleStatus, onDelete, onRename, onDuplicate, toast }) {
+  function CampaignDetail({ c, onBack, onToggleStatus, onDelete, onRename, onDuplicate, onPublishStep, toast }) {
     const [moreOpen, setMoreOpen] = useState(false);
     const [confirmDel, setConfirmDel] = useState(false);
     const [editing, setEditing] = useState(false);
     const [rTab, setRTab] = useState('All');
     const [person, setPerson] = useState(null);
+    const [publishingStepId, setPublishingStepId] = useState(null);
     const paused = c.status === 'PAUSED';
     const steps = buildSteps(c);
     const recipients = buildRecipients(c);
     const pct = Math.round((c.step / Math.max(c.steps, 1)) * 100);
+
+    const publishActive = async (step) => {
+      if (!onPublishStep || publishingStepId || paused) return;
+      const stepId = step.id || (Array.isArray(c.stepRows) && c.stepRows.find((r) => r.n === step.n)?.id);
+      if (!stepId) { toast('Could not publish step'); return; }
+      setPublishingStepId(stepId);
+      await onPublishStep(stepId);
+      setPublishingStepId(null);
+    };
+
     const filtered = recipients.filter(r => {
       if (rTab === 'All') return true;
       if (rTab === 'Opened') return r.status === 'OPENED';
@@ -732,6 +763,14 @@
               React.createElement('span', { className: 'seq-step-name' }, 'Step ' + s.n),
               React.createElement('span', { className: 'seq-state-tag ' + s.state },
                 s.state === 'completed' ? 'Completed' : s.state === 'active' ? 'Active (current)' : s.state === 'paused' ? '⏸ Paused' : 'Pending'),
+              s.state === 'active' && !paused && React.createElement('button', {
+                type: 'button',
+                className: 'btn btn-primary btn-sm seq-publish-btn',
+                disabled: !!publishingStepId,
+                onClick: () => publishActive(s),
+              }, publishingStepId && (publishingStepId === s.id || publishingStepId === (c.stepRows || []).find((r) => r.n === s.n)?.id)
+                ? 'Publishing…'
+                : React.createElement(React.Fragment, null, React.createElement(Icon, { name: 'send', size: 13 }), 'Publish')),
             ),
             React.createElement('div', { className: 'seq-subject' }, 'Subject: "' + s.subject + '"'),
             React.createElement('div', { className: 'seq-meta' },
