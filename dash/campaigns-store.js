@@ -117,7 +117,7 @@
   }
 
   // Open/reply stats for steps already sent (excludes future steps).
-  // Open rate = opened recipient-sends / sent recipient-sends.
+  // Open rate = unique recipients who opened ANY sent step / unique recipients the campaign was sent to.
   // Replies = unique campaign recipients who replied to at least one sent step.
   function openStatsFromTracked(campaignRows, trackedEmails) {
     const byCampaign = new Map();
@@ -128,8 +128,8 @@
       const stepIds = new Set(sentSteps.map((s) => s.id));
       const createdMs = camp.created_at ? new Date(camp.created_at).getTime() - 60_000 : 0;
 
-      let sent = 0;
-      let opened = 0;
+      const contactedEmails = new Set();
+      const openedEmails = new Set();
       const repliedEmails = new Set();
       const byStep = {};
       for (const step of sentSteps) byStep[step.id] = { sent: 0, opened: 0, openRate: 0 };
@@ -151,9 +151,9 @@
         for (const recip of te.tracked_recipients || []) {
           const email = normalizeEmail(recip.email);
           if (!recipSet.has(email)) continue;
-          sent += 1;
+          contactedEmails.add(email);
           const didOpen = hasHumanOpen(recip.email_open_events);
-          if (didOpen) opened += 1;
+          if (didOpen) openedEmails.add(email);
           if (recip.is_replied) repliedEmails.add(email);
           if (stepId && byStep[stepId]) {
             byStep[stepId].sent += 1;
@@ -167,10 +167,11 @@
         s.openRate = s.sent > 0 ? Math.round((s.opened / s.sent) * 100) : 0;
       }
 
+      const contacted = contactedEmails.size;
       byCampaign.set(camp.id, {
-        sent,
-        opened,
-        openRate: sent > 0 ? Math.round((opened / sent) * 100) : 0,
+        sent: contacted,
+        opened: openedEmails.size,
+        openRate: contacted > 0 ? Math.round((openedEmails.size / contacted) * 100) : 0,
         replies: repliedEmails.size,
         repliedEmails: [...repliedEmails],
         byStep,
