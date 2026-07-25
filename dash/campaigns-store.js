@@ -64,8 +64,9 @@
   function toUiCampaign(row, openStats) {
     const steps = sortSteps(row.campaign_steps);
     const recipients = Array.isArray(row.campaign_recipients) ? row.campaign_recipients : [];
-    const replies = recipients.filter((r) => r.status === 'replied' || r.replied_at).length;
-    const stats = openStats || { sent: 0, opened: 0, openRate: 0, byStep: {} };
+    const stats = openStats || { sent: 0, opened: 0, openRate: 0, replies: 0, byStep: {} };
+    const repliesFromRecipients = recipients.filter((r) => r.status === 'replied' || r.replied_at).length;
+    const replies = Math.max(stats.replies || 0, repliesFromRecipients);
     return {
       id: row.id,
       name: row.name || 'Untitled campaign',
@@ -115,7 +116,9 @@
     return (events || []).some((ev) => ev.classification === 'human');
   }
 
-  // Open rate = opened recipient-sends / sent recipient-sends for steps already sent (excludes future steps).
+  // Open/reply stats for steps already sent (excludes future steps).
+  // Open rate = opened recipient-sends / sent recipient-sends.
+  // Replies = unique campaign recipients who replied to at least one sent step.
   function openStatsFromTracked(campaignRows, trackedEmails) {
     const byCampaign = new Map();
     for (const camp of campaignRows || []) {
@@ -127,6 +130,7 @@
 
       let sent = 0;
       let opened = 0;
+      const repliedEmails = new Set();
       const byStep = {};
       for (const step of sentSteps) byStep[step.id] = { sent: 0, opened: 0, openRate: 0 };
 
@@ -150,6 +154,7 @@
           sent += 1;
           const didOpen = hasHumanOpen(recip.email_open_events);
           if (didOpen) opened += 1;
+          if (recip.is_replied) repliedEmails.add(email);
           if (stepId && byStep[stepId]) {
             byStep[stepId].sent += 1;
             if (didOpen) byStep[stepId].opened += 1;
@@ -166,6 +171,8 @@
         sent,
         opened,
         openRate: sent > 0 ? Math.round((opened / sent) * 100) : 0,
+        replies: repliedEmails.size,
+        repliedEmails: [...repliedEmails],
         byStep,
       });
     }
@@ -182,8 +189,8 @@
       }
     }
     const uniqueSubjects = [...new Set(subjects.filter(Boolean))];
-    const baseSelect = 'id, subject, from_email, sent_at, tracked_recipients(email, email_open_events(classification))';
-    const linkedSelect = 'id, subject, from_email, sent_at, campaign_id, campaign_step_id, tracked_recipients(email, email_open_events(classification))';
+    const baseSelect = 'id, subject, from_email, sent_at, tracked_recipients(email, is_replied, replied_at, email_open_events(classification))';
+    const linkedSelect = 'id, subject, from_email, sent_at, campaign_id, campaign_step_id, tracked_recipients(email, is_replied, replied_at, email_open_events(classification))';
     const byId = new Map();
 
     if (campaignIds.length) {
@@ -278,6 +285,29 @@
     const rows = data || [];
     const tracked = await fetchTrackedForCampaigns(sb, s.user.id, rows);
     const openByCampaign = openStatsFromTracked(rows, tracked);
+
+    // Persist reply flags onto campaign_recipients when tracked sends show is_replied.
+    await Promise.all(rows.map(async (camp) => {
+      const stats = openByCampaign.get(camp.id);
+      if (!stats?.repliedEmails?.length) return;
+      const needUpdate = (camp.campaign_recipients || []).filter((r) => {
+        const email = normalizeEmail(r.email);
+        return stats.repliedEmails.includes(email) && !r.replied_at && r.status !== 'replied';
+      });
+      if (!needUpdate.length) return;
+      const now = new Date().toISOString();
+      await sb
+        .from('campaign_recipients')
+        .update({ status: 'replied', replied_at: now })
+        .eq('campaign_id', camp.id)
+        .in('email', needUpdate.map((r) => normalizeEmail(r.email)));
+      for (const r of camp.campaign_recipients || []) {
+        if (stats.repliedEmails.includes(normalizeEmail(r.email))) {
+          r.status = 'replied';
+          r.replied_at = r.replied_at || now;
+        }
+      }
+    }));
 
     return {
       ok: true,
