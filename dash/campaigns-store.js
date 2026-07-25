@@ -268,6 +268,33 @@
     return { ok: true, rows: [...map.values()] };
   }
 
+  async function syncCampaignReplies(campaignRows) {
+    const s = await session();
+    if (!s?.access_token) return;
+    const campaignIds = (campaignRows || []).map((c) => c.id).filter(Boolean);
+    const subjects = [];
+    for (const c of campaignRows || []) {
+      for (const step of c.campaign_steps || []) {
+        if (step.status === 'sent' && step.subject) subjects.push(String(step.subject).trim());
+      }
+    }
+    try {
+      await fetch('/.netlify/functions/sync-tracked-replies', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${s.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          campaignIds,
+          subjects: [...new Set(subjects.filter(Boolean))],
+        }),
+      });
+    } catch {
+      /* campaigns still load if reply sync fails */
+    }
+  }
+
   async function fetchCampaigns() {
     const s = await session();
     if (!s?.user) return { ok: false, error: 'no_session', campaigns: [] };
@@ -284,6 +311,7 @@
     if (error) return { ok: false, error: error.message, campaigns: [] };
 
     const rows = data || [];
+    await syncCampaignReplies(rows);
     const tracked = await fetchTrackedForCampaigns(sb, s.user.id, rows);
     const openByCampaign = openStatsFromTracked(rows, tracked);
 

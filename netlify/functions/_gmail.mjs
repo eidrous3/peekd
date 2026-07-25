@@ -530,6 +530,70 @@ export async function enrichInboxWithReplies(accounts, messages) {
   return enriched;
 }
 
+/**
+ * Check Gmail threads for tracked sends and mark recipients as replied.
+ * Used by campaigns (and similar) so replies are counted without requiring an Inbox visit.
+ */
+export async function syncRepliesForTrackedEmails(userId, trackedEmails) {
+  const rows = (trackedEmails || []).filter((row) => row?.gmail_thread_id && row?.gmail_message_id);
+  if (!userId || !rows.length) return { ok: true, updated: 0 };
+
+  const accounts = await getConnectedAccounts(userId);
+  if (!accounts.length) return { ok: true, updated: 0 };
+
+  const byFrom = new Map();
+  for (const row of rows) {
+    const from = normalizeEmail(row.from_email);
+    if (!from) continue;
+    if (!byFrom.has(from)) byFrom.set(from, []);
+    byFrom.get(from).push(row);
+  }
+
+  let updated = 0;
+  for (const account of accounts) {
+    const subset = byFrom.get(normalizeEmail(account.email));
+    if (!subset?.length) continue;
+
+    const accessToken = await getValidAccessToken(account);
+    if (!accessToken) continue;
+
+    const threadIds = [...new Set(subset.map((r) => r.gmail_thread_id).filter(Boolean))];
+    const threadById = new Map();
+    await Promise.all(threadIds.map(async (threadId) => {
+      const thread = await fetchGmailThread(accessToken, threadId);
+      if (thread) threadById.set(threadId, thread);
+    }));
+
+    for (const row of subset) {
+      const thread = threadById.get(row.gmail_thread_id);
+      if (!thread) continue;
+      const recipients = Array.isArray(row.tracked_recipients) ? row.tracked_recipients : [];
+      for (const recip of recipients) {
+        if (recip.is_replied) continue;
+        const recipientEmail = normalizeEmail(recip.email);
+        if (!recipientEmail) continue;
+        const reply = findReplyInThread(thread, {
+          accountEmail: account.email,
+          sentMessageId: row.gmail_message_id,
+          sentInternalDate: row.sent_at ? new Date(row.sent_at).getTime() : 0,
+          recipientEmail,
+        });
+        if (!reply) continue;
+        // Always mark the tracked recipient (reply From may use an alias).
+        const res = await markRecipientReplied({
+          trackedEmailId: row.id,
+          gmailMessageId: row.gmail_message_id,
+          recipientEmail,
+          repliedAt: reply.internalDate,
+        });
+        if (res.ok) updated += 1;
+      }
+    }
+  }
+
+  return { ok: true, updated };
+}
+
 /** Drop inbox-only messages when the same thread already has a sent message in the list. */
 export function hideIncomingThreadReplies(messages) {
   if (!Array.isArray(messages) || !messages.length) return messages;
