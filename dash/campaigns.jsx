@@ -89,9 +89,10 @@
         const msg = res.error === 'campaign_paused' ? 'Resume the campaign first'
           : res.error === 'already_sent' ? 'This step was already sent'
             : res.error === 'not_current_step' ? 'Only the current active step can be published'
-              : res.error === 'recipients_required' ? 'No active recipients to send to'
-                : res.error === 'gmail_unavailable' || res.error === 'send_failed' ? 'Could not send via Gmail'
-                  : (res.error || 'Could not publish step');
+              : res.error === 'all_replied' ? 'Everyone on this campaign already replied — later steps are paused for them'
+                : res.error === 'recipients_required' ? 'No active recipients to send to'
+                  : res.error === 'gmail_unavailable' || res.error === 'send_failed' ? 'Could not send via Gmail'
+                    : (res.error || 'Could not publish step');
         toast(msg);
         return res;
       }

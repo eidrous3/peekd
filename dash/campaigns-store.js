@@ -613,12 +613,18 @@
     const fromEmail = normalizeEmail(data.from_email);
     if (!fromEmail) return { ok: false, error: 'from_required' };
 
-    const toEmails = (data.campaign_recipients || [])
+    // Pause on reply: skip anyone who already replied (or was manually paused).
+    const recipients = data.campaign_recipients || [];
+    const toEmails = [...new Set(recipients
       .filter((r) => r.status !== 'replied' && r.status !== 'paused')
       .map((r) => normalizeEmail(r.email))
-      .filter(isEmail);
+      .filter(isEmail))];
 
-    if (!toEmails.length) return { ok: false, error: 'recipients_required' };
+    if (!toEmails.length) {
+      const hasReplied = recipients.some((r) => r.status === 'replied');
+      if (hasReplied) return { ok: false, error: 'all_replied' };
+      return { ok: false, error: 'recipients_required' };
+    }
 
     const results = await Promise.all(toEmails.map((email) => window.PeekdGmail.sendEmail({
       fromEmail,
