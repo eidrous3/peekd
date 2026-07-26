@@ -1,17 +1,8 @@
 import {
   getConnectedAccounts,
   getUserFromToken,
-  getValidAccessToken,
-  sendGmailMessage,
 } from './_gmail.mjs';
-import {
-  createTrackedSend,
-  createTrackedLinksForSend,
-  injectTrackingPixels,
-  updateTrackedSendGmailIds,
-  wrapLinksInHtml,
-} from './_tracking.mjs';
-import { dbRequest } from './_support.mjs';
+import { resolveGmailAccessToken, sendTrackedEmail } from './_send-tracked.mjs';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -92,79 +83,38 @@ export default async (req) => {
   if (!subject) return json({ error: 'subject_required' }, 400);
   if (!html && !parsedAttachments.attachments.length) return json({ error: 'body_required' }, 400);
 
-  const accounts = await getConnectedAccounts(user.id, { email: fromEmail });
-  const account = accounts[0];
-  if (!account) return json({ error: 'no_gmail_account' }, 404);
-
-  const accessToken = await getValidAccessToken(account);
-  if (!accessToken) return json({ error: 'token_refresh_failed' }, 502);
-
-  let tracked = null;
-  if (track) {
-    tracked = await createTrackedSend({
-      userId: user.id,
-      fromEmail,
-      subject,
-      to,
-      campaignId,
-      campaignStepId,
-    });
-    if (!tracked.ok) {
-      console.error('[gmail-send] tracking setup failed:', tracked.error);
-      return json({ ok: false, error: tracked.error || 'tracking_setup_failed' }, 502);
-    }
+  const tokenRes = await resolveGmailAccessToken(user.id, fromEmail, getConnectedAccounts);
+  if (!tokenRes.ok) {
+    const status = tokenRes.error === 'no_gmail_account' ? 404 : 502;
+    return json({ error: tokenRes.error }, status);
   }
 
-  let finalHtml = html || '<p></p>';
-  if (track && tracked?.pixelUrls?.length) {
-    finalHtml = injectTrackingPixels(finalHtml, tracked.pixelUrls);
-  }
-  if (track && trackLinks && tracked?.trackedEmailId) {
-    const links = await createTrackedLinksForSend(tracked.trackedEmailId, finalHtml);
-    if (links.ok) {
-      if (links.preparedHtml) finalHtml = links.preparedHtml;
-      if (links.urlToTrackingHref?.size) {
-        finalHtml = wrapLinksInHtml(finalHtml, links.urlToTrackingHref);
-      }
-    } else {
-      console.error('[gmail-send] link tracking setup failed:', links.error);
-    }
-  }
-  if (addBranding) {
-    finalHtml += '<p style="margin-top:24px;font-size:11px;color:#94a3b8;">Tracked by Peekd</p>';
-  }
-
-  const sent = await sendGmailMessage(accessToken, {
-    from: fromEmail,
+  const result = await sendTrackedEmail({
+    userId: user.id,
+    accessToken: tokenRes.accessToken,
+    fromEmail,
     to,
     subject,
-    html: finalHtml,
+    html,
     attachments: parsedAttachments.attachments,
+    track,
+    trackLinks,
+    addBranding,
+    campaignId,
+    campaignStepId,
   });
 
-  if (!sent.ok) {
-    if (tracked?.trackedEmailId) {
-      await dbRequest(`tracked_emails?id=eq.${encodeURIComponent(tracked.trackedEmailId)}`, {
-        method: 'DELETE',
-      });
+  if (!result.ok) {
+    if (result.error === 'tracking_setup_failed' || String(result.error || '').includes('track')) {
+      console.error('[gmail-send] tracking setup failed:', result.error);
     }
-    return json({ ok: false, error: sent.error }, 502);
-  }
-
-  if (track && tracked?.trackedEmailId) {
-    const patch = await updateTrackedSendGmailIds(tracked.trackedEmailId, {
-      gmailMessageId: sent.messageId,
-      gmailThreadId: sent.threadId,
-    });
-    if (!patch.ok) {
-      console.error('[gmail-send] tracking patch failed:', patch.error);
-    }
+    return json({ ok: false, error: result.error }, 502);
   }
 
   return json({
     ok: true,
-    messageId: sent.messageId,
-    threadId: sent.threadId,
-    trackedEmailId: tracked?.trackedEmailId || null,
+    messageId: result.messageId,
+    threadId: result.threadId,
+    trackedEmailId: result.trackedEmailId || null,
   });
 };

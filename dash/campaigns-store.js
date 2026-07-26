@@ -42,11 +42,15 @@
   }
 
   function statusToUi(status) {
-    return String(status || 'active').toUpperCase();
+    const s = String(status || 'active').toLowerCase();
+    if (s === 'completed') return 'FINISHED';
+    return s.toUpperCase();
   }
 
   function statusToDb(status) {
-    return String(status || 'active').toLowerCase();
+    const s = String(status || 'active').toLowerCase();
+    if (s === 'finished') return 'completed';
+    return s;
   }
 
   function sortSteps(steps) {
@@ -97,7 +101,7 @@
           status: s.status || 'pending',
           openRate: s.status === 'sent' ? (stepStat.openRate == null ? 0 : stepStat.openRate) : null,
           state: s.status === 'sent' ? 'completed'
-            : s.status === 'skipped' ? 'pending'
+            : s.status === 'skipped' ? 'skipped'
               : (statusToUi(row.status) === 'PAUSED' && s.status !== 'sent' ? 'paused'
                 : (s.status === 'scheduled' || s.status === 'pending' ? (currentStepNumber(steps) === s.position ? 'active' : 'pending') : 'pending')),
         };
@@ -621,9 +625,43 @@
       .filter(isEmail))];
 
     if (!toEmails.length) {
-      const hasReplied = recipients.some((r) => r.status === 'replied');
-      if (hasReplied) return { ok: false, error: 'all_replied' };
-      return { ok: false, error: 'recipients_required' };
+      // No one left to email — skip this step + remaining steps and finish the campaign.
+      const skipIds = steps
+        .filter((row) => row.position >= step.position && row.status !== 'sent' && row.status !== 'skipped')
+        .map((row) => row.id);
+      if (skipIds.length) {
+        const { error: skipErr } = await sb
+          .from('campaign_steps')
+          .update({ status: 'skipped' })
+          .eq('campaign_id', campaignId)
+          .in('id', skipIds);
+        if (skipErr) return { ok: false, error: skipErr.message };
+      }
+      const { error: campErr } = await sb
+        .from('campaigns')
+        .update({ status: 'completed' })
+        .eq('id', campaignId)
+        .eq('user_id', s.user.id);
+      if (campErr) return { ok: false, error: campErr.message };
+
+      const { data: full, error: fetchErr } = await sb
+        .from('campaigns')
+        .select(FETCH_SELECT)
+        .eq('id', campaignId)
+        .eq('user_id', s.user.id)
+        .single();
+
+      if (fetchErr || !full) {
+        return { ok: true, sentCount: 0, finished: true, campaign: toUiCampaign({ ...data, status: 'completed' }) };
+      }
+      const tracked = await fetchTrackedForCampaigns(sb, s.user.id, [full]);
+      const openByCampaign = openStatsFromTracked([full], tracked);
+      return {
+        ok: true,
+        sentCount: 0,
+        finished: true,
+        campaign: toUiCampaign(full, openByCampaign.get(full.id)),
+      };
     }
 
     const results = await Promise.all(toEmails.map((email) => window.PeekdGmail.sendEmail({

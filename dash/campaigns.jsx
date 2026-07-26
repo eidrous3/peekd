@@ -89,15 +89,18 @@
         const msg = res.error === 'campaign_paused' ? 'Resume the campaign first'
           : res.error === 'already_sent' ? 'This step was already sent'
             : res.error === 'not_current_step' ? 'Only the current active step can be published'
-              : res.error === 'all_replied' ? 'Everyone on this campaign already replied — later steps are paused for them'
-                : res.error === 'recipients_required' ? 'No active recipients to send to'
-                  : res.error === 'gmail_unavailable' || res.error === 'send_failed' ? 'Could not send via Gmail'
-                    : (res.error || 'Could not publish step');
+              : res.error === 'recipients_required' ? 'No active recipients to send to'
+                : res.error === 'gmail_unavailable' || res.error === 'send_failed' ? 'Could not send via Gmail'
+                  : (res.error || 'Could not publish step');
         toast(msg);
         return res;
       }
       patchCampaign(campaignId, res.campaign);
-      toast('Step published · ' + (res.sentCount || 0) + ' sent ✓');
+      if (res.finished) {
+        toast('No recipients left — step skipped, campaign finished');
+      } else {
+        toast('Step published · ' + (res.sentCount || 0) + ' sent ✓');
+      }
       return res;
     };
 
@@ -168,7 +171,9 @@
     const [editing, setEditing] = useState(false);
     const moreRef = useRef(null);
     const paused = c.status === 'PAUSED';
-    const pct = Math.round((c.step / Math.max(c.steps, 1)) * 100);
+    const finished = c.status === 'FINISHED' || c.status === 'COMPLETED';
+    const badgeClass = finished ? 'b-finished' : paused ? 'b-paused' : 'b-active';
+    const pct = finished ? 100 : Math.round((c.step / Math.max(c.steps, 1)) * 100);
     const orClass = c.openRate > 50 ? 'stat-up' : c.openRate >= 20 ? 'stat-amber' : 'stat-down';
     useEffect(() => {
       if (!moreOpen) return;
@@ -178,19 +183,19 @@
     }, [moreOpen]);
     const stop = (fn) => (e) => { e.stopPropagation(); fn && fn(); };
 
-    return React.createElement('div', { className: 'card camp-card clickable' + (paused ? ' camp-paused' : ''), onClick },
+    return React.createElement('div', { className: 'card camp-card clickable' + (paused || finished ? ' camp-paused' : ''), onClick },
       React.createElement('div', { className: 'camp-head' },
         React.createElement('div', { className: 'camp-name' }, c.name,
-          React.createElement('span', { className: 'badge ' + (paused ? 'b-paused' : 'b-active') }, c.status)),
+          React.createElement('span', { className: 'badge ' + badgeClass }, c.status)),
         React.createElement('div', { className: 'camp-actions', ref: moreRef },
-          React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: stop(() => { onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); }) },
+          !finished && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: stop(() => { onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); }) },
             React.createElement(Icon, { name: paused ? 'arrowRight' : 'clock', size: 14 }), paused ? 'Resume' : 'Pause'),
           React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: stop(() => setMoreOpen(!moreOpen)) },
             React.createElement(Icon, { name: 'dots', size: 15 }), 'More'),
           moreOpen && React.createElement('div', { className: 'more-menu', onClick: e => e.stopPropagation() },
             React.createElement('button', { onClick: () => { setMoreOpen(false); setEditing(true); } }, React.createElement(Icon, { name: 'edit', size: 14 }), 'Edit campaign'),
             React.createElement('button', { onClick: () => { setMoreOpen(false); onDuplicate(); } }, React.createElement(Icon, { name: 'grid', size: 14 }), 'Duplicate'),
-            React.createElement('button', { onClick: () => { setMoreOpen(false); onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); } }, React.createElement(Icon, { name: paused ? 'arrowRight' : 'clock', size: 14 }), paused ? 'Resume' : 'Pause'),
+            !finished && React.createElement('button', { onClick: () => { setMoreOpen(false); onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); } }, React.createElement(Icon, { name: paused ? 'arrowRight' : 'clock', size: 14 }), paused ? 'Resume' : 'Pause'),
             React.createElement('div', { className: 'divider', style: { margin: '4px 0' } }),
             React.createElement('button', { className: 'danger', onClick: () => { setMoreOpen(false); setConfirmDel(true); } }, React.createElement(Icon, { name: 'trash', size: 14 }), 'Delete campaign'),
           ),
@@ -200,7 +205,7 @@
       React.createElement('div', { className: 'camp-stats' },
         React.createElement('div', { className: 'cm-cell' },
           React.createElement('div', { className: 'cm-label' }, 'PROGRESS'),
-          React.createElement('div', { className: 'cm-step' }, 'Step ' + c.step + ' of ' + c.steps),
+          React.createElement('div', { className: 'cm-step' }, finished ? 'Finished' : ('Step ' + c.step + ' of ' + c.steps)),
           React.createElement('div', { className: 'progress' + (paused ? ' blue' : '') }, React.createElement('span', { style: { width: pct + '%' } })),
         ),
         React.createElement('div', { className: 'cm-cell' }, React.createElement('div', { className: 'cm-label' }, 'RECIPIENTS'), React.createElement('div', { className: 'cm-value' }, c.recipients)),
@@ -592,6 +597,7 @@
   const STEP_WAITS = [3, 5, 7, 4];
 
   function formatStepSentLabel(step) {
+    if (step.state === 'skipped' || step.status === 'skipped') return 'Skipped · no active recipients';
     if (step.sentAt) {
       const d = new Date(step.sentAt);
       if (!Number.isNaN(d.getTime())) {
@@ -692,12 +698,14 @@
     const [person, setPerson] = useState(null);
     const [publishingStepId, setPublishingStepId] = useState(null);
     const paused = c.status === 'PAUSED';
+    const finished = c.status === 'FINISHED' || c.status === 'COMPLETED';
+    const badgeClass = finished ? 'b-finished' : paused ? 'b-paused' : 'b-active';
     const steps = buildSteps(c);
     const recipients = buildRecipients(c);
-    const pct = Math.round((c.step / Math.max(c.steps, 1)) * 100);
+    const pct = finished ? 100 : Math.round((c.step / Math.max(c.steps, 1)) * 100);
 
     const publishActive = async (step) => {
-      if (!onPublishStep || publishingStepId || paused) return;
+      if (!onPublishStep || publishingStepId || paused || finished) return;
       const stepId = step.id || (Array.isArray(c.stepRows) && c.stepRows.find((r) => r.n === step.n)?.id);
       if (!stepId) { toast('Could not publish step'); return; }
       setPublishingStepId(stepId);
@@ -721,30 +729,30 @@
       React.createElement('div', { className: 'cd-head' },
         React.createElement('div', null,
           React.createElement('div', { className: 'cd-title' }, c.name,
-            React.createElement('span', { className: 'badge ' + (paused ? 'b-paused' : 'b-active') }, c.status)),
+            React.createElement('span', { className: 'badge ' + badgeClass }, c.status)),
           React.createElement('div', { className: 'cd-sub' }, 'Created ' + c.created + ' · ' + c.recipients + ' recipients'),
         ),
         React.createElement('div', { className: 'flex gap8', style: { position: 'relative' } },
-          React.createElement('button', { className: 'btn btn-ghost', onClick: () => { onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); } },
+          !finished && React.createElement('button', { className: 'btn btn-ghost', onClick: () => { onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); } },
             React.createElement(Icon, { name: paused ? 'arrowRight' : 'clock', size: 15 }), paused ? 'Resume' : 'Pause'),
           React.createElement('button', { className: 'btn btn-ghost', onClick: () => setMoreOpen(!moreOpen) }, React.createElement(Icon, { name: 'dots', size: 16 }), 'More'),
           moreOpen && React.createElement('div', { className: 'more-menu' },
             React.createElement('button', { onClick: () => { setMoreOpen(false); setEditing(true); } }, React.createElement(Icon, { name: 'edit', size: 14 }), 'Edit campaign'),
             React.createElement('button', { onClick: () => { setMoreOpen(false); onDuplicate && onDuplicate(); } }, React.createElement(Icon, { name: 'grid', size: 14 }), 'Duplicate'),
-            React.createElement('button', { onClick: () => { setMoreOpen(false); onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); } }, React.createElement(Icon, { name: paused ? 'arrowRight' : 'clock', size: 14 }), paused ? 'Resume' : 'Pause'),
+            !finished && React.createElement('button', { onClick: () => { setMoreOpen(false); onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); } }, React.createElement(Icon, { name: paused ? 'arrowRight' : 'clock', size: 14 }), paused ? 'Resume' : 'Pause'),
             React.createElement('div', { className: 'divider', style: { margin: '4px 0' } }),
             React.createElement('button', { className: 'danger', onClick: () => { setMoreOpen(false); setConfirmDel(true); } }, React.createElement(Icon, { name: 'trash', size: 14 }), 'Delete campaign'),
           ),
         ),
       ),
 
-      React.createElement('div', { className: 'stat-grid' + (paused ? ' muted-stats' : ''), style: { marginBottom: 24 } },
+      React.createElement('div', { className: 'stat-grid' + (paused || finished ? ' muted-stats' : ''), style: { marginBottom: 24 } },
         React.createElement('div', { className: 'card stat-card' }, React.createElement('div', { className: 'sc-label' }, 'RECIPIENTS'), React.createElement('div', { className: 'sc-value' }, c.recipients)),
-        React.createElement('div', { className: 'card stat-card' }, React.createElement('div', { className: 'sc-label' }, 'OPEN RATE'), React.createElement('div', { className: 'sc-value ' + (paused ? '' : 'stat-up') }, c.openRate + '%')),
+        React.createElement('div', { className: 'card stat-card' }, React.createElement('div', { className: 'sc-label' }, 'OPEN RATE'), React.createElement('div', { className: 'sc-value ' + (paused || finished ? '' : 'stat-up') }, c.openRate + '%')),
         React.createElement('div', { className: 'card stat-card' }, React.createElement('div', { className: 'sc-label' }, 'REPLIES'), React.createElement('div', { className: 'sc-value' }, c.replies)),
         React.createElement('div', { className: 'card stat-card' },
           React.createElement('div', { className: 'sc-label' }, 'PROGRESS'),
-          React.createElement('div', { className: 'cm-step', style: { margin: '8px 0 8px' } }, 'Step ' + c.step + ' of ' + c.steps),
+          React.createElement('div', { className: 'cm-step', style: { margin: '8px 0 8px' } }, finished ? 'Finished' : ('Step ' + c.step + ' of ' + c.steps)),
           React.createElement('div', { className: 'progress' + (paused ? ' blue' : '') }, React.createElement('span', { style: { width: pct + '%' } })),
         ),
       ),
@@ -758,13 +766,18 @@
             React.createElement('div', { className: 'seq-card-head' },
               React.createElement('span', { className: 'seq-ico' },
                 s.state === 'completed' ? React.createElement(Icon, { name: 'checkCircle', size: 16 })
+                  : s.state === 'skipped' ? React.createElement(Icon, { name: 'minusCircle', size: 16 })
                   : s.state === 'pending' ? React.createElement(Icon, { name: 'clock', size: 16 })
                   : s.state === 'paused' ? React.createElement(Icon, { name: 'clock', size: 16 })
                   : React.createElement('span', { className: 'live-dot' })),
               React.createElement('span', { className: 'seq-step-name' }, 'Step ' + s.n),
               React.createElement('span', { className: 'seq-state-tag ' + s.state },
-                s.state === 'completed' ? 'Completed' : s.state === 'active' ? 'Active (current)' : s.state === 'paused' ? '⏸ Paused' : 'Pending'),
-              s.state === 'active' && !paused && React.createElement('button', {
+                s.state === 'completed' ? 'Completed'
+                  : s.state === 'skipped' ? 'Skipped'
+                    : s.state === 'active' ? 'Active (current)'
+                      : s.state === 'paused' ? '⏸ Paused'
+                        : 'Pending'),
+              s.state === 'active' && !paused && !finished && React.createElement('button', {
                 type: 'button',
                 className: 'btn btn-primary btn-sm seq-publish-btn',
                 disabled: !!publishingStepId,
