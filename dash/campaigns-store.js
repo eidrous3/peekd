@@ -42,15 +42,11 @@
   }
 
   function statusToUi(status) {
-    const s = String(status || 'active').toLowerCase();
-    if (s === 'completed') return 'FINISHED';
-    return s.toUpperCase();
+    return String(status || 'active').toUpperCase();
   }
 
   function statusToDb(status) {
-    const s = String(status || 'active').toLowerCase();
-    if (s === 'finished') return 'completed';
-    return s;
+    return String(status || 'active').toLowerCase();
   }
 
   function sortSteps(steps) {

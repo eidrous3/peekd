@@ -97,7 +97,7 @@
       }
       patchCampaign(campaignId, res.campaign);
       if (res.finished) {
-        toast('No recipients left — step skipped, campaign finished');
+        toast('No recipients left — step skipped, campaign completed');
       } else {
         toast('Step published · ' + (res.sentCount || 0) + ' sent ✓');
       }
@@ -205,7 +205,7 @@
       React.createElement('div', { className: 'camp-stats' },
         React.createElement('div', { className: 'cm-cell' },
           React.createElement('div', { className: 'cm-label' }, 'PROGRESS'),
-          React.createElement('div', { className: 'cm-step' }, finished ? 'Finished' : ('Step ' + c.step + ' of ' + c.steps)),
+          React.createElement('div', { className: 'cm-step' }, finished ? 'Completed' : ('Step ' + c.step + ' of ' + c.steps)),
           React.createElement('div', { className: 'progress' + (paused ? ' blue' : '') }, React.createElement('span', { style: { width: pct + '%' } })),
         ),
         React.createElement('div', { className: 'cm-cell' }, React.createElement('div', { className: 'cm-label' }, 'RECIPIENTS'), React.createElement('div', { className: 'cm-value' }, c.recipients)),
@@ -752,7 +752,7 @@
         React.createElement('div', { className: 'card stat-card' }, React.createElement('div', { className: 'sc-label' }, 'REPLIES'), React.createElement('div', { className: 'sc-value' }, c.replies)),
         React.createElement('div', { className: 'card stat-card' },
           React.createElement('div', { className: 'sc-label' }, 'PROGRESS'),
-          React.createElement('div', { className: 'cm-step', style: { margin: '8px 0 8px' } }, finished ? 'Finished' : ('Step ' + c.step + ' of ' + c.steps)),
+          React.createElement('div', { className: 'cm-step', style: { margin: '8px 0 8px' } }, finished ? 'Completed' : ('Step ' + c.step + ' of ' + c.steps)),
           React.createElement('div', { className: 'progress' + (paused ? ' blue' : '') }, React.createElement('span', { style: { width: pct + '%' } })),
         ),
       ),
