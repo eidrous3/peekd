@@ -28,6 +28,7 @@ export async function sendTrackedEmail({
   addBranding = false,
   campaignId = null,
   campaignStepId = null,
+  senderIp = null,
 }) {
   const recipients = Array.isArray(to) ? to : [];
   if (!userId || !accessToken || !fromEmail || !recipients.length || !subject) {
@@ -43,6 +44,7 @@ export async function sendTrackedEmail({
       to: recipients,
       campaignId,
       campaignStepId,
+      senderIp,
     });
     if (!tracked.ok) {
       return { ok: false, error: tracked.error || 'tracking_setup_failed' };

@@ -3,6 +3,7 @@ import {
   getUserFromToken,
 } from './_gmail.mjs';
 import { resolveGmailAccessToken, sendTrackedEmail } from './_send-tracked.mjs';
+import { getClientIp } from './_tracking.mjs';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -102,6 +103,7 @@ export default async (req) => {
     addBranding,
     campaignId,
     campaignStepId,
+    senderIp: getClientIp(req),
   });
 
   if (!result.ok) {

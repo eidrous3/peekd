@@ -215,6 +215,7 @@ export async function createTrackedSend({
   sentAt,
   campaignId,
   campaignStepId,
+  senderIp,
 }) {
   const recipients = [...new Set((Array.isArray(to) ? to : []).map(normalizeEmail).filter(Boolean))];
   if (!userId || !fromEmail || !subject || !recipients.length) {
@@ -231,6 +232,7 @@ export async function createTrackedSend({
   };
   if (campaignId) body.campaign_id = campaignId;
   if (campaignStepId) body.campaign_step_id = campaignStepId;
+  if (senderIp) body.sender_ip = String(senderIp).trim().slice(0, 64);
 
   const emailRes = await dbRequest('tracked_emails', {
     method: 'POST',
@@ -344,6 +346,7 @@ export async function getTrackingByMessageIds(userId, gmailMessageIds) {
     'sent_at',
     'subject',
     'from_email',
+    'sender_ip',
     'tracked_recipients(id,email,email_open_events(id,opened_at,classification,user_agent,ip,location_label))',
     'tracked_links(id,original_url,click_token,email_click_events(id,clicked_at,classification,user_agent,ip,location_label))',
   ].join(',');
@@ -627,7 +630,7 @@ export function buildTrackingSummary(trackedEmailRow) {
       .sort((a, b) => new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime())
       .map((event) => ({
         ...event,
-        classification: resolveEventClassification(event, trackedEmailRow.sent_at),
+        classification: resolveEventClassification(event, trackedEmailRow.sent_at, trackedEmailRow.sender_ip),
       }));
     return {
       email: recipient.email,
@@ -888,6 +891,18 @@ export function isAppleProxyIp(ip) {
   return bucket.some((cidr) => ipInCidr(value, cidr));
 }
 
+export function ipsMatch(a, b) {
+  const left = String(a || '').trim().toLowerCase();
+  const right = String(b || '').trim().toLowerCase();
+  if (!left || !right) return false;
+  if (left === right) return true;
+  try {
+    return ipaddr.parse(left).toNormalizedString() === ipaddr.parse(right).toNormalizedString();
+  } catch {
+    return false;
+  }
+}
+
 export function isProxyPixelFetch({ ip, userAgent, sentAt, openedAt = new Date() }) {
   if (isGmailImageProxy(userAgent)) return true;
   if (isAppleProxyIp(ip)) return true;
@@ -930,7 +945,10 @@ async function deleteOpenEvents(events) {
   await dbRequest(`email_open_events?id=in.${postgrestInFilter(ids)}`, { method: 'DELETE' });
 }
 
-export function classifyOpen({ ip, userAgent, sentAt, openedAt = new Date() }) {
+export function classifyOpen({ ip, userAgent, sentAt, openedAt = new Date(), senderIp }) {
+  // Open from the sender's own IP (e.g. viewing the Sent copy in a non-proxied client).
+  if (ipsMatch(ip, senderIp)) return 'self';
+
   // Gmail wraps all remote images through GoogleImageProxy — that is the real open signal for Gmail.
   if (isGmailImageProxy(userAgent)) return 'human';
 
@@ -951,12 +969,14 @@ export function classifyOpen({ ip, userAgent, sentAt, openedAt = new Date() }) {
   return 'unknown';
 }
 
-export function resolveEventClassification(event, sentAt) {
+export function resolveEventClassification(event, sentAt, senderIp) {
+  if (event?.classification === 'self') return 'self';
   return classifyOpen({
     ip: event?.ip,
     userAgent: event?.user_agent,
     sentAt,
     openedAt: event?.opened_at ? new Date(event.opened_at) : new Date(),
+    senderIp,
   });
 }
 
@@ -972,10 +992,11 @@ export function displayUrlForLink(url) {
 }
 
 export function isCountableClick(event) {
-  return event?.classification !== 'likely_proxy';
+  return event?.classification !== 'likely_proxy' && event?.classification !== 'self';
 }
 
-export function classifyClick({ ip, userAgent }) {
+export function classifyClick({ ip, userAgent, senderIp }) {
+  if (ipsMatch(ip, senderIp)) return 'self';
   if (isPrefetchBotUserAgent(userAgent)) return 'likely_proxy';
   if (isGoogleInfrastructureIp(ip) && !looksLikeHumanBrowser(userAgent)) return 'likely_proxy';
   if (looksLikeHumanBrowser(userAgent)) return 'human';
@@ -1056,7 +1077,7 @@ export async function recordLinkClick({ clickToken, ip, userAgent }) {
   if (!token) return { ok: true, recorded: false };
 
   const lookup = await dbRequest(
-    `tracked_links?click_token=eq.${encodeURIComponent(token)}&select=id,original_url,tracked_emails(sent_at)`,
+    `tracked_links?click_token=eq.${encodeURIComponent(token)}&select=id,original_url,tracked_emails(sent_at,sender_ip)`,
   );
 
   if (!lookup.ok || !lookup.data?.[0]) {
@@ -1065,7 +1086,7 @@ export async function recordLinkClick({ clickToken, ip, userAgent }) {
 
   const link = lookup.data[0];
   const clickedAt = new Date();
-  const classification = classifyClick({ ip, userAgent });
+  const classification = classifyClick({ ip, userAgent, senderIp: link.tracked_emails?.sender_ip });
   const locationLabel = await lookupLocationLabel(ip);
 
   const insert = await dbRequest('email_click_events', {
@@ -1098,7 +1119,7 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
   if (!token) return { ok: true, recorded: false };
 
   const lookup = await dbRequest(
-    `tracked_recipients?pixel_token=eq.${encodeURIComponent(token)}&select=id,email,tracked_emails(sent_at)`,
+    `tracked_recipients?pixel_token=eq.${encodeURIComponent(token)}&select=id,email,tracked_emails(sent_at,sender_ip)`,
   );
 
   if (!lookup.ok || !lookup.data?.[0]) {
@@ -1107,6 +1128,7 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
 
   const recipient = lookup.data[0];
   const sentAt = recipient.tracked_emails?.sent_at;
+  const senderIp = recipient.tracked_emails?.sender_ip;
   const openedAt = new Date();
   const incomingProxy = isProxyPixelFetch({ ip, userAgent, sentAt, openedAt });
   const classification = classifyOpen({
@@ -1114,6 +1136,7 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
     userAgent,
     sentAt,
     openedAt,
+    senderIp,
   });
 
   const recentEvents = await fetchRecentOpenEvents(recipient.id, openedAt);

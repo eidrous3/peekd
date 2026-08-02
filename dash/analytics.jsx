@@ -162,7 +162,7 @@
   }
 
   function isCountableClick(event) {
-    return event?.classification !== 'likely_proxy';
+    return event?.classification !== 'likely_proxy' && event?.classification !== 'self';
   }
 
   /** Resolve current + prior windows of equal length for period comparison. */
