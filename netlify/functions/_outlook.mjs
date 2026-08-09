@@ -4,6 +4,8 @@ import { markRecipientReplied } from './_tracking.mjs';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
+// Mail.ReadWrite (not just Mail.Read) is required because we create the message as
+// a draft before sending it, which is how we learn its conversation id.
 export const OUTLOOK_SCOPES = [
   'openid',
   'profile',
@@ -11,7 +13,7 @@ export const OUTLOOK_SCOPES = [
   'offline_access',
   'https://graph.microsoft.com/User.Read',
   'https://graph.microsoft.com/Mail.Send',
-  'https://graph.microsoft.com/Mail.Read',
+  'https://graph.microsoft.com/Mail.ReadWrite',
 ].join(' ');
 
 export function outlookClientId() {
@@ -179,6 +181,11 @@ export async function sendOutlookMessage(accessToken, { to, subject, html, attac
   if (!draftRes.ok || !draft.id) {
     const code = draft.error?.code || draftRes.status;
     console.error('[outlook] draft create failed:', draftRes.status, JSON.stringify(draft.error || {}).slice(0, 500));
+    // Tokens issued before Mail.ReadWrite was requested can't create drafts; a
+    // refresh won't widen granted scopes, so the account has to be reconnected.
+    if (code === 'ErrorAccessDenied' || draftRes.status === 403) {
+      return { ok: false, error: 'outlook_reconnect_required' };
+    }
     return { ok: false, error: `outlook_draft_failed: ${code}` };
   }
 

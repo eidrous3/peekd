@@ -136,6 +136,7 @@
       if (!res.ok) {
         const msg = res.error === 'no_sending_account' || res.error === 'no_gmail_account' ? 'Connect an email account in Settings first.'
           : res.error === 'token_refresh_failed' ? 'Mailbox session expired. Reconnect in Settings.'
+          : res.error === 'outlook_reconnect_required' ? 'Reconnect Outlook in Settings to grant send access.'
           : res.error === 'attachment_too_large' || res.error === 'attachments_too_large' ? 'Attachments are too large (max 3 MB).'
           : res.error ? `Could not send email (${res.error})`
           : 'Could not send email. Try again.';
