@@ -2,12 +2,13 @@ import { saveConnectedAccount } from './_accounts.mjs';
 import { dashboardUrl, decodeState } from './_oauth.mjs';
 import {
   exchangeOutlookCode,
-  fetchOutlookEmail,
   outlookRedirectUri,
+  resolveOutlookEmail,
   OUTLOOK_SCOPES,
 } from './_outlook.mjs';
 
-function fail(req) {
+function fail(req, reason) {
+  console.error('[outlook-callback] failed:', reason);
   return Response.redirect(dashboardUrl(req, { settings: 'integrations', outlook: 'error' }), 302);
 }
 
@@ -20,19 +21,22 @@ export default async (req) => {
   const code = url.searchParams.get('code');
   const stateRaw = url.searchParams.get('state');
 
-  if (url.searchParams.get('error')) return fail(req);
+  const oauthError = url.searchParams.get('error');
+  if (oauthError) {
+    return fail(req, `${oauthError}: ${url.searchParams.get('error_description') || ''}`);
+  }
 
   const state = decodeState(stateRaw);
-  if (!code || !state?.uid) return fail(req);
+  if (!code) return fail(req, 'missing_code');
+  if (!state?.uid) return fail(req, 'invalid_or_expired_state');
 
   const tokenResult = await exchangeOutlookCode(code, outlookRedirectUri(req));
   if (!tokenResult.ok) {
-    console.error('[outlook-callback] token exchange failed:', tokenResult.error);
-    return fail(req);
+    return fail(req, `token_exchange_failed: ${tokenResult.error}`);
   }
 
-  const email = await fetchOutlookEmail(tokenResult.tokens.access_token);
-  if (!email) return fail(req);
+  const email = await resolveOutlookEmail(tokenResult.tokens);
+  if (!email) return fail(req, 'could_not_resolve_mailbox_address');
 
   const saved = await saveConnectedAccount({
     userId: state.uid,
@@ -42,10 +46,7 @@ export default async (req) => {
     scopes: OUTLOOK_SCOPES,
   });
 
-  if (!saved.ok) {
-    console.error('[outlook-callback] save failed:', saved.error);
-    return fail(req);
-  }
+  if (!saved.ok) return fail(req, `save_failed: ${saved.error}`);
 
   return Response.redirect(dashboardUrl(req, { settings: 'integrations', outlook: 'connected' }), 302);
 };

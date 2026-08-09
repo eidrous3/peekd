@@ -9,6 +9,7 @@ export const OUTLOOK_SCOPES = [
   'profile',
   'email',
   'offline_access',
+  'https://graph.microsoft.com/User.Read',
   'https://graph.microsoft.com/Mail.Send',
   'https://graph.microsoft.com/Mail.Read',
 ].join(' ');
@@ -100,14 +101,38 @@ export async function getValidOutlookAccessToken(account) {
   return refreshed.access_token;
 }
 
+/** Email claim out of the id_token, avoiding a Graph round-trip entirely. */
+export function emailFromIdToken(idToken) {
+  const payload = String(idToken || '').split('.')[1];
+  if (!payload) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    const email = claims.email || claims.preferred_username || claims.upn || '';
+    return String(email).trim().toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchOutlookEmail(accessToken) {
   const res = await fetch(`${GRAPH}/me?$select=mail,userPrincipalName`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    console.error('[outlook] /me lookup failed:', res.status, detail.slice(0, 300));
+    return null;
+  }
   const data = await res.json().catch(() => ({}));
   const email = data.mail || data.userPrincipalName || '';
   return String(email).trim().toLowerCase() || null;
+}
+
+/** Resolve the mailbox address, preferring the id_token claim over Graph. */
+export async function resolveOutlookEmail(tokens) {
+  const fromToken = emailFromIdToken(tokens?.id_token);
+  if (fromToken && fromToken.includes('@')) return fromToken;
+  return fetchOutlookEmail(tokens?.access_token);
 }
 
 function graphRecipients(list) {
