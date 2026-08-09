@@ -64,7 +64,7 @@
   function toUiCampaign(row, openStats) {
     const steps = sortSteps(row.campaign_steps);
     const recipients = Array.isArray(row.campaign_recipients) ? row.campaign_recipients : [];
-    const stats = openStats || { sent: 0, opened: 0, openRate: 0, replies: 0, byStep: {} };
+    const stats = openStats || { sent: 0, opened: 0, openRate: 0, replies: 0, totalOpens: 0, openSeries: [], byStep: {} };
     const repliesFromRecipients = recipients.filter((r) => r.status === 'replied' || r.replied_at).length;
     const replies = Math.max(stats.replies || 0, repliesFromRecipients);
     return {
@@ -79,6 +79,8 @@
       openRate: stats.openRate,
       emailsSent: stats.sent,
       emailsOpened: stats.opened,
+      totalOpens: stats.totalOpens || 0,
+      openSeries: Array.isArray(stats.openSeries) ? stats.openSeries : [],
       replies,
       fromEmail: row.from_email || '',
       sourceListId: row.source_list_id || null,
@@ -116,6 +118,23 @@
     return (events || []).some((ev) => ev.classification === 'human');
   }
 
+  // One bucket per day from campaign creation (capped) through today.
+  function buildDailyOpenSeries(timestamps, createdAt, maxDays = 30) {
+    const dayMs = 86_400_000;
+    const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
+    const todayStart = startOfDay(Date.now());
+    let firstStart = createdAt ? startOfDay(new Date(createdAt).getTime()) : todayStart;
+    if (!Number.isFinite(firstStart) || firstStart > todayStart) firstStart = todayStart;
+    const days = Math.max(2, Math.min(maxDays, Math.round((todayStart - firstStart) / dayMs) + 1));
+    const seriesStart = todayStart - (days - 1) * dayMs;
+    const buckets = new Array(days).fill(0);
+    for (const ts of timestamps || []) {
+      const idx = Math.floor((startOfDay(ts) - seriesStart) / dayMs);
+      if (idx >= 0 && idx < days) buckets[idx] += 1;
+    }
+    return buckets;
+  }
+
   // Open/reply stats for steps already sent (excludes future steps).
   // Open rate = unique recipients who opened ANY sent step / unique recipients the campaign was sent to.
   // Replies = unique campaign recipients who replied to at least one sent step.
@@ -131,6 +150,7 @@
       const contactedEmails = new Set();
       const openedEmails = new Set();
       const repliedEmails = new Set();
+      const openTimestamps = [];
       const byStep = {};
       for (const step of sentSteps) byStep[step.id] = { sent: 0, opened: 0, openRate: 0 };
 
@@ -154,6 +174,11 @@
           contactedEmails.add(email);
           const didOpen = hasHumanOpen(recip.email_open_events);
           if (didOpen) openedEmails.add(email);
+          for (const ev of recip.email_open_events || []) {
+            if (ev.classification !== 'human' || !ev.opened_at) continue;
+            const ms = new Date(ev.opened_at).getTime();
+            if (Number.isFinite(ms)) openTimestamps.push(ms);
+          }
           if (recip.is_replied) repliedEmails.add(email);
           if (stepId && byStep[stepId]) {
             byStep[stepId].sent += 1;
@@ -174,6 +199,8 @@
         openRate: contacted > 0 ? Math.round((openedEmails.size / contacted) * 100) : 0,
         replies: repliedEmails.size,
         repliedEmails: [...repliedEmails],
+        totalOpens: openTimestamps.length,
+        openSeries: buildDailyOpenSeries(openTimestamps, camp.created_at),
         byStep,
       });
     }
@@ -190,8 +217,8 @@
       }
     }
     const uniqueSubjects = [...new Set(subjects.filter(Boolean))];
-    const baseSelect = 'id, subject, from_email, sent_at, tracked_recipients(email, is_replied, replied_at, email_open_events(classification))';
-    const linkedSelect = 'id, subject, from_email, sent_at, campaign_id, campaign_step_id, tracked_recipients(email, is_replied, replied_at, email_open_events(classification))';
+    const baseSelect = 'id, subject, from_email, sent_at, tracked_recipients(email, is_replied, replied_at, email_open_events(classification, opened_at))';
+    const linkedSelect = 'id, subject, from_email, sent_at, campaign_id, campaign_step_id, tracked_recipients(email, is_replied, replied_at, email_open_events(classification, opened_at))';
     const byId = new Map();
 
     if (campaignIds.length) {

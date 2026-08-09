@@ -695,6 +695,7 @@
     const [confirmDel, setConfirmDel] = useState(false);
     const [editing, setEditing] = useState(false);
     const [rTab, setRTab] = useState('All');
+    const [rQuery, setRQuery] = useState('');
     const [person, setPerson] = useState(null);
     const [publishingStepId, setPublishingStepId] = useState(null);
     const paused = c.status === 'PAUSED';
@@ -713,7 +714,10 @@
       setPublishingStepId(null);
     };
 
+    const query = rQuery.trim().toLowerCase();
     const filtered = recipients.filter(r => {
+      if (query && !(String(r.p?.name || '').toLowerCase().includes(query)
+        || String(r.p?.email || '').toLowerCase().includes(query))) return false;
       if (rTab === 'All') return true;
       if (rTab === 'Opened') return r.status === 'OPENED';
       if (rTab === 'Replied') return r.status === 'REPLIED';
@@ -798,7 +802,18 @@
 
       React.createElement('div', { className: 'flex between center', style: { margin: '28px 0 14px' } },
         React.createElement('div', { className: 'cd-section-title', style: { margin: 0 } }, 'RECIPIENTS'),
-        React.createElement('div', { className: 'search-input', style: { width: 220 } }, React.createElement(Icon, { name: 'search', size: 15 }), React.createElement('input', { placeholder: 'Search recipients...' })),
+        React.createElement('div', { className: 'search-input', style: { width: 220 } },
+          React.createElement(Icon, { name: 'search', size: 15 }),
+          React.createElement('input', {
+            placeholder: 'Search recipients...',
+            value: rQuery,
+            onChange: (e) => setRQuery(e.target.value),
+          }),
+          rQuery && React.createElement('button', {
+            type: 'button', className: 'icon-btn', style: { width: 22, height: 22 },
+            onClick: () => setRQuery(''), 'aria-label': 'Clear search',
+          }, React.createElement(Icon, { name: 'x', size: 13 })),
+        ),
       ),
       React.createElement('div', { className: 'tabs', style: { width: 'fit-content', marginBottom: 14 } },
         ['All', 'Opened', 'Replied', 'Pending', 'Unsubscribed'].map(t =>
@@ -810,7 +825,8 @@
             ['NAME', 'EMAIL', 'STATUS', 'STEP', 'OPEN RATE'].map((h, i) => React.createElement('th', { key: i }, h)))),
           React.createElement('tbody', null,
             filtered.length === 0
-              ? React.createElement('tr', null, React.createElement('td', { colSpan: 5, className: 'muted', style: { textAlign: 'center', padding: 28 } }, 'No recipients in this filter'))
+              ? React.createElement('tr', null, React.createElement('td', { colSpan: 5, className: 'muted', style: { textAlign: 'center', padding: 28 } },
+                  query ? 'No recipients match "' + rQuery.trim() + '"' : 'No recipients in this filter'))
               : filtered.map((r, i) => React.createElement('tr', { key: i, className: 'clickable', onClick: () => setPerson(r) },
                   React.createElement('td', { className: 'pcell-primary' }, React.createElement('div', { className: 'pcell-name' }, React.createElement(Avatar, { initials: r.p.initials, size: 32 }), React.createElement('span', { className: 'pn-main' }, r.p.name))),
                   React.createElement('td', { className: 'muted', 'data-label': 'Email' }, r.p.email),
@@ -826,8 +842,11 @@
       React.createElement('div', { className: 'cd-section-title', style: { marginTop: 28 } }, 'ENGAGEMENT OVER TIME'),
       React.createElement('div', { className: 'card chart-card' },
         React.createElement('h3', null, 'Daily opens across all steps'),
-        React.createElement('div', { className: 'cc-sub' }, 'Since ' + c.created),
-        React.createElement(window.Chart, { data: D.openSeries, height: 200, axis: true, fmt: v => v + ' opens' }),
+        React.createElement('div', { className: 'cc-sub' }, 'Since ' + c.created + ' · ' + (c.totalOpens || 0) + ' total open' + (c.totalOpens === 1 ? '' : 's')),
+        React.createElement(window.Chart, {
+          data: Array.isArray(c.openSeries) && c.openSeries.length ? c.openSeries : [0, 0],
+          height: 200, axis: true, fmt: v => v + ' opens',
+        }),
       ),
 
       confirmDel && React.createElement('div', { className: 'backdrop', onMouseDown: () => setConfirmDel(false) },
