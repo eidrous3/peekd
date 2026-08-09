@@ -236,13 +236,25 @@ export async function createTrackedSend({
   if (campaignStepId) body.campaign_step_id = campaignStepId;
   if (senderIp) body.sender_ip = String(senderIp).trim().slice(0, 64);
 
-  const emailRes = await dbRequest('tracked_emails', {
+  let emailRes = await dbRequest('tracked_emails', {
     method: 'POST',
     body,
     prefer: 'return=representation',
   });
 
+  // Migration may not be applied yet — retry without the newer optional columns.
+  if (!emailRes.ok && /provider|sender_ip/.test(emailRes.error || '')) {
+    console.warn('[tracking] retrying insert without provider/sender_ip:', emailRes.error);
+    const { provider: _p, sender_ip: _s, ...legacy } = body;
+    emailRes = await dbRequest('tracked_emails', {
+      method: 'POST',
+      body: legacy,
+      prefer: 'return=representation',
+    });
+  }
+
   if (!emailRes.ok || !emailRes.data?.[0]) {
+    console.error('[tracking] tracked_emails insert failed:', emailRes.error);
     return { ok: false, error: emailRes.error || 'tracked_email_create_failed' };
   }
 

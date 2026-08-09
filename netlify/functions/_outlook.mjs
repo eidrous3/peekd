@@ -177,22 +177,25 @@ export async function sendOutlookMessage(accessToken, { to, subject, html, attac
 
   const draft = await draftRes.json().catch(() => ({}));
   if (!draftRes.ok || !draft.id) {
-    return { ok: false, error: draft.error?.message || 'outlook_draft_failed' };
+    const code = draft.error?.code || draftRes.status;
+    console.error('[outlook] draft create failed:', draftRes.status, JSON.stringify(draft.error || {}).slice(0, 500));
+    return { ok: false, error: `outlook_draft_failed: ${code}` };
   }
 
   const sendRes = await fetch(`${GRAPH}/me/messages/${encodeURIComponent(draft.id)}/send`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Length': '0' },
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
 
   if (!sendRes.ok) {
     const detail = await sendRes.json().catch(() => ({}));
+    console.error('[outlook] send failed:', sendRes.status, JSON.stringify(detail.error || {}).slice(0, 500));
     // Leave no orphaned draft in the user's mailbox when the send fails.
     await fetch(`${GRAPH}/me/messages/${encodeURIComponent(draft.id)}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${accessToken}` },
     }).catch(() => {});
-    return { ok: false, error: detail.error?.message || 'outlook_send_failed' };
+    return { ok: false, error: `outlook_send_failed: ${detail.error?.code || sendRes.status}` };
   }
 
   // Sending moves the draft into Sent Items and invalidates its id, so persist the

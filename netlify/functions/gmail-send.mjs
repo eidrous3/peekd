@@ -105,9 +105,7 @@ export default async (req) => {
   });
 
   if (!result.ok) {
-    if (result.error === 'tracking_setup_failed' || String(result.error || '').includes('track')) {
-      console.error('[gmail-send] tracking setup failed:', result.error);
-    }
+    console.error(`[send] ${tokenRes.provider} send failed for ${fromEmail}:`, result.error);
     return json({ ok: false, error: result.error }, 502);
   }
 
