@@ -10,6 +10,10 @@
 
   function validEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
 
+  function providerLabel(account) {
+    return account?.provider === 'outlook' ? '(Outlook)' : '(Gmail)';
+  }
+
   function fmtFileSize(b) {
     if (b < 1024) return `${b} B`;
     if (b < 1048576) return `${Math.round(b / 1024)} KB`;
@@ -47,11 +51,11 @@
     React.useEffect(() => {
       let cancelled = false;
       (async () => {
-        if (!window.PeekdIntegrations?.fetchGmailAccounts) {
+        if (!window.PeekdIntegrations?.fetchSendingAccounts) {
           setAccountsLoading(false);
           return;
         }
-        const res = await window.PeekdIntegrations.fetchGmailAccounts();
+        const res = await window.PeekdIntegrations.fetchSendingAccounts();
         if (cancelled) return;
         const list = res.ok ? (res.accounts || []) : [];
         setAccounts(list);
@@ -130,8 +134,8 @@
       });
       setSending(false);
       if (!res.ok) {
-        const msg = res.error === 'no_gmail_account' ? 'Connect Gmail in Settings first.'
-          : res.error === 'token_refresh_failed' ? 'Gmail session expired. Reconnect in Settings.'
+        const msg = res.error === 'no_sending_account' || res.error === 'no_gmail_account' ? 'Connect an email account in Settings first.'
+          : res.error === 'token_refresh_failed' ? 'Mailbox session expired. Reconnect in Settings.'
           : res.error === 'attachment_too_large' || res.error === 'attachments_too_large' ? 'Attachments are too large (max 3 MB).'
           : 'Could not send email. Try again.';
         toast(msg);
@@ -154,12 +158,12 @@
             React.createElement('button', { className: 'select', style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, onClick: () => !accountsLoading && setFromOpen(!fromOpen), disabled: accountsLoading || !accounts.length },
               React.createElement('span', null,
                 accountsLoading ? 'Loading accounts…'
-                  : accounts.length === 0 ? 'No Gmail connected'
-                  : [React.createElement('span', { key: 'd', className: 'ac-dot', style: { display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--good)', marginRight: 8 } }), from, React.createElement('span', { key: 'k', className: 'muted', style: { marginLeft: 8, fontSize: 12 } }, '(Gmail)')]),
+                  : accounts.length === 0 ? 'No email account connected'
+                  : [React.createElement('span', { key: 'd', className: 'ac-dot', style: { display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--good)', marginRight: 8 } }), from, React.createElement('span', { key: 'k', className: 'muted', style: { marginLeft: 8, fontSize: 12 } }, providerLabel(accounts.find((a) => a.email === from)))]),
               React.createElement(Icon, { name: 'chevDown', size: 14 })),
             fromOpen && accounts.length > 0 && React.createElement('div', { className: 'card', style: { position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 5, padding: 5, boxShadow: 'var(--shadow-md)' } },
               accounts.map((a) => React.createElement('button', { key: a.id, className: 'check-line', style: { width: '100%' }, onClick: () => { setFrom(a.email); setFromOpen(false); } },
-                React.createElement('span', { className: 'ac-dot', style: { width: 7, height: 7, borderRadius: '50%', background: 'var(--good)' } }), a.email, React.createElement('span', { className: 'muted', style: { fontSize: 12 } }, '(Gmail)'))),
+                React.createElement('span', { className: 'ac-dot', style: { width: 7, height: 7, borderRadius: '50%', background: 'var(--good)' } }), a.email, React.createElement('span', { className: 'muted', style: { fontSize: 12 } }, providerLabel(a)))),
               React.createElement('div', { className: 'divider', style: { margin: '4px 0' } }),
               React.createElement('button', { className: 'check-line', style: { width: '100%', color: 'var(--accent)' }, onClick: () => { window.location.href = 'Peekd Dashboard.html?settings=integrations'; } }, React.createElement(Icon, { name: 'plus', size: 14 }), 'Connect another account')),
           ),

@@ -216,6 +216,7 @@ export async function createTrackedSend({
   campaignId,
   campaignStepId,
   senderIp,
+  provider,
 }) {
   const recipients = [...new Set((Array.isArray(to) ? to : []).map(normalizeEmail).filter(Boolean))];
   if (!userId || !fromEmail || !subject || !recipients.length) {
@@ -229,6 +230,7 @@ export async function createTrackedSend({
     gmail_message_id: gmailMessageId || null,
     gmail_thread_id: gmailThreadId || null,
     sent_at: sentAt || new Date().toISOString(),
+    provider: provider === 'outlook' ? 'outlook' : 'gmail',
   };
   if (campaignId) body.campaign_id = campaignId;
   if (campaignStepId) body.campaign_step_id = campaignStepId;

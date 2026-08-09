@@ -1,9 +1,6 @@
-import {
-  getConnectedAccounts,
-  syncRepliesForTrackedEmails,
-} from './_gmail.mjs';
 import { dbRequest } from './_support.mjs';
-import { resolveGmailAccessToken, sendTrackedEmail } from './_send-tracked.mjs';
+import { resolveSendCredentials, sendTrackedEmail } from './_send-tracked.mjs';
+import { syncRepliesForProvider } from './_providers.mjs';
 
 const DUE_LIMIT = 25;
 const SEND_CONCURRENCY = 4;
@@ -128,6 +125,7 @@ async function syncCampaignReplies(campaign) {
   const select = [
     'id',
     'from_email',
+    'provider',
     'gmail_message_id',
     'gmail_thread_id',
     'sent_at',
@@ -164,7 +162,7 @@ async function syncCampaignReplies(campaign) {
 
   if (!trackedRes.ok || !Array.isArray(trackedRes.data) || !trackedRes.data.length) return;
 
-  await syncRepliesForTrackedEmails(userId, trackedRes.data);
+  await syncRepliesForProvider(userId, trackedRes.data);
 
   const repliedEmails = new Set();
   for (const te of trackedRes.data) {
@@ -297,7 +295,7 @@ export async function publishCampaignStepServer({ campaign, step }) {
   const fromEmail = normalizeEmail(campaign.from_email);
   if (!fromEmail) return { ok: false, error: 'from_required' };
 
-  const tokenRes = await resolveGmailAccessToken(campaign.user_id, fromEmail, getConnectedAccounts);
+  const tokenRes = await resolveSendCredentials(campaign.user_id, fromEmail);
   if (!tokenRes.ok) return { ok: false, error: tokenRes.error, skipped: true };
 
   // Re-check status immediately before sending.
@@ -319,6 +317,7 @@ export async function publishCampaignStepServer({ campaign, step }) {
     trackLinks: true,
     campaignId: campaign.id,
     campaignStepId: step.id,
+    provider: tokenRes.provider,
   }).catch((err) => ({ ok: false, error: err?.message || 'send_failed' })));
 
   const sentCount = results.filter((r) => r && r.ok).length;

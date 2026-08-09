@@ -1,4 +1,25 @@
 import { markRecipientReplied } from './_tracking.mjs';
+import {
+  getConnectedAccounts as getAccounts,
+  patchAccountTokens as patchTokens,
+  saveConnectedAccount as saveAccount,
+} from './_accounts.mjs';
+import {
+  callbackUri,
+  dashboardUrl,
+  decodeState,
+  encodeState,
+  makeState,
+  siteOrigin,
+} from './_oauth.mjs';
+
+export {
+  dashboardUrl,
+  decodeState,
+  encodeState,
+  makeState,
+  siteOrigin,
+};
 
 const GMAIL_SCOPES = [
   'openid',
@@ -32,49 +53,8 @@ export function publicKey() {
     || serviceKey();
 }
 
-export function siteOrigin(req) {
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
-  const proto = req.headers.get('x-forwarded-proto') || 'https';
-  if (!host) return '';
-  return `${proto}://${host}`;
-}
-
 export function gmailRedirectUri(req) {
-  const origin = siteOrigin(req);
-  return origin ? `${origin}/.netlify/functions/gmail-callback` : '';
-}
-
-export function dashboardUrl(req, params = {}) {
-  const origin = siteOrigin(req);
-  const url = new URL('Peekd Dashboard.html', origin || 'https://localhost/');
-  Object.entries(params).forEach(([k, v]) => {
-    if (v != null && v !== '') url.searchParams.set(k, String(v));
-  });
-  return url.toString();
-}
-
-export function encodeState(payload) {
-  return Buffer.from(JSON.stringify(payload)).toString('base64url');
-}
-
-export function decodeState(raw) {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
-    if (!parsed?.uid || !parsed?.exp) return null;
-    if (Date.now() > parsed.exp) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-export function makeState(userId) {
-  return encodeState({
-    uid: userId,
-    exp: Date.now() + 10 * 60 * 1000,
-    n: Math.random().toString(36).slice(2),
-  });
+  return callbackUri(req, 'gmail-callback');
 }
 
 export async function getUserFromToken(accessToken) {
@@ -125,86 +105,11 @@ export async function fetchGoogleEmail(accessToken) {
 }
 
 export async function saveConnectedAccount({ userId, email, tokens }) {
-  const url = supabaseUrl();
-  const key = serviceKey();
-  if (!url || !key) return { ok: false, error: 'missing_config' };
-
-  const listRes = await fetch(
-    `${url}/rest/v1/connected_accounts?user_id=eq.${encodeURIComponent(userId)}&provider=eq.gmail&select=id,is_primary`,
-    { headers: { apikey: key, Authorization: `Bearer ${key}` } },
-  );
-  const allAccounts = listRes.ok ? await listRes.json().catch(() => []) : [];
-
-  const existingRes = await fetch(
-    `${url}/rest/v1/connected_accounts?user_id=eq.${encodeURIComponent(userId)}&provider=eq.gmail&email=eq.${encodeURIComponent(email)}&select=id`,
-    { headers: { apikey: key, Authorization: `Bearer ${key}` } },
-  );
-  const existing = existingRes.ok ? await existingRes.json().catch(() => []) : [];
-
-  const expiresAt = tokens.expires_in
-    ? new Date(Date.now() + Number(tokens.expires_in) * 1000).toISOString()
-    : null;
-
-  const tokenPatch = {
-    refresh_token: tokens.refresh_token || null,
-    access_token: tokens.access_token || null,
-    token_expires_at: expiresAt,
-    scopes: GMAIL_SCOPES,
-  };
-
-  const headers = {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    'Content-Type': 'application/json',
-    Prefer: 'return=minimal',
-  };
-
-  if (Array.isArray(existing) && existing.length > 0) {
-    const patch = await fetch(
-      `${url}/rest/v1/connected_accounts?id=eq.${encodeURIComponent(existing[0].id)}`,
-      { method: 'PATCH', headers, body: JSON.stringify(tokenPatch) },
-    );
-    if (!patch.ok) {
-      const detail = await patch.text().catch(() => '');
-      return { ok: false, error: detail || 'update_failed' };
-    }
-    return { ok: true };
-  }
-
-  const isPrimary = !Array.isArray(allAccounts) || allAccounts.length === 0;
-  const insert = await fetch(`${url}/rest/v1/connected_accounts`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      user_id: userId,
-      provider: 'gmail',
-      email,
-      is_primary: isPrimary,
-      ...tokenPatch,
-    }),
-  });
-
-  if (!insert.ok) {
-    const detail = await insert.text().catch(() => '');
-    return { ok: false, error: detail || 'save_failed' };
-  }
-
-  return { ok: true };
+  return saveAccount({ userId, email, tokens, provider: 'gmail', scopes: GMAIL_SCOPES });
 }
 
 export async function getConnectedAccounts(userId, { email, accountId } = {}) {
-  const url = supabaseUrl();
-  const key = serviceKey();
-  if (!url || !key) return [];
-
-  let q = `${url}/rest/v1/connected_accounts?user_id=eq.${encodeURIComponent(userId)}&provider=eq.gmail&select=id,email,is_primary,refresh_token,access_token,token_expires_at`;
-  if (accountId) q += `&id=eq.${encodeURIComponent(accountId)}`;
-  else if (email) q += `&email=eq.${encodeURIComponent(email)}`;
-
-  const res = await fetch(q, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
-  if (!res.ok) return [];
-  const rows = await res.json().catch(() => []);
-  return Array.isArray(rows) ? rows : [];
+  return getAccounts(userId, { email, accountId, provider: 'gmail' });
 }
 
 export async function refreshAccessToken(refreshToken) {
@@ -229,28 +134,7 @@ export async function refreshAccessToken(refreshToken) {
 }
 
 export async function patchAccountTokens(accountId, tokens) {
-  const url = supabaseUrl();
-  const key = serviceKey();
-  if (!url || !key) return;
-
-  const expiresAt = tokens.expires_in
-    ? new Date(Date.now() + Number(tokens.expires_in) * 1000).toISOString()
-    : null;
-
-  await fetch(`${url}/rest/v1/connected_accounts?id=eq.${encodeURIComponent(accountId)}`, {
-    method: 'PATCH',
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal',
-    },
-    body: JSON.stringify({
-      access_token: tokens.access_token,
-      token_expires_at: expiresAt,
-      ...(tokens.refresh_token ? { refresh_token: tokens.refresh_token } : {}),
-    }),
-  });
+  return patchTokens(accountId, tokens);
 }
 
 export async function getValidAccessToken(account) {
@@ -535,7 +419,9 @@ export async function enrichInboxWithReplies(accounts, messages) {
  * Used by campaigns (and similar) so replies are counted without requiring an Inbox visit.
  */
 export async function syncRepliesForTrackedEmails(userId, trackedEmails) {
-  const rows = (trackedEmails || []).filter((row) => row?.gmail_thread_id && row?.gmail_message_id);
+  const rows = (trackedEmails || []).filter((row) => row?.gmail_thread_id
+    && row?.gmail_message_id
+    && (row.provider || 'gmail') === 'gmail');
   if (!userId || !rows.length) return { ok: true, updated: 0 };
 
   const accounts = await getConnectedAccounts(userId);

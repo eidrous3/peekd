@@ -1,8 +1,6 @@
-import {
-  getConnectedAccounts,
-  getUserFromToken,
-  syncRepliesForTrackedEmails,
-} from './_gmail.mjs';
+import { getUserFromToken } from './_gmail.mjs';
+import { getConnectedAccounts } from './_accounts.mjs';
+import { syncRepliesForProvider } from './_providers.mjs';
 import { dbRequest } from './_support.mjs';
 
 const cors = {
@@ -50,6 +48,7 @@ export default async (req) => {
   const selectWithCampaign = [
     'id',
     'from_email',
+    'provider',
     'gmail_message_id',
     'gmail_thread_id',
     'sent_at',
@@ -60,6 +59,7 @@ export default async (req) => {
   const selectBase = [
     'id',
     'from_email',
+    'provider',
     'gmail_message_id',
     'gmail_thread_id',
     'sent_at',
@@ -115,9 +115,9 @@ export default async (req) => {
 
   const accounts = await getConnectedAccounts(user.id);
   if (!accounts.length) {
-    return json({ ok: true, updated: 0, reason: 'no_gmail_account' });
+    return json({ ok: true, updated: 0, reason: 'no_connected_account' });
   }
 
-  const sync = await syncRepliesForTrackedEmails(user.id, [...byId.values()]);
+  const sync = await syncRepliesForProvider(user.id, [...byId.values()]);
   return json({ ok: true, updated: sync.updated || 0 });
 };

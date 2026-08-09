@@ -7,18 +7,21 @@
     return Auth.ensureSession();
   }
 
-  async function fetchGmailAccounts() {
+  /** Connected accounts, optionally scoped to one provider. */
+  async function fetchAccounts(provider) {
     const s = await session();
     if (!s?.user) return { ok: false, error: 'no_session' };
 
     const sb = window.PeekdAuth.client();
     if (!sb) return { ok: false, error: 'not_configured' };
 
-    const { data, error } = await sb
+    let q = sb
       .from('connected_accounts')
       .select(PUBLIC_COLUMNS)
-      .eq('user_id', s.user.id)
-      .eq('provider', 'gmail')
+      .eq('user_id', s.user.id);
+    if (provider) q = q.eq('provider', provider);
+
+    const { data, error } = await q
       .order('is_primary', { ascending: false })
       .order('created_at', { ascending: true });
 
@@ -27,11 +30,25 @@
     return { ok: true, accounts: data || [] };
   }
 
-  async function startGmailConnect() {
+  function fetchGmailAccounts() {
+    return fetchAccounts('gmail');
+  }
+
+  function fetchOutlookAccounts() {
+    return fetchAccounts('outlook');
+  }
+
+  /** Every address the user can send from, across providers. */
+  function fetchSendingAccounts() {
+    return fetchAccounts(null);
+  }
+
+  async function startConnect(provider) {
     const s = await session();
     if (!s?.access_token) return { ok: false, error: 'no_session' };
 
-    const res = await fetch('/.netlify/functions/gmail-connect', {
+    const fn = provider === 'outlook' ? 'outlook-connect' : 'gmail-connect';
+    const res = await fetch(`/.netlify/functions/${fn}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${s.access_token}`,
@@ -46,6 +63,14 @@
 
     window.location.href = data.url;
     return { ok: true };
+  }
+
+  function startGmailConnect() {
+    return startConnect('gmail');
+  }
+
+  function startOutlookConnect() {
+    return startConnect('outlook');
   }
 
   async function disconnectAccount(accountId) {
@@ -78,8 +103,13 @@
   }
 
   window.PeekdIntegrations = {
+    fetchAccounts,
     fetchGmailAccounts,
+    fetchOutlookAccounts,
+    fetchSendingAccounts,
+    startConnect,
     startGmailConnect,
+    startOutlookConnect,
     disconnectAccount,
     setPrimaryAccount,
   };

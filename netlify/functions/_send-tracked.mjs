@@ -1,7 +1,4 @@
-import {
-  getValidAccessToken,
-  sendGmailMessage,
-} from './_gmail.mjs';
+import { resolveSendAccount, sendProviderMessage } from './_providers.mjs';
 import {
   createTrackedSend,
   createTrackedLinksForSend,
@@ -29,6 +26,7 @@ export async function sendTrackedEmail({
   campaignId = null,
   campaignStepId = null,
   senderIp = null,
+  provider = 'gmail',
 }) {
   const recipients = Array.isArray(to) ? to : [];
   if (!userId || !accessToken || !fromEmail || !recipients.length || !subject) {
@@ -45,6 +43,7 @@ export async function sendTrackedEmail({
       campaignId,
       campaignStepId,
       senderIp,
+      provider,
     });
     if (!tracked.ok) {
       return { ok: false, error: tracked.error || 'tracking_setup_failed' };
@@ -70,7 +69,7 @@ export async function sendTrackedEmail({
     finalHtml += '<p style="margin-top:24px;font-size:11px;color:#94a3b8;">Tracked by Peekd</p>';
   }
 
-  const sent = await sendGmailMessage(accessToken, {
+  const sent = await sendProviderMessage(provider, accessToken, {
     from: fromEmail,
     to: recipients,
     subject,
@@ -105,12 +104,11 @@ export async function sendTrackedEmail({
   };
 }
 
-/** Resolve a usable Gmail access token for the user's from-address. */
-export async function resolveGmailAccessToken(userId, fromEmail, getConnectedAccounts) {
-  const accounts = await getConnectedAccounts(userId, { email: fromEmail });
-  const account = accounts[0];
-  if (!account) return { ok: false, error: 'no_gmail_account' };
-  const accessToken = await getValidAccessToken(account);
-  if (!accessToken) return { ok: false, error: 'token_refresh_failed' };
-  return { ok: true, accessToken, account };
+/** Resolve a usable access token for the user's from-address on any provider. */
+export async function resolveSendCredentials(userId, fromEmail) {
+  const res = await resolveSendAccount(userId, fromEmail);
+  if (!res.ok) {
+    return { ok: false, error: res.error === 'no_connected_account' ? 'no_sending_account' : res.error };
+  }
+  return res;
 }

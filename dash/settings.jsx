@@ -279,7 +279,7 @@
         return;
       }
       setStatus('loading');
-      const res = await I.fetchGmailAccounts();
+      const res = await I.fetchSendingAccounts();
       if (!res.ok) {
         setAccounts([]);
         setStatus(res.error === 'no_session' ? 'no_session' : 'error');
@@ -293,24 +293,31 @@
       loadAccounts();
       const params = new URLSearchParams(window.location.search);
       const gmail = params.get('gmail');
+      const outlook = params.get('outlook');
       if (gmail === 'connected') toast('Gmail connected ✓');
       else if (gmail === 'error') toast('Could not connect Gmail. Try again.');
-      if (params.get('settings') === 'integrations' || gmail) {
+      if (outlook === 'connected') toast('Outlook connected ✓');
+      else if (outlook === 'error') toast('Could not connect Outlook. Try again.');
+      if (params.get('settings') === 'integrations' || gmail || outlook) {
         params.delete('settings');
         params.delete('gmail');
+        params.delete('outlook');
         const qs = params.toString();
         const next = window.location.pathname + (qs ? `?${qs}` : '');
         window.history.replaceState({}, '', next);
       }
     }, []);
 
-    async function handleConnectGmail() {
+    async function handleConnect(provider) {
       if (!I || connecting) return;
       setConnecting(true);
-      const res = await I.startGmailConnect();
+      const res = await I.startConnect(provider);
       if (!res.ok) {
         setConnecting(false);
-        toast(res.error === 'missing_google_config' ? 'Gmail is not configured yet.' : 'Could not start Gmail connection.');
+        const label = provider === 'outlook' ? 'Outlook' : 'Gmail';
+        toast(/missing_\w+_config/.test(res.error || '')
+          ? label + ' is not configured yet.'
+          : 'Could not start ' + label + ' connection.');
       }
     }
 
@@ -336,23 +343,18 @@
       toast('Primary account updated ✓');
     }
 
-    const gmailConnected = accounts.length > 0;
-    const outlookIg = D.integrations.find((ig) => ig.name === 'Outlook') || { name: 'Outlook', desc: 'Send and track from Outlook web', status: 'connect' };
+    function providerCard({ provider, name, desc, style }) {
+      const mine = accounts.filter((a) => a.provider === provider);
+      const connected = mine.length > 0;
 
-    return React.createElement('div', null,
-      React.createElement('h2', null, 'Integrations'),
-      React.createElement('div', { className: 'sp-sub' }, 'Connect your email and tools'),
-      status === 'loading' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Loading…'),
-      status === 'no_session' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Sign in to manage integrations.'),
-      status === 'error' && React.createElement('p', { className: 'dim', style: { marginBottom: 16, color: 'var(--danger)' } }, 'Could not load integrations. Try refreshing.'),
-      status === 'ready' && React.createElement('div', { className: 'integ-card' },
-        React.createElement('span', { className: 'integ-ico' }, React.createElement(BrandLogo, { name: 'Gmail' })),
+      return React.createElement('div', { className: 'integ-card', style },
+        React.createElement('span', { className: 'integ-ico' }, React.createElement(BrandLogo, { name })),
         React.createElement('div', { className: 'integ-body' },
-          React.createElement('div', { className: 'integ-name' }, 'Gmail',
-            gmailConnected && React.createElement('span', { className: 'status-chip sc-connected' }, accounts.length + ' CONNECTED')),
-          React.createElement('div', { className: 'integ-desc' }, 'Send and track from Gmail web'),
-          gmailConnected
-            ? accounts.map((a) => React.createElement('div', { key: a.id, className: 'acct-line' },
+          React.createElement('div', { className: 'integ-name' }, name,
+            connected && React.createElement('span', { className: 'status-chip sc-connected' }, mine.length + ' CONNECTED')),
+          React.createElement('div', { className: 'integ-desc' }, desc),
+          connected
+            ? mine.map((a) => React.createElement('div', { key: a.id, className: 'acct-line' },
                 React.createElement('button', {
                   className: 'icon-btn',
                   style: { width: 24, height: 24, flex: '0 0 auto' },
@@ -369,19 +371,32 @@
                 a.is_primary && React.createElement('span', { className: 'pill-tag' }, 'PRIMARY')))
             : React.createElement('div', { className: 'acct-line' }, 'No accounts connected yet.')),
         React.createElement('div', { style: { flex: '0 0 auto', alignSelf: 'center' } },
-          gmailConnected
-            ? React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setConnect({ name: 'Gmail' }) }, React.createElement(Icon, { name: 'plus', size: 13 }), 'Add')
-            : React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setConnect({ name: 'Gmail' }) }, 'Connect')),
-      ),
-      status === 'ready' && React.createElement('div', { className: 'integ-card', style: { marginTop: 12 } },
-        React.createElement('span', { className: 'integ-ico' }, React.createElement(BrandLogo, { name: 'Outlook' })),
-        React.createElement('div', { className: 'integ-body' },
-          React.createElement('div', { className: 'integ-name' }, outlookIg.name),
-          React.createElement('div', { className: 'integ-desc' }, outlookIg.desc),
-          React.createElement('div', { className: 'acct-line' }, 'No accounts connected yet.')),
-        React.createElement('div', { style: { flex: '0 0 auto', alignSelf: 'center' } },
-          React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => toast('Outlook coming soon') }, 'Connect')),
-      ),
+          React.createElement('button', {
+            className: 'btn btn-ghost btn-sm',
+            onClick: () => setConnect({ name, provider }),
+          }, connected ? [React.createElement(Icon, { key: 'i', name: 'plus', size: 13 }), 'Add'] : 'Connect')),
+      );
+    }
+
+    const outlookIg = D.integrations.find((ig) => ig.name === 'Outlook') || { name: 'Outlook', desc: 'Send and track from Outlook web' };
+
+    return React.createElement('div', null,
+      React.createElement('h2', null, 'Integrations'),
+      React.createElement('div', { className: 'sp-sub' }, 'Connect your email and tools'),
+      status === 'loading' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Loading…'),
+      status === 'no_session' && React.createElement('p', { className: 'dim', style: { marginBottom: 16 } }, 'Sign in to manage integrations.'),
+      status === 'error' && React.createElement('p', { className: 'dim', style: { marginBottom: 16, color: 'var(--danger)' } }, 'Could not load integrations. Try refreshing.'),
+      status === 'ready' && providerCard({
+        provider: 'gmail',
+        name: 'Gmail',
+        desc: 'Send and track from Gmail web',
+      }),
+      status === 'ready' && providerCard({
+        provider: 'outlook',
+        name: 'Outlook',
+        desc: outlookIg.desc || 'Send and track from Outlook web',
+        style: { marginTop: 12 },
+      }),
       React.createElement('div', { className: 'divider', style: { margin: '20px 0 16px' } }),
       React.createElement('div', { className: 'field-label', style: { marginBottom: 10 } }, 'OTHER EMAIL PROVIDERS · COMING SOON'),
       React.createElement('div', { className: 'integ-card', style: { opacity: .8 } },
@@ -394,7 +409,7 @@
         ig: connect,
         busy: connecting,
         onClose: () => !connecting && setConnect(null),
-        onDone: handleConnectGmail,
+        onDone: () => handleConnect(connect.provider),
       }),
     );
   }

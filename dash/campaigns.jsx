@@ -474,8 +474,8 @@
       let cancelled = false;
       (async () => {
         const I = window.PeekdIntegrations;
-        if (!I?.fetchGmailAccounts) return;
-        const res = await I.fetchGmailAccounts();
+        if (!I?.fetchSendingAccounts) return;
+        const res = await I.fetchSendingAccounts();
         if (cancelled || !res.ok) return;
         const list = res.accounts || [];
         setAccounts(list);
@@ -521,7 +521,7 @@
                   className: 'select',
                   style: { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
                   onClick: () => setFromOpen(!fromOpen),
-                }, fromEmail || 'Connect a Gmail account', React.createElement(Icon, { name: 'chevDown', size: 14 })),
+                }, fromEmail || 'Connect an email account', React.createElement(Icon, { name: 'chevDown', size: 14 })),
                 fromOpen && React.createElement('div', { className: 'more-menu', style: { left: 0, right: 0, top: 'calc(100% + 4px)' } },
                   accounts.length
                     ? accounts.map((a) => React.createElement('button', {

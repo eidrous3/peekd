@@ -1,8 +1,5 @@
-import {
-  getConnectedAccounts,
-  getUserFromToken,
-} from './_gmail.mjs';
-import { resolveGmailAccessToken, sendTrackedEmail } from './_send-tracked.mjs';
+import { getUserFromToken } from './_gmail.mjs';
+import { resolveSendCredentials, sendTrackedEmail } from './_send-tracked.mjs';
 import { getClientIp } from './_tracking.mjs';
 
 const cors = {
@@ -84,9 +81,9 @@ export default async (req) => {
   if (!subject) return json({ error: 'subject_required' }, 400);
   if (!html && !parsedAttachments.attachments.length) return json({ error: 'body_required' }, 400);
 
-  const tokenRes = await resolveGmailAccessToken(user.id, fromEmail, getConnectedAccounts);
+  const tokenRes = await resolveSendCredentials(user.id, fromEmail);
   if (!tokenRes.ok) {
-    const status = tokenRes.error === 'no_gmail_account' ? 404 : 502;
+    const status = tokenRes.error === 'no_sending_account' ? 404 : 502;
     return json({ error: tokenRes.error }, status);
   }
 
@@ -104,6 +101,7 @@ export default async (req) => {
     campaignId,
     campaignStepId,
     senderIp: getClientIp(req),
+    provider: tokenRes.provider,
   });
 
   if (!result.ok) {
