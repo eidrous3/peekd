@@ -294,17 +294,17 @@
           React.createElement('span', { className: 'acct-check' }, acct === 'all' && React.createElement(Icon, { name: 'check', size: 13 })),
           React.createElement('span', { className: 'acct-email' }, 'All accounts')),
         list.length > 0 && React.createElement('div', { className: 'divider', style: { margin: '4px 0' } }),
-        list.map((a) => React.createElement('button', { key: a.email, className: 'acct-row', onClick: () => { onSelect(a.email); setOpen(false); } },
+        list.map((a) => React.createElement('button', { key: a.id || a.email, className: 'acct-row', onClick: () => { onSelect(a.email); setOpen(false); } },
           React.createElement('span', { className: 'acct-check' }, acct === a.email && React.createElement(Icon, { name: 'check', size: 13 })),
           React.createElement('span', { className: 'acct-email' }, a.email),
-          React.createElement('span', { className: 'acct-kind' }, 'Gmail'))),
+          React.createElement('span', { className: 'acct-kind' }, a.provider === 'outlook' ? 'Outlook' : 'Gmail'))),
       ),
     );
   }
 
   function InboxPage({ free, onUpgrade, onCompose, toast, setHeaderExtra, setHeaderCTA, inboxRefreshKey = 0 }) {
     const [emails, setEmails] = useState([]);
-    const [gmailAccounts, setGmailAccounts] = useState([]);
+    const [mailAccounts, setMailAccounts] = useState([]);
     const [inboxStatus, setInboxStatus] = useState('loading');
     const [sel, setSel] = useState(null);
     const [tab, setTab] = useState('all');
@@ -338,14 +338,15 @@
       });
       if (!res.ok) {
         if (silent) return;
+        const noAccount = res.error === 'no_connected_account' || res.error === 'no_gmail_account';
         setEmails([]);
-        setGmailAccounts(res.accounts || []);
-        setInboxStatus(res.error === 'no_gmail_account' ? 'no_account' : 'error');
-        if (res.error !== 'no_gmail_account') toast('Could not load Gmail. Try again.');
+        setMailAccounts(res.accounts || []);
+        setInboxStatus(noAccount ? 'no_account' : 'error');
+        if (!noAccount) toast('Could not load your mail. Try again.');
         return;
       }
       setEmails(res.messages || []);
-      setGmailAccounts(res.accounts || []);
+      setMailAccounts(res.accounts || []);
       setInboxStatus('ready');
       if (silent) {
         setSel((current) => {
@@ -373,9 +374,9 @@
     }, [acct, inboxStatus]);
 
     useEffect(() => {
-      setHeaderExtra(React.createElement(AccountFilter, { acct, onSelect: (v) => { setAcct(v); loadInbox(v); }, accounts: gmailAccounts }));
+      setHeaderExtra(React.createElement(AccountFilter, { acct, onSelect: (v) => { setAcct(v); loadInbox(v); }, accounts: mailAccounts }));
       return () => setHeaderExtra(null);
-    }, [acct, gmailAccounts]);
+    }, [acct, mailAccounts]);
 
     useEffect(() => {
       setHeaderCTA(React.createElement('button', { className: 'btn btn-primary', onClick: onCompose },
@@ -489,19 +490,19 @@
           ),
           React.createElement('div', { className: 'flex between center', style: { marginTop: 10 } },
             React.createElement('span', { className: 'muted', style: { fontSize: 12 } },
-              inboxStatus === 'loading' ? 'Loading Gmail…' : list.length + ' threads'),
-            inboxStatus === 'ready' && React.createElement('span', { className: 'live' }, React.createElement('span', { className: 'blip' }), 'Gmail sync'),
+              inboxStatus === 'loading' ? 'Loading mail…' : list.length + ' threads'),
+            inboxStatus === 'ready' && React.createElement('span', { className: 'live' }, React.createElement('span', { className: 'blip' }), 'Mailbox sync'),
           ),
         ),
         React.createElement('div', { className: 'inbox-rows' },
           inboxStatus === 'no_account'
             ? React.createElement('div', { className: 'inbox-empty' },
                 React.createElement(Icon, { name: 'mail', size: 30 }),
-                React.createElement('div', { className: 'ie-title' }, 'Connect Gmail to see your inbox'),
+                React.createElement('div', { className: 'ie-title' }, 'Connect an email account to see your inbox'),
                 React.createElement('div', { className: 'ie-sub' }, 'Go to Settings → Integrations and connect your account'))
             : inboxStatus === 'loading'
               ? React.createElement('div', { className: 'inbox-empty' },
-                  React.createElement('div', { className: 'ie-sub' }, 'Loading messages from Gmail…'))
+                  React.createElement('div', { className: 'ie-sub' }, 'Loading messages…'))
               : list.length === 0
             ? React.createElement('div', { className: 'inbox-empty' },
                 React.createElement(Icon, { name: 'search', size: 30 }),

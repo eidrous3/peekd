@@ -1,6 +1,12 @@
 import { callbackUri } from './_oauth.mjs';
 import { getConnectedAccounts, patchAccountTokens } from './_accounts.mjs';
 import { markRecipientReplied } from './_tracking.mjs';
+import {
+  formatSentAt,
+  initials,
+  normalizeEmail,
+  relativeTime,
+} from './_mail-format.mjs';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -214,11 +220,185 @@ export async function sendOutlookMessage(accessToken, { to, subject, html, attac
   };
 }
 
-function normalizeEmail(value) {
-  return String(value || '').trim().toLowerCase();
+const AUTOMATED_SENDER_RE = /^(mailer-daemon|postmaster|no-?reply|do-?not-?reply|bounce)/i;
+
+/** Gmail label names the inbox UI understands, mapped to Graph well-known folders. */
+const FOLDER_BY_LABEL = {
+  INBOX: 'inbox',
+  SENT: 'sentitems',
+};
+
+export function outlookFolderForLabel(label) {
+  return FOLDER_BY_LABEL[String(label || '').toUpperCase()] || null;
 }
 
-const AUTOMATED_SENDER_RE = /^(mailer-daemon|postmaster|no-?reply|do-?not-?reply|bounce)/i;
+const MESSAGE_SELECT = [
+  'id',
+  'conversationId',
+  'internetMessageId',
+  'subject',
+  'bodyPreview',
+  'from',
+  'sender',
+  'toRecipients',
+  'ccRecipients',
+  'receivedDateTime',
+  'sentDateTime',
+  'isRead',
+  'isDraft',
+].join(',');
+
+function graphPerson(emailAddress) {
+  const email = normalizeEmail(emailAddress?.address);
+  const name = String(emailAddress?.name || '').trim();
+  return { name: name || email.split('@')[0] || 'Unknown', email };
+}
+
+function mapOutlookMessage(msg, { inSent }) {
+  const from = graphPerson(msg.from?.emailAddress || msg.sender?.emailAddress);
+  const to = graphPerson(msg.toRecipients?.[0]?.emailAddress);
+  const date = new Date(msg.sentDateTime || msg.receivedDateTime || Date.now());
+  const displayPerson = inSent ? to : from;
+
+  return {
+    id: msg.id,
+    // Outlook's per-mailbox message id is opaque and changes when a draft is sent,
+    // so tracking rows are keyed on the stable RFC 5322 Message-ID instead.
+    trackingKey: msg.internetMessageId || msg.id,
+    provider: 'outlook',
+    threadId: msg.conversationId || null,
+    internalDate: date.getTime(),
+    from: from.email,
+    initials: initials(displayPerson.name, displayPerson.email),
+    name: displayPerson.name || displayPerson.email.split('@')[0],
+    email: displayPerson.email,
+    subject: msg.subject || '(No subject)',
+    preview: msg.bodyPreview || '',
+    badge: inSent ? 'SENT' : '',
+    opens: 0,
+    time: relativeTime(date),
+    sentAt: formatSentAt(date),
+    unread: msg.isRead === false,
+    hot: false,
+    to: to.name || to.email.split('@')[0],
+    toEmail: to.email,
+    cc: (msg.ccRecipients || []).map((r) => normalizeEmail(r?.emailAddress?.address)).filter(Boolean),
+    bcc: [],
+    device: '—',
+    location: '—',
+    lastOpened: '—',
+    timeline: [
+      { type: inSent ? 'sent' : 'delivered', label: inSent ? 'Sent' : 'Received', meta: formatSentAt(date) },
+    ],
+    links: [],
+    ai: null,
+    // The inbox collapses incoming replies into their sent message by looking for
+    // this marker, so Outlook sent items advertise it too.
+    gmailLabelIds: inSent ? ['SENT'] : [],
+  };
+}
+
+/** List one mail folder, shaped exactly like `fetchGmailInbox` results. */
+export async function fetchOutlookInbox(accessToken, { maxResults = 25, folder = 'inbox' } = {}) {
+  if (!accessToken) return { ok: false, error: 'missing_token' };
+
+  const params = new URLSearchParams({
+    $select: MESSAGE_SELECT,
+    $top: String(maxResults),
+    $orderby: folder === 'sentitems' ? 'sentDateTime desc' : 'receivedDateTime desc',
+  });
+
+  const res = await fetch(
+    `${GRAPH}/me/mailFolders/${encodeURIComponent(folder)}/messages?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    console.error('[outlook] message list failed:', res.status, JSON.stringify(data.error || {}).slice(0, 300));
+    return { ok: false, error: data.error?.code || 'outlook_list_failed' };
+  }
+
+  const inSent = folder === 'sentitems';
+  const messages = (Array.isArray(data.value) ? data.value : [])
+    .filter((msg) => msg?.id && !msg.isDraft)
+    .map((msg) => mapOutlookMessage(msg, { inSent }));
+
+  return { ok: true, messages };
+}
+
+/**
+ * Tag sent Outlook messages that already have a reply, mirroring the Gmail
+ * enrichment: badge them REPLIED, add a timeline entry and persist the reply.
+ */
+export async function enrichOutlookInboxWithReplies(accounts, messages) {
+  if (!Array.isArray(messages) || !messages.length) return messages;
+
+  const byAccount = new Map();
+  for (const message of messages) {
+    if (message.provider !== 'outlook') continue;
+    if (!(message.gmailLabelIds || []).includes('SENT') || !message.threadId) continue;
+    const key = normalizeEmail(message.accountEmail);
+    if (!key) continue;
+    if (!byAccount.has(key)) byAccount.set(key, []);
+    byAccount.get(key).push(message);
+  }
+  if (!byAccount.size) return messages;
+
+  const replyByMessageId = new Map();
+
+  for (const account of accounts || []) {
+    const subset = byAccount.get(normalizeEmail(account.email));
+    if (!subset?.length) continue;
+
+    const accessToken = await getValidOutlookAccessToken(account);
+    if (!accessToken) continue;
+
+    const conversationIds = [...new Set(subset.map((msg) => msg.threadId))];
+    const byConversation = new Map();
+    await Promise.all(conversationIds.map(async (id) => {
+      byConversation.set(id, await fetchOutlookConversation(accessToken, id));
+    }));
+
+    for (const message of subset) {
+      const reply = findOutlookReply(byConversation.get(message.threadId), {
+        accountEmail: account.email,
+        sentAt: message.internalDate,
+        recipientEmail: message.toEmail,
+      });
+      if (!reply) continue;
+
+      replyByMessageId.set(message.id, reply);
+
+      // Fire and forget: the inbox still shows the reply if the DB write fails.
+      markRecipientReplied({
+        trackedEmailId: message.trackedEmailId || null,
+        gmailMessageId: message.trackingKey,
+        recipientEmail: reply.email,
+        repliedAt: reply.repliedAt,
+      }).catch(() => {});
+    }
+  }
+
+  if (!replyByMessageId.size) return messages;
+
+  return messages.map((message) => {
+    const reply = replyByMessageId.get(message.id);
+    if (!reply) return message;
+
+    const timeline = [...(message.timeline || [])];
+    if (!timeline.some((event) => event.type === 'replied')) {
+      timeline.push({
+        type: 'replied',
+        who: reply.who,
+        av: initials(reply.who, reply.email),
+        label: 'replied',
+        time: formatSentAt(new Date(reply.repliedAt)),
+      });
+    }
+
+    return { ...message, badge: 'REPLIED', timeline };
+  });
+}
 
 /**
  * Every message in a conversation. Graph rejects `$orderby` combined with a

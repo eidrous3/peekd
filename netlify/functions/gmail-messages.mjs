@@ -1,11 +1,14 @@
 import {
-  fetchGmailInbox,
-  enrichInboxWithReplies,
   hideIncomingThreadReplies,
-  getConnectedAccounts,
   getUserFromToken,
-  getValidAccessToken,
 } from './_gmail.mjs';
+import { getConnectedAccounts } from './_accounts.mjs';
+import {
+  accountProvider,
+  enrichInboxRepliesForProviders,
+  fetchProviderInbox,
+  getValidTokenForAccount,
+} from './_providers.mjs';
 import {
   getTrackingByMessageIds,
   mergeTrackingIntoMessage,
@@ -66,22 +69,25 @@ export default async (req) => {
 
   const accounts = await getConnectedAccounts(user.id, { email: accountEmail || undefined, accountId: accountId || undefined });
   if (!accounts.length) {
-    return json({ ok: false, error: 'no_gmail_account', messages: [] }, 404);
+    return json({ ok: false, error: 'no_connected_account', messages: [] }, 404);
   }
 
   const allMessages = [];
   const seen = new Set();
+  let listError = null;
 
   for (const account of accounts) {
-    const accessToken = await getValidAccessToken(account);
-    if (!accessToken) continue;
+    const provider = accountProvider(account);
+    const accessToken = await getValidTokenForAccount(account);
+    if (!accessToken) {
+      listError = listError || 'token_refresh_failed';
+      continue;
+    }
 
     for (const label of labels) {
-      const result = await fetchGmailInbox(accessToken, { maxResults, labelIds: label });
+      const result = await fetchProviderInbox(provider, accessToken, { maxResults, label });
       if (!result.ok) {
-        if (label === 'INBOX' || !allMessages.length) {
-          return json({ ok: false, error: result.error, messages: [] }, 502);
-        }
+        listError = listError || result.error;
         continue;
       }
 
@@ -89,18 +95,24 @@ export default async (req) => {
         const key = `${account.email}:${msg.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        allMessages.push({ ...msg, accountEmail: account.email });
+        allMessages.push({ ...msg, provider, accountEmail: account.email });
       }
     }
   }
 
-  allMessages.sort((a, b) => {
-    const da = new Date(a.sentAt).getTime() || 0;
-    const db = new Date(b.sentAt).getTime() || 0;
-    return db - da;
-  });
+  // One broken mailbox shouldn't blank the whole inbox; only fail when nothing loaded.
+  if (!allMessages.length && listError) {
+    return json({ ok: false, error: listError, messages: [] }, 502);
+  }
 
-  const messageIds = allMessages.map((m) => m.id).filter(Boolean);
+  // internalDate is exact for both providers; the formatted sentAt is a fallback.
+  const sortKey = (m) => m.internalDate || new Date(m.sentAt).getTime() || 0;
+  allMessages.sort((a, b) => sortKey(b) - sortKey(a));
+
+  // Outlook rows are keyed on their Message-ID rather than the mailbox item id.
+  const trackingKey = (message) => message.trackingKey || message.id;
+
+  const messageIds = allMessages.map(trackingKey).filter(Boolean);
   let trackingByMessageId = {};
   try {
     trackingByMessageId = await getTrackingByMessageIds(user.id, messageIds);
@@ -109,12 +121,12 @@ export default async (req) => {
   }
   const messages = allMessages.map((message) => mergeTrackingIntoMessage(
     message,
-    trackingByMessageId[message.id],
+    trackingByMessageId[trackingKey(message)],
   ));
 
   let messagesWithReplies = messages;
   try {
-    messagesWithReplies = await enrichInboxWithReplies(accounts, messages);
+    messagesWithReplies = await enrichInboxRepliesForProviders(accounts, messages);
   } catch {
     /* inbox must still load if reply detection fails */
   }
@@ -124,6 +136,11 @@ export default async (req) => {
   return json({
     ok: true,
     messages: visibleMessages,
-    accounts: accounts.map((a) => ({ id: a.id, email: a.email, is_primary: a.is_primary })),
+    accounts: accounts.map((a) => ({
+      id: a.id,
+      email: a.email,
+      provider: accountProvider(a),
+      is_primary: a.is_primary,
+    })),
   });
 };

@@ -1,11 +1,16 @@
 import { getConnectedAccounts } from './_accounts.mjs';
 import {
+  enrichInboxWithReplies,
+  fetchGmailInbox,
   getValidAccessToken,
   sendGmailMessage,
   syncRepliesForTrackedEmails,
 } from './_gmail.mjs';
 import {
+  enrichOutlookInboxWithReplies,
+  fetchOutlookInbox,
   getValidOutlookAccessToken,
+  outlookFolderForLabel,
   sendOutlookMessage,
   syncOutlookRepliesForTrackedEmails,
 } from './_outlook.mjs';
@@ -44,6 +49,31 @@ export async function sendProviderMessage(provider, accessToken, message) {
   return provider === 'outlook'
     ? sendOutlookMessage(accessToken, message)
     : sendGmailMessage(accessToken, message);
+}
+
+/**
+ * List one Gmail label / Outlook folder for an account. Labels the provider has
+ * no equivalent folder for yield an empty list rather than an error.
+ */
+export async function fetchProviderInbox(provider, accessToken, { maxResults, label } = {}) {
+  if (provider === 'outlook') {
+    const folder = outlookFolderForLabel(label);
+    if (!folder) return { ok: true, messages: [] };
+    return fetchOutlookInbox(accessToken, { maxResults, folder });
+  }
+  return fetchGmailInbox(accessToken, { maxResults, labelIds: label });
+}
+
+/** Badge sent messages that already got a reply, per provider. */
+export async function enrichInboxRepliesForProviders(accounts, messages) {
+  const list = Array.isArray(accounts) ? accounts : [];
+  const gmail = list.filter((a) => accountProvider(a) === 'gmail');
+  const outlook = list.filter((a) => accountProvider(a) === 'outlook');
+
+  let enriched = messages;
+  if (gmail.length) enriched = await enrichInboxWithReplies(gmail, enriched);
+  if (outlook.length) enriched = await enrichOutlookInboxWithReplies(outlook, enriched);
+  return enriched;
 }
 
 /**
