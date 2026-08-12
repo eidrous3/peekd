@@ -757,7 +757,6 @@
       Opened: recipients.filter(r => r.status === 'OPENED').length,
       Replied: recipients.filter(r => r.status === 'REPLIED').length,
       'No opens': recipients.filter(r => r.status === 'NO OPENS').length,
-      Pending: recipients.filter(r => r.status === 'PENDING').length,
       Unsubscribed: recipients.filter(r => r.status === 'UNSUBSCRIBED').length,
     };
 
@@ -769,7 +768,6 @@
       if (rTab === 'Opened') return r.status === 'OPENED';
       if (rTab === 'Replied') return r.status === 'REPLIED';
       if (rTab === 'No opens') return r.status === 'NO OPENS';
-      if (rTab === 'Pending') return r.status === 'PENDING';
       if (rTab === 'Unsubscribed') return r.status === 'UNSUBSCRIBED';
       return true;
     });
@@ -868,7 +866,7 @@
         ),
       ),
       React.createElement('div', { className: 'tabs', style: { width: 'fit-content', marginBottom: 14 } },
-        ['All', 'Opened', 'Replied', 'No opens', 'Pending', 'Unsubscribed'].map(t =>
+        ['All', 'Opened', 'Replied', 'No opens', 'Unsubscribed'].map(t =>
           React.createElement('button', { key: t, className: 'tab' + (rTab === t ? ' active' : ''), onClick: () => setRTab(t) },
             t + (rCounts[t] ? ' ' + rCounts[t] : ''))),
       ),
