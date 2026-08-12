@@ -596,6 +596,11 @@
   const STEP_SUBJECTS = ['Introduction to Peekd', 'Quick follow-up', 'Last check-in', 'Closing the loop', 'Final note'];
   const STEP_WAITS = [3, 5, 7, 4];
 
+  // Charts need at least two points to draw a line, even with no opens yet.
+  function daySeries(values) {
+    return Array.isArray(values) && values.length ? values : [0, 0];
+  }
+
   function formatStepSentLabel(step) {
     if (step.state === 'skipped' || step.status === 'skipped') return 'Skipped · no active recipients';
     if (step.sentAt) {
@@ -842,9 +847,14 @@
       React.createElement('div', { className: 'cd-section-title', style: { marginTop: 28 } }, 'ENGAGEMENT OVER TIME'),
       React.createElement('div', { className: 'card chart-card' },
         React.createElement('h3', null, 'Daily opens across all steps'),
-        React.createElement('div', { className: 'cc-sub' }, 'Since ' + c.created + ' · ' + (c.totalOpens || 0) + ' total open' + (c.totalOpens === 1 ? '' : 's')),
+        React.createElement('div', { className: 'cc-sub' },
+          'Since ' + c.created + ' · ' + (c.totalOpens || 0) + ' total open' + (c.totalOpens === 1 ? '' : 's')
+          + ' · ' + (c.uniqueOpens || 0) + ' unique opener' + (c.uniqueOpens === 1 ? '' : 's')),
         React.createElement(window.Chart, {
-          data: Array.isArray(c.openSeries) && c.openSeries.length ? c.openSeries : [0, 0],
+          series: [
+            { key: 'total', label: 'All opens', color: 'var(--accent)', data: daySeries(c.openSeries) },
+            { key: 'unique', label: 'Unique openers', color: 'var(--purple)', dash: '5 4', data: daySeries(c.uniqueOpenSeries) },
+          ],
           height: 200, axis: true, fmt: v => v + ' opens',
         }),
       ),

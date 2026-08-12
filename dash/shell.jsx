@@ -153,14 +153,29 @@
   }
 
   // Interactive line chart — move across it to reveal the value at each point.
-  function Chart({ data, labels, height = 84, axis = false, fmt = (v) => v, accent, accentSoft }) {
+  // Pass `data` for a single line, or `series` ([{ label, data, color }]) to
+  // overlay several lines on a shared scale with a legend.
+  function Chart({ data, series, labels, height = 84, axis = false, fmt = (v) => v, accent, accentSoft }) {
     const [hi, setHi] = useState(null);
     const ref = useRef(null);
-    const series = Array.isArray(data) && data.length ? data : [0];
-    const n = series.length;
-    const max = Math.max(...series);
-    const min = Math.min(...series);
+    const given = Array.isArray(series) && series.length
+      ? series
+      : [{ data: Array.isArray(data) && data.length ? data : [0] }];
+    const n = Math.max(...given.map((s) => (Array.isArray(s.data) ? s.data.length : 0)), 1);
+    const lines = given.map((s, i) => ({
+      label: s.label || '',
+      color: s.color || 'var(--accent)',
+      fill: s.fill !== false && given.length === 1,
+      // Dashed lines stay readable where two series sit on identical values.
+      dash: s.dash || null,
+      data: Array.from({ length: n }, (_, j) => Number(s.data?.[j]) || 0),
+      key: s.key || s.label || String(i),
+    }));
+    const values = lines.flatMap((l) => l.data);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
     const span = (max - min) || 1;
+    const multi = lines.length > 1;
     const hasLabels = Array.isArray(labels) && labels.length === n;
     const W = 1000;
     const H = height;
@@ -168,9 +183,13 @@
     const padB = hasLabels ? 4 : 8;
     const xPx = (i) => (n <= 1 ? W / 2 : (i / (n - 1)) * W);
     const yPx = (v) => padT + (1 - (v - min) / span) * (H - padT - padB);
-    const pts = series.map((d, i) => [xPx(i), yPx(d)]);
-    const path = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
-    const area = path + ` L ${W} ${H} L 0 ${H} Z`;
+    const plotted = lines.map((l) => {
+      const pts = l.data.map((d, i) => [xPx(i), yPx(d)]);
+      const path = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+      return { ...l, pts, path, area: path + ` L ${W} ${H} L 0 ${H} Z` };
+    });
+    // Hover indicator and tooltip anchor follow the first series.
+    const pts = plotted[0].pts;
     const yTicks = axis ? [max, Math.round((max + min) / 2), min] : [];
 
     const labelStep = (() => {
@@ -197,7 +216,9 @@
     if (accentSoft) cstyle['--accent-soft'] = accentSoft;
 
     const tipText = (i) => {
-      const value = fmt(series[i]);
+      const value = multi
+        ? plotted.map((l) => l.label + ' ' + fmt(l.data[i])).join(' · ')
+        : fmt(plotted[0].data[i]);
       if (hasLabels && labels[i]) return labels[i] + ' · ' + value;
       return value;
     };
@@ -205,12 +226,24 @@
     const plot = React.createElement('div', { className: 'chart-plot', ref, onMouseMove: onMove, onMouseLeave: () => setHi(null) },
       React.createElement('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', className: 'chart-svg' },
         axis && yTicks.map((t, i) => { const y = yPx(t); return React.createElement('line', { key: i, x1: 0, x2: W, y1: y, y2: y, stroke: 'var(--line)', strokeWidth: 1, vectorEffect: 'non-scaling-stroke' }); }),
-        React.createElement('path', { d: area, fill: 'var(--accent-soft)' }),
-        React.createElement('path', { d: path, fill: 'none', stroke: 'var(--accent)', strokeWidth: axis ? 2 : 1.6, vectorEffect: 'non-scaling-stroke' }),
-        hi != null && React.createElement('line', { x1: pts[hi][0], x2: pts[hi][0], y1: 0, y2: H, stroke: 'var(--accent)', strokeWidth: 1, strokeDasharray: '3 3', vectorEffect: 'non-scaling-stroke', opacity: 0.4 }),
-        axis && pts.map((p, i) => React.createElement('circle', { key: i, cx: p[0], cy: p[1], r: 2.5, fill: 'var(--accent)' })),
+        plotted.map((l) => l.fill && React.createElement('path', { key: 'a' + l.key, d: l.area, fill: 'var(--accent-soft)' })),
+        plotted.map((l) => React.createElement('path', {
+          key: 'l' + l.key,
+          d: l.path,
+          fill: 'none',
+          stroke: l.color,
+          strokeWidth: axis ? 2 : 1.6,
+          ...(l.dash ? { strokeDasharray: l.dash } : {}),
+          vectorEffect: 'non-scaling-stroke',
+        })),
+        hi != null && React.createElement('line', { x1: pts[hi][0], x2: pts[hi][0], y1: 0, y2: H, stroke: multi ? 'var(--fg-mute)' : 'var(--accent)', strokeWidth: 1, strokeDasharray: '3 3', vectorEffect: 'non-scaling-stroke', opacity: 0.4 }),
+        axis && plotted.flatMap((l) => l.pts.map((p, i) => React.createElement('circle', { key: l.key + i, cx: p[0], cy: p[1], r: 2.5, fill: l.color }))),
       ),
-      pts.map((p, i) => React.createElement('span', { key: i, className: 'chart-dot' + (hi === i ? ' on' : ''), style: { left: (p[0] / W * 100) + '%', top: (p[1] / H * 100) + '%' } })),
+      plotted.flatMap((l) => l.pts.map((p, i) => React.createElement('span', {
+        key: l.key + i,
+        className: 'chart-dot' + (hi === i ? ' on' : ''),
+        style: { left: (p[0] / W * 100) + '%', top: (p[1] / H * 100) + '%', background: l.color },
+      }))),
       hi != null && (() => {
         const leftPct = (pts[hi][0] / W * 100);
         const tipStyle = {
@@ -220,6 +253,15 @@
         };
         return React.createElement('span', { className: 'chart-tip', style: tipStyle }, tipText(hi));
       })(),
+    );
+
+    const legend = multi && React.createElement('div', { className: 'chart-legend' },
+      plotted.map((l) => React.createElement('span', { key: l.key, className: 'chart-legend-item' },
+        React.createElement('span', {
+          className: 'chart-legend-swatch' + (l.dash ? ' dashed' : ''),
+          style: { background: l.dash ? 'transparent' : l.color, borderColor: l.color },
+        }),
+        l.label)),
     );
 
     const xAxis = hasLabels && React.createElement('div', { className: 'chart-x' },
@@ -234,10 +276,13 @@
       }),
     );
 
-    return React.createElement('div', { className: 'chart' + (axis ? ' chart-axis' : ''), style: cstyle },
+    const chart = React.createElement('div', { className: 'chart' + (axis ? ' chart-axis' : ''), style: cstyle },
       axis && React.createElement('div', { className: 'chart-y' }, yTicks.map((t, i) => React.createElement('span', { key: i }, fmt(t)))),
       React.createElement('div', { className: 'chart-main' }, plot, xAxis),
     );
+
+    if (!legend) return chart;
+    return React.createElement('div', { className: 'chart-wrap' }, chart, legend);
   }
 
   Object.assign(window, { Avatar, Switch, Sidebar, Header, Toast, Chart });

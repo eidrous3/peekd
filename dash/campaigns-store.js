@@ -64,7 +64,7 @@
   function toUiCampaign(row, openStats) {
     const steps = sortSteps(row.campaign_steps);
     const recipients = Array.isArray(row.campaign_recipients) ? row.campaign_recipients : [];
-    const stats = openStats || { sent: 0, opened: 0, openRate: 0, replies: 0, totalOpens: 0, openSeries: [], byStep: {} };
+    const stats = openStats || { sent: 0, opened: 0, openRate: 0, replies: 0, totalOpens: 0, uniqueOpens: 0, openSeries: [], uniqueOpenSeries: [], byStep: {} };
     const repliesFromRecipients = recipients.filter((r) => r.status === 'replied' || r.replied_at).length;
     const replies = Math.max(stats.replies || 0, repliesFromRecipients);
     return {
@@ -80,7 +80,9 @@
       emailsSent: stats.sent,
       emailsOpened: stats.opened,
       totalOpens: stats.totalOpens || 0,
+      uniqueOpens: stats.uniqueOpens || 0,
       openSeries: Array.isArray(stats.openSeries) ? stats.openSeries : [],
+      uniqueOpenSeries: Array.isArray(stats.uniqueOpenSeries) ? stats.uniqueOpenSeries : [],
       replies,
       fromEmail: row.from_email || '',
       sourceListId: row.source_list_id || null,
@@ -119,7 +121,9 @@
   }
 
   // One bucket per day from campaign creation (capped) through today.
-  function buildDailyOpenSeries(timestamps, createdAt, maxDays = 30) {
+  // `total` counts every open event; `unique` counts each recipient at most once
+  // per day, so repeat opens by the same person don't inflate it.
+  function buildDailyOpenSeries(events, createdAt, maxDays = 30) {
     const dayMs = 86_400_000;
     const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
     const todayStart = startOfDay(Date.now());
@@ -127,12 +131,17 @@
     if (!Number.isFinite(firstStart) || firstStart > todayStart) firstStart = todayStart;
     const days = Math.max(2, Math.min(maxDays, Math.round((todayStart - firstStart) / dayMs) + 1));
     const seriesStart = todayStart - (days - 1) * dayMs;
-    const buckets = new Array(days).fill(0);
-    for (const ts of timestamps || []) {
-      const idx = Math.floor((startOfDay(ts) - seriesStart) / dayMs);
-      if (idx >= 0 && idx < days) buckets[idx] += 1;
+
+    const total = new Array(days).fill(0);
+    const seenPerDay = Array.from({ length: days }, () => new Set());
+    for (const ev of events || []) {
+      const idx = Math.floor((startOfDay(ev.ms) - seriesStart) / dayMs);
+      if (idx < 0 || idx >= days) continue;
+      total[idx] += 1;
+      if (ev.email) seenPerDay[idx].add(ev.email);
     }
-    return buckets;
+
+    return { total, unique: seenPerDay.map((set) => set.size) };
   }
 
   // Open/reply stats for steps already sent (excludes future steps).
@@ -150,7 +159,7 @@
       const contactedEmails = new Set();
       const openedEmails = new Set();
       const repliedEmails = new Set();
-      const openTimestamps = [];
+      const openEvents = [];
       const byStep = {};
       for (const step of sentSteps) byStep[step.id] = { sent: 0, opened: 0, openRate: 0 };
 
@@ -177,7 +186,7 @@
           for (const ev of recip.email_open_events || []) {
             if (ev.classification !== 'human' || !ev.opened_at) continue;
             const ms = new Date(ev.opened_at).getTime();
-            if (Number.isFinite(ms)) openTimestamps.push(ms);
+            if (Number.isFinite(ms)) openEvents.push({ ms, email });
           }
           if (recip.is_replied) repliedEmails.add(email);
           if (stepId && byStep[stepId]) {
@@ -193,14 +202,17 @@
       }
 
       const contacted = contactedEmails.size;
+      const daily = buildDailyOpenSeries(openEvents, camp.created_at);
       byCampaign.set(camp.id, {
         sent: contacted,
         opened: openedEmails.size,
         openRate: contacted > 0 ? Math.round((openedEmails.size / contacted) * 100) : 0,
         replies: repliedEmails.size,
         repliedEmails: [...repliedEmails],
-        totalOpens: openTimestamps.length,
-        openSeries: buildDailyOpenSeries(openTimestamps, camp.created_at),
+        totalOpens: openEvents.length,
+        uniqueOpens: openedEmails.size,
+        openSeries: daily.total,
+        uniqueOpenSeries: daily.unique,
         byStep,
       });
     }
