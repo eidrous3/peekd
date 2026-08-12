@@ -22,5 +22,11 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/u/:token"
+  to = "/.netlify/functions/unsubscribe?u=:token"
+  status = 200
+  force = true
+
 [build.environment]
   NODE_VERSION = "20"

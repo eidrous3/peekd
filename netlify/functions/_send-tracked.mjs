@@ -7,6 +7,12 @@ import {
   wrapLinksInHtml,
 } from './_tracking.mjs';
 import { dbRequest } from './_support.mjs';
+import {
+  appendUnsubscribeFooter,
+  campaignAllowsUnsubscribe,
+  signUnsubscribeToken,
+  unsubscribeUrl,
+} from './_unsubscribe.mjs';
 
 /**
  * Create tracking records (optional), inject pixel/links, send via Gmail.
@@ -27,6 +33,9 @@ export async function sendTrackedEmail({
   campaignStepId = null,
   senderIp = null,
   provider = 'gmail',
+  // Pass the campaign's flag when the caller already has it to save a lookup;
+  // leave it null and it's read from the campaign row.
+  unsubscribeEnabled = null,
 }) {
   const recipients = Array.isArray(to) ? to : [];
   if (!userId || !accessToken || !fromEmail || !recipients.length || !subject) {
@@ -65,6 +74,19 @@ export async function sendTrackedEmail({
       console.error('[send-tracked] link tracking setup failed:', links.error);
     }
   }
+  // Must come after link tracking, otherwise the opt-out URL gets rewritten into
+  // a click redirect. Campaign sends are one recipient per call, which is what
+  // makes a per-recipient link possible.
+  if (campaignId && recipients.length === 1) {
+    const allowed = unsubscribeEnabled === null
+      ? await campaignAllowsUnsubscribe(campaignId)
+      : unsubscribeEnabled === true;
+    if (allowed) {
+      const token = signUnsubscribeToken({ campaignId, email: recipients[0] });
+      if (token) finalHtml = appendUnsubscribeFooter(finalHtml, unsubscribeUrl(token));
+    }
+  }
+
   if (addBranding) {
     finalHtml += '<p style="margin-top:24px;font-size:11px;color:#94a3b8;">Tracked by Peekd</p>';
   }

@@ -1,10 +1,29 @@
 (function () {
-  const CAMPAIGN_COLUMNS = 'id, name, status, from_email, source_list_id, timezone, created_at, updated_at';
   const STEP_COLUMNS = 'id, campaign_id, position, subject, body_html, delay_days, scheduled_at, sent_at, status';
   const RECIPIENT_COLUMNS = 'id, campaign_id, email, person_id, status, replied_at';
-  const FETCH_SELECT = CAMPAIGN_COLUMNS
-    + ', campaign_steps(' + STEP_COLUMNS + ')'
-    + ', campaign_recipients(' + RECIPIENT_COLUMNS + ')';
+  // Recipients in these states get no further steps.
+  const SKIP_STATUSES = ['replied', 'paused', 'unsubscribed'];
+
+  // Flipped on the first query that fails because the unsubscribe migration
+  // hasn't been applied, so campaigns keep loading without the column.
+  let unsubColumnMissing = false;
+
+  function campaignColumns() {
+    return 'id, name, status, from_email, source_list_id, timezone'
+      + (unsubColumnMissing ? '' : ', include_unsubscribe_link')
+      + ', created_at, updated_at';
+  }
+
+  function fetchSelect() {
+    return campaignColumns()
+      + ', campaign_steps(' + STEP_COLUMNS + ')'
+      + ', campaign_recipients(' + RECIPIENT_COLUMNS + ')';
+  }
+
+  function missingUnsubColumn(error) {
+    if (unsubColumnMissing || !error) return false;
+    return /include_unsubscribe_link/.test(String(error.message || error));
+  }
 
   async function session() {
     const Auth = window.PeekdAuth;
@@ -87,6 +106,7 @@
       fromEmail: row.from_email || '',
       sourceListId: row.source_list_id || null,
       timezone: row.timezone || 'UTC',
+      unsubscribeLink: row.include_unsubscribe_link === true,
       stepRows: steps.map((s) => {
         const stepStat = stats.byStep[s.id] || { sent: 0, opened: 0, openRate: null };
         return {
@@ -341,11 +361,17 @@
     const sb = window.PeekdAuth.client();
     if (!sb) return { ok: false, error: 'not_configured', campaigns: [] };
 
-    const { data, error } = await sb
+    const load = () => sb
       .from('campaigns')
-      .select(FETCH_SELECT)
+      .select(fetchSelect())
       .eq('user_id', s.user.id)
       .order('created_at', { ascending: false });
+
+    let { data, error } = await load();
+    if (missingUnsubColumn(error)) {
+      unsubColumnMissing = true;
+      ({ data, error } = await load());
+    }
 
     if (error) return { ok: false, error: error.message, campaigns: [] };
 
@@ -358,9 +384,11 @@
     await Promise.all(rows.map(async (camp) => {
       const stats = openByCampaign.get(camp.id);
       if (!stats?.repliedEmails?.length) return;
+      // An unsubscribe is a stronger signal than a reply; don't overwrite it.
       const needUpdate = (camp.campaign_recipients || []).filter((r) => {
         const email = normalizeEmail(r.email);
-        return stats.repliedEmails.includes(email) && !r.replied_at && r.status !== 'replied';
+        return stats.repliedEmails.includes(email) && !r.replied_at
+          && r.status !== 'replied' && r.status !== 'unsubscribed';
       });
       if (!needUpdate.length) return;
       const now = new Date().toISOString();
@@ -370,7 +398,7 @@
         .eq('campaign_id', camp.id)
         .in('email', needUpdate.map((r) => normalizeEmail(r.email)));
       for (const r of camp.campaign_recipients || []) {
-        if (stats.repliedEmails.includes(normalizeEmail(r.email))) {
+        if (stats.repliedEmails.includes(normalizeEmail(r.email)) && r.status !== 'unsubscribed') {
           r.status = 'replied';
           r.replied_at = r.replied_at || now;
         }
@@ -390,6 +418,7 @@
     const sourceListId = input?.sourceListId || input?.listId || null;
     const emails = input?.emails || [];
     const stepsIn = Array.isArray(input?.steps) ? input.steps : [];
+    const includeUnsubscribe = input?.includeUnsubscribeLink !== false;
 
     if (!stepsIn.length) return { ok: false, error: 'steps_required' };
 
@@ -403,18 +432,28 @@
     if (!resolved.ok) return { ok: false, error: resolved.error };
     if (!resolved.rows.length) return { ok: false, error: 'recipients_required' };
 
-    const { data: campaign, error: campErr } = await sb
+    const baseRow = {
+      user_id: s.user.id,
+      name,
+      status: 'active',
+      from_email: fromEmail,
+      source_list_id: sourceListId || null,
+      timezone,
+    };
+    const insert = (row) => sb
       .from('campaigns')
-      .insert({
-        user_id: s.user.id,
-        name,
-        status: 'active',
-        from_email: fromEmail,
-        source_list_id: sourceListId || null,
-        timezone,
-      })
-      .select(CAMPAIGN_COLUMNS)
+      .insert(row)
+      .select(campaignColumns())
       .single();
+
+    let { data: campaign, error: campErr } = await insert({
+      ...baseRow,
+      ...(unsubColumnMissing ? {} : { include_unsubscribe_link: includeUnsubscribe }),
+    });
+    if (missingUnsubColumn(campErr)) {
+      unsubColumnMissing = true;
+      ({ data: campaign, error: campErr } = await insert(baseRow));
+    }
 
     if (campErr) return { ok: false, error: campErr.message };
 
@@ -503,7 +542,7 @@
 
     const { data: full, error: fetchErr } = await sb
       .from('campaigns')
-      .select(FETCH_SELECT)
+      .select(fetchSelect())
       .eq('id', campaign.id)
       .eq('user_id', s.user.id)
       .single();
@@ -534,10 +573,33 @@
       .update({ status: dbStatus })
       .eq('id', id)
       .eq('user_id', s.user.id)
-      .select(FETCH_SELECT)
+      .select(fetchSelect())
       .single();
 
     if (error) return { ok: false, error: error.message };
+    return { ok: true, campaign: toUiCampaign(data) };
+  }
+
+  async function setCampaignUnsubscribeLink(id, enabled) {
+    if (!id) return { ok: false, error: 'invalid_input' };
+
+    const s = await session();
+    if (!s?.user) return { ok: false, error: 'no_session' };
+
+    const sb = window.PeekdAuth.client();
+    if (!sb) return { ok: false, error: 'not_configured' };
+
+    const { data, error } = await sb
+      .from('campaigns')
+      .update({ include_unsubscribe_link: enabled === true })
+      .eq('id', id)
+      .eq('user_id', s.user.id)
+      .select(fetchSelect())
+      .single();
+
+    if (error) {
+      return { ok: false, error: missingUnsubColumn(error) ? 'migration_required' : error.message };
+    }
     return { ok: true, campaign: toUiCampaign(data) };
   }
 
@@ -556,7 +618,7 @@
       .update({ name: trimmed })
       .eq('id', id)
       .eq('user_id', s.user.id)
-      .select(FETCH_SELECT)
+      .select(fetchSelect())
       .single();
 
     if (error) return { ok: false, error: error.message };
@@ -593,7 +655,7 @@
 
     const { data, error } = await sb
       .from('campaigns')
-      .select(FETCH_SELECT)
+      .select(fetchSelect())
       .eq('id', id)
       .eq('user_id', s.user.id)
       .single();
@@ -616,6 +678,7 @@
       sourceListId: null,
       emails,
       steps,
+      includeUnsubscribeLink: data.include_unsubscribe_link !== false,
     });
   }
 
@@ -631,7 +694,7 @@
 
     const { data, error } = await sb
       .from('campaigns')
-      .select(FETCH_SELECT)
+      .select(fetchSelect())
       .eq('id', campaignId)
       .eq('user_id', s.user.id)
       .single();
@@ -652,10 +715,10 @@
     const fromEmail = normalizeEmail(data.from_email);
     if (!fromEmail) return { ok: false, error: 'from_required' };
 
-    // Pause on reply: skip anyone who already replied (or was manually paused).
+    // Pause on reply: skip anyone who replied, unsubscribed, or was manually paused.
     const recipients = data.campaign_recipients || [];
     const toEmails = [...new Set(recipients
-      .filter((r) => r.status !== 'replied' && r.status !== 'paused')
+      .filter((r) => !SKIP_STATUSES.includes(r.status))
       .map((r) => normalizeEmail(r.email))
       .filter(isEmail))];
 
@@ -681,7 +744,7 @@
 
       const { data: full, error: fetchErr } = await sb
         .from('campaigns')
-        .select(FETCH_SELECT)
+        .select(fetchSelect())
         .eq('id', campaignId)
         .eq('user_id', s.user.id)
         .single();
@@ -740,7 +803,7 @@
 
     const { data: full, error: fetchErr } = await sb
       .from('campaigns')
-      .select(FETCH_SELECT)
+      .select(fetchSelect())
       .eq('id', campaignId)
       .eq('user_id', s.user.id)
       .single();
@@ -761,6 +824,7 @@
     deleteCampaign,
     duplicateCampaign,
     publishCampaignStep,
+    setCampaignUnsubscribeLink,
     clientTimezone,
     isEmail,
   };

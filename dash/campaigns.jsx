@@ -74,6 +74,21 @@
       patchCampaign(id, res.campaign);
     };
 
+    const toggleUnsubscribe = async (id) => {
+      const current = campaigns.find((c) => c.id === id);
+      if (!current || !Store?.setCampaignUnsubscribeLink) return;
+      const next = !current.unsubscribeLink;
+      const res = await Store.setCampaignUnsubscribeLink(id, next);
+      if (!res.ok) {
+        toast(res.error === 'migration_required'
+          ? 'Run the unsubscribe migration first'
+          : (res.error || 'Could not update campaign'));
+        return;
+      }
+      patchCampaign(id, res.campaign);
+      toast(next ? 'Unsubscribe link added to this campaign' : 'Unsubscribe link removed');
+    };
+
     const duplicate = async (id) => {
       if (!Store?.duplicateCampaign) return;
       const res = await Store.duplicateCampaign(id);
@@ -121,6 +136,7 @@
       onDelete: () => removeCampaign(selected.id),
       onRename: (newName) => rename(selected.id, newName),
       onDuplicate: () => duplicate(selected.id),
+      onToggleUnsubscribe: () => toggleUnsubscribe(selected.id),
       onPublishStep: (stepId) => publishStep(selected.id, stepId),
     });
 
@@ -469,6 +485,7 @@
     const [fromOpen, setFromOpen] = useState(false);
     const [accounts, setAccounts] = useState([]);
     const [expandedSteps, setExpandedSteps] = useState({});
+    const [unsub, setUnsub] = useState(true);
 
     useEffect(() => {
       let cancelled = false;
@@ -498,6 +515,7 @@
         sourceListId: rmode === 'list' ? listId : null,
         emails: rmode === 'individual' ? emails : [],
         steps: seqSteps,
+        includeUnsubscribeLink: unsub,
       });
     };
 
@@ -565,7 +583,14 @@
             }),
             seqSteps.length < 5 && React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setSeqSteps([...seqSteps, emptySeqStep('after')]) },
               React.createElement(Icon, { name: 'plus', size: 14 }), 'Add step'),
-            React.createElement('p', { className: 'muted', style: { fontSize: 12.5, marginTop: 14 } }, 'Sequence pauses automatically when a recipient replies.'),
+            React.createElement('div', { className: 'flex between center', style: { marginTop: 16 } },
+              React.createElement('div', null,
+                React.createElement('div', { style: { fontSize: 13.5, fontWeight: 600 } }, 'Add unsubscribe link'),
+                React.createElement('div', { className: 'muted', style: { fontSize: 12.5 } }, 'Adds a one-click opt-out footer to every email in this sequence.'),
+              ),
+              React.createElement(window.Switch, { on: unsub, onClick: () => setUnsub(!unsub) }),
+            ),
+            React.createElement('p', { className: 'muted', style: { fontSize: 12.5, marginTop: 14 } }, 'Sequence pauses automatically when a recipient replies or unsubscribes.'),
           ),
           step === 3 && React.createElement('div', null,
             React.createElement('h4', { style: { margin: '0 0 14px', fontSize: 15 } }, 'Review & Launch'),
@@ -574,7 +599,8 @@
               React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'From'), React.createElement('b', null, fromEmail || '—')),
               React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Recipients'), React.createElement('b', null, rmode === 'individual' ? emails.length : 'List selected')),
               React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Steps'), React.createElement('b', null, seqSteps.length)),
-              React.createElement('div', { className: 'flex between', style: { marginBottom: 10 } }, React.createElement('span', { className: 'muted' }, 'Timezone'), React.createElement('b', null, Store?.clientTimezone ? Store.clientTimezone() : '—')),
+              React.createElement('div', { className: 'flex between', style: { marginBottom: 8 } }, React.createElement('span', { className: 'muted' }, 'Timezone'), React.createElement('b', null, Store?.clientTimezone ? Store.clientTimezone() : '—')),
+              React.createElement('div', { className: 'flex between', style: { marginBottom: 10 } }, React.createElement('span', { className: 'muted' }, 'Unsubscribe link'), React.createElement('b', null, unsub ? 'Included' : 'Off')),
               seqSteps.map((s, i) => React.createElement('div', { key: i, className: 'review-step-line' },
                 React.createElement('span', { className: 'review-step-label' }, 'Step ' + (i + 1)),
                 React.createElement('span', { className: 'muted' }, formatPreviewSend(s, i, seqSteps)),
@@ -667,9 +693,10 @@
     if (Array.isArray(c.recipientRows) && c.recipientRows.length) {
       return c.recipientRows.map((r) => {
         const status = r.status === 'REPLIED' ? 'REPLIED'
-          : r.status === 'COMPLETED' ? 'OPENED'
-            : r.status === 'PAUSED' ? 'PENDING'
-              : 'PENDING';
+          : r.status === 'UNSUBSCRIBED' ? 'UNSUBSCRIBED'
+            : r.status === 'COMPLETED' ? 'OPENED'
+              : r.status === 'PAUSED' ? 'PENDING'
+                : 'PENDING';
         return {
           p: {
             initials: initialsFromEmail(r.email),
@@ -693,9 +720,9 @@
     ];
   }
 
-  const RSTATUS = { REPLIED: 'b-replied', OPENED: 'b-opened', PENDING: 'b-sent', 'NO OPENS': 'b-unresp' };
+  const RSTATUS = { REPLIED: 'b-replied', OPENED: 'b-opened', PENDING: 'b-sent', 'NO OPENS': 'b-unresp', UNSUBSCRIBED: 'b-unresp' };
 
-  function CampaignDetail({ c, onBack, onToggleStatus, onDelete, onRename, onDuplicate, onPublishStep, toast }) {
+  function CampaignDetail({ c, onBack, onToggleStatus, onDelete, onRename, onDuplicate, onToggleUnsubscribe, onPublishStep, toast }) {
     const [moreOpen, setMoreOpen] = useState(false);
     const [confirmDel, setConfirmDel] = useState(false);
     const [editing, setEditing] = useState(false);
@@ -727,7 +754,7 @@
       if (rTab === 'Opened') return r.status === 'OPENED';
       if (rTab === 'Replied') return r.status === 'REPLIED';
       if (rTab === 'Pending') return r.status === 'PENDING';
-      if (rTab === 'Unsubscribed') return false;
+      if (rTab === 'Unsubscribed') return r.status === 'UNSUBSCRIBED';
       return true;
     });
 
@@ -739,7 +766,8 @@
         React.createElement('div', null,
           React.createElement('div', { className: 'cd-title' }, c.name,
             React.createElement('span', { className: 'badge ' + badgeClass }, c.status)),
-          React.createElement('div', { className: 'cd-sub' }, 'Created ' + c.created + ' · ' + c.recipients + ' recipients'),
+          React.createElement('div', { className: 'cd-sub' }, 'Created ' + c.created + ' · ' + c.recipients + ' recipients'
+            + (c.unsubscribeLink ? ' · unsubscribe link on' : '')),
         ),
         React.createElement('div', { className: 'flex gap8', style: { position: 'relative' } },
           !finished && React.createElement('button', { className: 'btn btn-ghost', onClick: () => { onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); } },
@@ -748,6 +776,9 @@
           moreOpen && React.createElement('div', { className: 'more-menu' },
             React.createElement('button', { onClick: () => { setMoreOpen(false); setEditing(true); } }, React.createElement(Icon, { name: 'edit', size: 14 }), 'Edit campaign'),
             React.createElement('button', { onClick: () => { setMoreOpen(false); onDuplicate && onDuplicate(); } }, React.createElement(Icon, { name: 'grid', size: 14 }), 'Duplicate'),
+            onToggleUnsubscribe && React.createElement('button', { onClick: () => { setMoreOpen(false); onToggleUnsubscribe(); } },
+              React.createElement(Icon, { name: 'link', size: 14 }),
+              c.unsubscribeLink ? 'Remove unsubscribe link' : 'Add unsubscribe link'),
             !finished && React.createElement('button', { onClick: () => { setMoreOpen(false); onToggleStatus(); toast(paused ? 'Campaign resumed' : 'Campaign paused'); } }, React.createElement(Icon, { name: paused ? 'arrowRight' : 'clock', size: 14 }), paused ? 'Resume' : 'Pause'),
             React.createElement('div', { className: 'divider', style: { margin: '4px 0' } }),
             React.createElement('button', { className: 'danger', onClick: () => { setMoreOpen(false); setConfirmDel(true); } }, React.createElement(Icon, { name: 'trash', size: 14 }), 'Delete campaign'),

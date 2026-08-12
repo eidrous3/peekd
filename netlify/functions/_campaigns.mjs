@@ -5,6 +5,9 @@ import { syncRepliesForProvider } from './_providers.mjs';
 const DUE_LIMIT = 25;
 const SEND_CONCURRENCY = 4;
 
+// Recipients in these states get no further steps.
+const SKIP_STATUSES = new Set(['replied', 'paused', 'unsubscribed']);
+
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
@@ -52,29 +55,45 @@ async function mapPool(items, concurrency, fn) {
  */
 export async function findDueCampaignSteps(now = new Date(), { limit = DUE_LIMIT } = {}) {
   const nowIso = now.toISOString();
-  const select = [
+  const campaignFields = (withUnsubscribe) => [
     'id',
-    'campaign_id',
-    'position',
-    'subject',
-    'body_html',
-    'delay_days',
-    'scheduled_at',
-    'sent_at',
+    'user_id',
     'status',
-    'campaigns!inner(id,user_id,status,from_email,campaign_recipients(id,email,status,replied_at),campaign_steps(id,campaign_id,position,subject,body_html,delay_days,scheduled_at,sent_at,status))',
+    'from_email',
+    ...(withUnsubscribe ? ['include_unsubscribe_link'] : []),
+    'campaign_recipients(id,email,status,replied_at)',
+    'campaign_steps(id,campaign_id,position,subject,body_html,delay_days,scheduled_at,sent_at,status)',
   ].join(',');
 
-  const query = `campaign_steps`
-    + `?status=in.(scheduled,pending)`
-    + `&scheduled_at=not.is.null`
-    + `&scheduled_at=lte.${encodeURIComponent(nowIso)}`
-    + `&campaigns.status=eq.active`
-    + `&select=${encodeURIComponent(select)}`
-    + `&order=scheduled_at.asc`
-    + `&limit=${Math.max(1, Math.min(100, Number(limit) || DUE_LIMIT))}`;
+  const buildQuery = (withUnsubscribe) => {
+    const select = [
+      'id',
+      'campaign_id',
+      'position',
+      'subject',
+      'body_html',
+      'delay_days',
+      'scheduled_at',
+      'sent_at',
+      'status',
+      `campaigns!inner(${campaignFields(withUnsubscribe)})`,
+    ].join(',');
 
-  const res = await dbRequest(query);
+    return `campaign_steps`
+      + `?status=in.(scheduled,pending)`
+      + `&scheduled_at=not.is.null`
+      + `&scheduled_at=lte.${encodeURIComponent(nowIso)}`
+      + `&campaigns.status=eq.active`
+      + `&select=${encodeURIComponent(select)}`
+      + `&order=scheduled_at.asc`
+      + `&limit=${Math.max(1, Math.min(100, Number(limit) || DUE_LIMIT))}`;
+  };
+
+  let res = await dbRequest(buildQuery(true));
+  // Keep the cron alive if this deploy lands before the unsubscribe migration.
+  if (!res.ok && /include_unsubscribe_link/.test(res.error || '')) {
+    res = await dbRequest(buildQuery(false));
+  }
   if (!res.ok) return { ok: false, error: res.error || 'fetch_failed', steps: [] };
 
   const rows = Array.isArray(res.data) ? res.data : [];
@@ -108,6 +127,7 @@ export async function findDueCampaignSteps(now = new Date(), { limit = DUE_LIMIT
         user_id: campaign.user_id,
         status: campaign.status,
         from_email: campaign.from_email,
+        include_unsubscribe_link: campaign.include_unsubscribe_link === true,
         campaign_recipients: campaign.campaign_recipients || [],
         campaign_steps: allSteps,
       },
@@ -186,9 +206,10 @@ async function syncCampaignReplies(campaign) {
 
   if (!repliedEmails.size) return;
 
+  // An unsubscribe is a stronger signal than a reply; don't overwrite it.
   const needUpdate = (campaign.campaign_recipients || []).filter((r) => {
     const email = normalizeEmail(r.email);
-    return repliedEmails.has(email) && r.status !== 'replied';
+    return repliedEmails.has(email) && r.status !== 'replied' && r.status !== 'unsubscribed';
   });
   if (!needUpdate.length) return;
 
@@ -204,7 +225,7 @@ async function syncCampaignReplies(campaign) {
   );
 
   for (const r of campaign.campaign_recipients || []) {
-    if (repliedEmails.has(normalizeEmail(r.email))) {
+    if (repliedEmails.has(normalizeEmail(r.email)) && r.status !== 'unsubscribed') {
       r.status = 'replied';
       r.replied_at = r.replied_at || now;
     }
@@ -255,7 +276,7 @@ export async function publishCampaignStepServer({ campaign, step }) {
   await syncCampaignReplies(campaign);
 
   const toEmails = [...new Set((campaign.campaign_recipients || [])
-    .filter((r) => r.status !== 'replied' && r.status !== 'paused')
+    .filter((r) => !SKIP_STATUSES.has(r.status))
     .map((r) => normalizeEmail(r.email))
     .filter(isEmail))];
 
@@ -318,6 +339,7 @@ export async function publishCampaignStepServer({ campaign, step }) {
     campaignId: campaign.id,
     campaignStepId: step.id,
     provider: tokenRes.provider,
+    unsubscribeEnabled: campaign.include_unsubscribe_link === true,
   }).catch((err) => ({ ok: false, error: err?.message || 'send_failed' })));
 
   const sentCount = results.filter((r) => r && r.ok).length;
