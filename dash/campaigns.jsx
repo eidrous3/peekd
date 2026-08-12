@@ -714,19 +714,32 @@
         opens: r.totalOpens || 0,
         lastOpenedAt: r.lastOpenedAt || null,
         repliedAt: r.repliedAt || null,
+        steps: Array.isArray(r.stepRows) ? r.stepRows : [],
       }));
     }
     const p = D.people;
+    const demoSteps = (opened) => opened.map((o, i) => ({ n: i + 1, sent: 1, opened: o ? 1 : 0, opens: o, lastOpenedAt: null, replied: false }));
     return [
-      { p: p[0], status: 'REPLIED', step: 2, rate: 83 },
-      { p: p[1], status: 'OPENED', step: 2, rate: 14 },
-      { p: p[2], status: 'REPLIED', step: 1, rate: 75 },
-      { p: p[3], status: 'PENDING', step: 3, rate: 44 },
-      { p: p[4], status: 'NO OPENS', step: 2, rate: 0 },
+      { p: p[0], status: 'REPLIED', step: 2, rate: 83, steps: demoSteps([3, 2]) },
+      { p: p[1], status: 'OPENED', step: 2, rate: 14, steps: demoSteps([1, 0]) },
+      { p: p[2], status: 'REPLIED', step: 1, rate: 75, steps: demoSteps([2]) },
+      { p: p[3], status: 'PENDING', step: 3, rate: 44, steps: demoSteps([1, 0, 1]) },
+      { p: p[4], status: 'NO OPENS', step: 2, rate: 0, steps: demoSteps([0, 0]) },
     ];
   }
 
   const RSTATUS = { REPLIED: 'b-replied', OPENED: 'b-opened', PENDING: 'b-sent', 'NO OPENS': 'b-unresp', UNSUBSCRIBED: 'b-unresp' };
+
+  // One chip per step this recipient was actually sent, filled when they opened it.
+  function StepChips({ steps }) {
+    if (!steps || steps.length === 0) return React.createElement('span', { className: 'muted' }, 'Not sent yet');
+    return React.createElement('div', { className: 'step-chips' },
+      steps.map((s) => React.createElement('span', {
+        key: s.n,
+        className: 'step-chip' + (s.opened ? ' opened' : ''),
+        title: 'Step ' + s.n + (s.opened ? ' · opened ' + s.opens + (s.opens === 1 ? ' time' : ' times') : ' · not opened'),
+      }, s.n)));
+  }
 
   function CampaignDetail({ c, onBack, onToggleStatus, onDelete, onRename, onDuplicate, onToggleUnsubscribe, onPublishStep, toast }) {
     const [moreOpen, setMoreOpen] = useState(false);
@@ -873,7 +886,7 @@
       React.createElement('div', { className: 'card', style: { overflow: 'hidden' } },
         React.createElement('table', { className: 'ptable' },
           React.createElement('thead', null, React.createElement('tr', null,
-            ['NAME', 'EMAIL', 'STATUS', 'STEP', 'OPEN RATE'].map((h, i) => React.createElement('th', { key: i }, h)))),
+            ['NAME', 'EMAIL', 'STATUS', 'STEPS OPENED', 'OPEN RATE'].map((h, i) => React.createElement('th', { key: i }, h)))),
           React.createElement('tbody', null,
             filtered.length === 0
               ? React.createElement('tr', null, React.createElement('td', { colSpan: 5, className: 'muted', style: { textAlign: 'center', padding: 28 } },
@@ -882,7 +895,7 @@
                   React.createElement('td', { className: 'pcell-primary' }, React.createElement('div', { className: 'pcell-name' }, React.createElement(Avatar, { initials: r.p.initials, size: 32 }), React.createElement('span', { className: 'pn-main' }, r.p.name))),
                   React.createElement('td', { className: 'muted', 'data-label': 'Email' }, r.p.email),
                   React.createElement('td', { className: 'pcell-meta', 'data-label': 'Status' }, React.createElement('span', { className: 'badge ' + RSTATUS[r.status] }, r.status)),
-                  React.createElement('td', { className: 'muted', 'data-label': 'Step' }, r.step ? 'Step ' + r.step : 'Not sent yet'),
+                  React.createElement('td', { 'data-label': 'Steps opened' }, React.createElement(StepChips, { steps: r.steps })),
                   React.createElement('td', { className: 'pcell-meta', 'data-label': 'Open rate' }, r.rate + '%'),
                 )),
           ),
@@ -992,21 +1005,21 @@
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
+  // Newest step first, with each step's own open/reply outcome.
   function recipientTimeline(r) {
-    const stepLabel = r.step ? 'Step ' + r.step : 'this campaign';
     const events = [];
-    if (r.repliedAt || r.status === 'REPLIED') {
-      events.push({ t: 'delivered', l: 'replied', m: r.repliedAt ? timeAgo(r.repliedAt) : stepLabel });
-    }
-    if (r.opens > 0) {
-      events.push({
-        t: 'opened',
-        l: 'opened ' + stepLabel + (r.opens > 1 ? ' (' + r.opens + ' opens)' : ''),
-        m: r.lastOpenedAt ? timeAgo(r.lastOpenedAt) : '',
-      });
-    }
-    if (r.p.sent > 0) {
-      events.push({ t: 'sent', l: 'received ' + r.p.sent + (r.p.sent === 1 ? ' email' : ' emails'), m: stepLabel });
+    for (const s of [...(r.steps || [])].sort((a, b) => b.n - a.n)) {
+      if (s.replied) {
+        events.push({ t: 'delivered', l: 'replied to Step ' + s.n, m: r.repliedAt ? timeAgo(r.repliedAt) : '' });
+      }
+      if (s.opens > 0) {
+        events.push({
+          t: 'opened',
+          l: 'opened Step ' + s.n + (s.opens > 1 ? ' (' + s.opens + ' opens)' : ''),
+          m: s.lastOpenedAt ? timeAgo(s.lastOpenedAt) : '',
+        });
+      }
+      events.push({ t: 'sent', l: 'received Step ' + s.n, m: s.opens > 0 ? '' : 'no opens yet' });
     }
     return events;
   }

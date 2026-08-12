@@ -141,6 +141,7 @@
           lastStep: engagement?.lastStep || 0,
           lastOpenedAt: engagement?.lastOpenedAt || null,
           replied: engagement?.replied === true || !!r.replied_at,
+          stepRows: Object.values(engagement?.steps || {}).sort((a, b) => a.n - b.n),
         };
       }),
     };
@@ -207,9 +208,17 @@
             lastOpenedAt: null,
             replied: false,
             repliedAt: null,
+            // Keyed by step position: opening step 1 says nothing about step 2.
+            steps: {},
           };
         }
         return byRecipient[email];
+      };
+      const stepEntry = (entry, position) => {
+        if (!entry.steps[position]) {
+          entry.steps[position] = { n: position, sent: 0, opened: 0, opens: 0, lastOpenedAt: null, replied: false };
+        }
+        return entry.steps[position];
       };
 
       for (const te of trackedEmails || []) {
@@ -233,10 +242,16 @@
           const entry = recipientEntry(email);
           entry.sent += 1;
 
+          const position = stepId ? (positionByStepId.get(stepId) || 0) : 0;
+          if (position > entry.lastStep) entry.lastStep = position;
+          const step = position ? stepEntry(entry, position) : null;
+          if (step) step.sent += 1;
+
           const didOpen = hasHumanOpen(recip.email_open_events);
           if (didOpen) {
             openedEmails.add(email);
             entry.opened += 1;
+            if (step) step.opened += 1;
           }
           for (const ev of recip.email_open_events || []) {
             if (ev.classification !== 'human' || !ev.opened_at) continue;
@@ -247,19 +262,23 @@
             if (!entry.lastOpenedAt || ms > new Date(entry.lastOpenedAt).getTime()) {
               entry.lastOpenedAt = ev.opened_at;
             }
+            if (step) {
+              step.opens += 1;
+              if (!step.lastOpenedAt || ms > new Date(step.lastOpenedAt).getTime()) {
+                step.lastOpenedAt = ev.opened_at;
+              }
+            }
           }
 
           if (recip.is_replied) {
             repliedEmails.add(email);
             entry.replied = true;
+            if (step) step.replied = true;
             const at = recip.replied_at || null;
             if (at && (!entry.repliedAt || new Date(at).getTime() > new Date(entry.repliedAt).getTime())) {
               entry.repliedAt = at;
             }
           }
-
-          const position = stepId ? (positionByStepId.get(stepId) || 0) : 0;
-          if (position > entry.lastStep) entry.lastStep = position;
 
           if (stepId && byStep[stepId]) {
             byStep[stepId].sent += 1;
