@@ -83,7 +83,7 @@
   function toUiCampaign(row, openStats) {
     const steps = sortSteps(row.campaign_steps);
     const recipients = Array.isArray(row.campaign_recipients) ? row.campaign_recipients : [];
-    const stats = openStats || { sent: 0, opened: 0, openRate: 0, replies: 0, totalOpens: 0, uniqueOpens: 0, openSeries: [], uniqueOpenSeries: [], byStep: {} };
+    const stats = openStats || { sent: 0, opened: 0, openRate: 0, replies: 0, totalOpens: 0, uniqueOpens: 0, openSeries: [], uniqueOpenSeries: [], byStep: {}, byRecipient: {} };
     const repliesFromRecipients = recipients.filter((r) => r.status === 'replied' || r.replied_at).length;
     const replies = Math.max(stats.replies || 0, repliesFromRecipients);
     return {
@@ -126,13 +126,23 @@
                 : (s.status === 'scheduled' || s.status === 'pending' ? (currentStepNumber(steps) === s.position ? 'active' : 'pending') : 'pending')),
         };
       }),
-      recipientRows: recipients.map((r) => ({
-        id: r.id,
-        email: r.email,
-        personId: r.person_id || null,
-        status: String(r.status || 'active').toUpperCase(),
-        repliedAt: r.replied_at || null,
-      })),
+      recipientRows: recipients.map((r) => {
+        const engagement = stats.byRecipient?.[normalizeEmail(r.email)] || null;
+        return {
+          id: r.id,
+          email: r.email,
+          personId: r.person_id || null,
+          status: String(r.status || 'active').toUpperCase(),
+          repliedAt: r.replied_at || engagement?.repliedAt || null,
+          sentCount: engagement?.sent || 0,
+          openedCount: engagement?.opened || 0,
+          totalOpens: engagement?.opens || 0,
+          openRate: engagement?.openRate || 0,
+          lastStep: engagement?.lastStep || 0,
+          lastOpenedAt: engagement?.lastOpenedAt || null,
+          replied: engagement?.replied === true || !!r.replied_at,
+        };
+      }),
     };
   }
 
@@ -183,6 +193,25 @@
       const byStep = {};
       for (const step of sentSteps) byStep[step.id] = { sent: 0, opened: 0, openRate: 0 };
 
+      const positionByStepId = new Map(sentSteps.map((s) => [s.id, s.position || 0]));
+      // Per-recipient rollup so the recipients table can show real engagement.
+      const byRecipient = {};
+      const recipientEntry = (email) => {
+        if (!byRecipient[email]) {
+          byRecipient[email] = {
+            sent: 0,
+            opened: 0,
+            opens: 0,
+            openRate: 0,
+            lastStep: 0,
+            lastOpenedAt: null,
+            replied: false,
+            repliedAt: null,
+          };
+        }
+        return byRecipient[email];
+      };
+
       for (const te of trackedEmails || []) {
         const linked = te.campaign_id === camp.id
           || (te.campaign_step_id && stepIds.has(te.campaign_step_id));
@@ -201,14 +230,37 @@
           const email = normalizeEmail(recip.email);
           if (!recipSet.has(email)) continue;
           contactedEmails.add(email);
+          const entry = recipientEntry(email);
+          entry.sent += 1;
+
           const didOpen = hasHumanOpen(recip.email_open_events);
-          if (didOpen) openedEmails.add(email);
+          if (didOpen) {
+            openedEmails.add(email);
+            entry.opened += 1;
+          }
           for (const ev of recip.email_open_events || []) {
             if (ev.classification !== 'human' || !ev.opened_at) continue;
             const ms = new Date(ev.opened_at).getTime();
-            if (Number.isFinite(ms)) openEvents.push({ ms, email });
+            if (!Number.isFinite(ms)) continue;
+            openEvents.push({ ms, email });
+            entry.opens += 1;
+            if (!entry.lastOpenedAt || ms > new Date(entry.lastOpenedAt).getTime()) {
+              entry.lastOpenedAt = ev.opened_at;
+            }
           }
-          if (recip.is_replied) repliedEmails.add(email);
+
+          if (recip.is_replied) {
+            repliedEmails.add(email);
+            entry.replied = true;
+            const at = recip.replied_at || null;
+            if (at && (!entry.repliedAt || new Date(at).getTime() > new Date(entry.repliedAt).getTime())) {
+              entry.repliedAt = at;
+            }
+          }
+
+          const position = stepId ? (positionByStepId.get(stepId) || 0) : 0;
+          if (position > entry.lastStep) entry.lastStep = position;
+
           if (stepId && byStep[stepId]) {
             byStep[stepId].sent += 1;
             if (didOpen) byStep[stepId].opened += 1;
@@ -219,6 +271,12 @@
       for (const id of Object.keys(byStep)) {
         const s = byStep[id];
         s.openRate = s.sent > 0 ? Math.round((s.opened / s.sent) * 100) : 0;
+      }
+
+      // Share of the emails this person received that they opened.
+      for (const email of Object.keys(byRecipient)) {
+        const r = byRecipient[email];
+        r.openRate = r.sent > 0 ? Math.round((r.opened / r.sent) * 100) : 0;
       }
 
       const contacted = contactedEmails.size;
@@ -234,6 +292,7 @@
         openSeries: daily.total,
         uniqueOpenSeries: daily.unique,
         byStep,
+        byRecipient,
       });
     }
     return byCampaign;

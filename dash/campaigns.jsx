@@ -689,26 +689,32 @@
     return local.split(/[._-]+/).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') || local;
   }
 
+  // Engagement wins over the stored status: a reply or open is observed fact,
+  // while 'active' only means the sequence hasn't stopped for this person.
+  function recipientStatus(r) {
+    if (r.status === 'UNSUBSCRIBED') return 'UNSUBSCRIBED';
+    if (r.status === 'REPLIED' || r.replied) return 'REPLIED';
+    if (r.openedCount > 0) return 'OPENED';
+    if (r.sentCount > 0) return 'NO OPENS';
+    return 'PENDING';
+  }
+
   function buildRecipients(c) {
     if (Array.isArray(c.recipientRows) && c.recipientRows.length) {
-      return c.recipientRows.map((r) => {
-        const status = r.status === 'REPLIED' ? 'REPLIED'
-          : r.status === 'UNSUBSCRIBED' ? 'UNSUBSCRIBED'
-            : r.status === 'COMPLETED' ? 'OPENED'
-              : r.status === 'PAUSED' ? 'PENDING'
-                : 'PENDING';
-        return {
-          p: {
-            initials: initialsFromEmail(r.email),
-            name: nameFromEmail(r.email),
-            email: r.email,
-            sent: c.step || 1,
-          },
-          status,
-          step: c.step || 1,
-          rate: 0,
-        };
-      });
+      return c.recipientRows.map((r) => ({
+        p: {
+          initials: initialsFromEmail(r.email),
+          name: nameFromEmail(r.email),
+          email: r.email,
+          sent: r.sentCount || 0,
+        },
+        status: recipientStatus(r),
+        step: r.lastStep || 0,
+        rate: r.openRate || 0,
+        opens: r.totalOpens || 0,
+        lastOpenedAt: r.lastOpenedAt || null,
+        repliedAt: r.repliedAt || null,
+      }));
     }
     const p = D.people;
     return [
@@ -746,6 +752,15 @@
       setPublishingStepId(null);
     };
 
+    const rCounts = {
+      All: recipients.length,
+      Opened: recipients.filter(r => r.status === 'OPENED').length,
+      Replied: recipients.filter(r => r.status === 'REPLIED').length,
+      'No opens': recipients.filter(r => r.status === 'NO OPENS').length,
+      Pending: recipients.filter(r => r.status === 'PENDING').length,
+      Unsubscribed: recipients.filter(r => r.status === 'UNSUBSCRIBED').length,
+    };
+
     const query = rQuery.trim().toLowerCase();
     const filtered = recipients.filter(r => {
       if (query && !(String(r.p?.name || '').toLowerCase().includes(query)
@@ -753,6 +768,7 @@
       if (rTab === 'All') return true;
       if (rTab === 'Opened') return r.status === 'OPENED';
       if (rTab === 'Replied') return r.status === 'REPLIED';
+      if (rTab === 'No opens') return r.status === 'NO OPENS';
       if (rTab === 'Pending') return r.status === 'PENDING';
       if (rTab === 'Unsubscribed') return r.status === 'UNSUBSCRIBED';
       return true;
@@ -852,8 +868,9 @@
         ),
       ),
       React.createElement('div', { className: 'tabs', style: { width: 'fit-content', marginBottom: 14 } },
-        ['All', 'Opened', 'Replied', 'Pending', 'Unsubscribed'].map(t =>
-          React.createElement('button', { key: t, className: 'tab' + (rTab === t ? ' active' : ''), onClick: () => setRTab(t) }, t)),
+        ['All', 'Opened', 'Replied', 'No opens', 'Pending', 'Unsubscribed'].map(t =>
+          React.createElement('button', { key: t, className: 'tab' + (rTab === t ? ' active' : ''), onClick: () => setRTab(t) },
+            t + (rCounts[t] ? ' ' + rCounts[t] : ''))),
       ),
       React.createElement('div', { className: 'card', style: { overflow: 'hidden' } },
         React.createElement('table', { className: 'ptable' },
@@ -867,7 +884,7 @@
                   React.createElement('td', { className: 'pcell-primary' }, React.createElement('div', { className: 'pcell-name' }, React.createElement(Avatar, { initials: r.p.initials, size: 32 }), React.createElement('span', { className: 'pn-main' }, r.p.name))),
                   React.createElement('td', { className: 'muted', 'data-label': 'Email' }, r.p.email),
                   React.createElement('td', { className: 'pcell-meta', 'data-label': 'Status' }, React.createElement('span', { className: 'badge ' + RSTATUS[r.status] }, r.status)),
-                  React.createElement('td', { className: 'muted', 'data-label': 'Step' }, 'Step ' + r.step),
+                  React.createElement('td', { className: 'muted', 'data-label': 'Step' }, r.step ? 'Step ' + r.step : 'Not sent yet'),
                   React.createElement('td', { className: 'pcell-meta', 'data-label': 'Open rate' }, r.rate + '%'),
                 )),
           ),
@@ -967,8 +984,38 @@
     );
   }
 
+  function timeAgo(iso) {
+    const ms = Date.now() - new Date(iso).getTime();
+    if (!Number.isFinite(ms)) return '';
+    if (ms < 60_000) return 'just now';
+    if (ms < 3_600_000) return Math.floor(ms / 60_000) + 'm ago';
+    if (ms < 86_400_000) return Math.floor(ms / 3_600_000) + 'h ago';
+    if (ms < 604_800_000) return Math.floor(ms / 86_400_000) + 'd ago';
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function recipientTimeline(r) {
+    const stepLabel = r.step ? 'Step ' + r.step : 'this campaign';
+    const events = [];
+    if (r.repliedAt || r.status === 'REPLIED') {
+      events.push({ t: 'delivered', l: 'replied', m: r.repliedAt ? timeAgo(r.repliedAt) : stepLabel });
+    }
+    if (r.opens > 0) {
+      events.push({
+        t: 'opened',
+        l: 'opened ' + stepLabel + (r.opens > 1 ? ' (' + r.opens + ' opens)' : ''),
+        m: r.lastOpenedAt ? timeAgo(r.lastOpenedAt) : '',
+      });
+    }
+    if (r.p.sent > 0) {
+      events.push({ t: 'sent', l: 'received ' + r.p.sent + (r.p.sent === 1 ? ' email' : ' emails'), m: stepLabel });
+    }
+    return events;
+  }
+
   function PersonDrawer({ r, onClose }) {
     React.useEffect(() => { const k = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, []);
+    const timeline = recipientTimeline(r);
     return React.createElement('div', { className: 'drawer-wrap' },
       React.createElement('div', { className: 'drawer-bg', onClick: onClose }),
       React.createElement('div', { className: 'drawer' },
@@ -980,13 +1027,14 @@
             React.createElement('div', null, React.createElement('div', { style: { fontWeight: 600, fontSize: 16 } }, r.p.name), React.createElement('div', { className: 'muted', style: { fontSize: 13 } }, r.p.email))),
           React.createElement('div', { className: 'engage-grid', style: { marginBottom: 18 } },
             React.createElement('div', { className: 'engage-cell' }, React.createElement('div', { className: 'ec-label' }, 'STATUS'), React.createElement('div', { className: 'ec-value', style: { fontSize: 14 } }, r.status)),
-            React.createElement('div', { className: 'engage-cell' }, React.createElement('div', { className: 'ec-label' }, 'CURRENT STEP'), React.createElement('div', { className: 'ec-value', style: { fontSize: 14 } }, 'Step ' + r.step)),
+            React.createElement('div', { className: 'engage-cell' }, React.createElement('div', { className: 'ec-label' }, 'LAST STEP SENT'), React.createElement('div', { className: 'ec-value', style: { fontSize: 14 } }, r.step ? 'Step ' + r.step : '—')),
             React.createElement('div', { className: 'engage-cell' }, React.createElement('div', { className: 'ec-label' }, 'OPEN RATE'), React.createElement('div', { className: 'ec-value', style: { fontSize: 14 } }, r.rate + '%')),
             React.createElement('div', { className: 'engage-cell' }, React.createElement('div', { className: 'ec-label' }, 'SENT'), React.createElement('div', { className: 'ec-value', style: { fontSize: 14 } }, r.p.sent)),
           ),
           React.createElement('div', { className: 'd-section-title' }, 'RECENT ACTIVITY'),
+          timeline.length === 0 && React.createElement('div', { className: 'muted', style: { fontSize: 13 } }, 'Nothing yet — this recipient has not been emailed.'),
           React.createElement('div', { className: 'timeline' },
-            [{ t: 'opened', l: 'opened Step ' + r.step, m: 'iPhone · 2h ago' }, { t: 'delivered', l: 'delivered', m: 'Step ' + r.step }, { t: 'sent', l: 'sent', m: 'Step ' + r.step }].map((e, i) =>
+            timeline.map((e, i) =>
               React.createElement('div', { key: i, className: 'tl-event' },
                 React.createElement('span', { className: 'timeline-ico ti-' + e.t }, React.createElement(Icon, { name: e.t === 'opened' ? 'eye' : e.t === 'delivered' ? 'check' : 'send', size: 15 })),
                 React.createElement('div', { className: 'tl-body' }, React.createElement('div', { className: 'tl-line' }, React.createElement('span', { className: 'tl-text' }, React.createElement('b', null, r.p.name + ' '), e.l)), React.createElement('div', { className: 'tl-meta' }, e.m)))),
