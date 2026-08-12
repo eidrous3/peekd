@@ -272,10 +272,6 @@ tr.clickable{cursor:pointer}
 .pcell-name{display:flex;align-items:center;gap:11px}
 .pcell-name .pn-main{font-weight:550;white-space:nowrap}
 .pcell-name .pn-email{font-size:11.5px;color:var(--fg-mute)}
-.step-chips{display:flex;gap:5px;flex-wrap:wrap}
-.step-chip{display:grid;place-items:center;width:22px;height:22px;border-radius:6px;font-size:11px;font-weight:600;
-  background:var(--bg-2);color:var(--fg-mute);border:1px solid var(--line)}
-.step-chip.opened{background:var(--accent-soft);color:var(--accent);border-color:transparent}
 .rate-dot{display:inline-flex;align-items:center;gap:6px;font-weight:600}
 .rate-dot .rd{width:8px;height:8px;border-radius:50%}
 .rd.g{background:var(--good)}.rd.y{background:var(--warn)}.rd.r{background:var(--danger)}

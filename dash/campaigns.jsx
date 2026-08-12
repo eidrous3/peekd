@@ -689,33 +689,36 @@
     return local.split(/[._-]+/).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') || local;
   }
 
-  // Engagement wins over the stored status: a reply or open is observed fact,
-  // while 'active' only means the sequence hasn't stopped for this person.
-  function recipientStatus(r) {
+  // Status describes the latest step actually sent, not the whole history: someone
+  // who opened step 1 and ignored step 2 is going cold, and that should show.
+  function recipientStatus(r, current) {
     if (r.status === 'UNSUBSCRIBED') return 'UNSUBSCRIBED';
     if (r.status === 'REPLIED' || r.replied) return 'REPLIED';
-    if (r.openedCount > 0) return 'OPENED';
-    if (r.sentCount > 0) return 'NO OPENS';
-    return 'PENDING';
+    if (!current) return 'PENDING';
+    return current.opened > 0 ? 'OPENED' : 'NO OPENS';
   }
 
   function buildRecipients(c) {
     if (Array.isArray(c.recipientRows) && c.recipientRows.length) {
-      return c.recipientRows.map((r) => ({
-        p: {
-          initials: initialsFromEmail(r.email),
-          name: nameFromEmail(r.email),
-          email: r.email,
-          sent: r.sentCount || 0,
-        },
-        status: recipientStatus(r),
-        step: r.lastStep || 0,
-        rate: r.openRate || 0,
-        opens: r.totalOpens || 0,
-        lastOpenedAt: r.lastOpenedAt || null,
-        repliedAt: r.repliedAt || null,
-        steps: Array.isArray(r.stepRows) ? r.stepRows : [],
-      }));
+      return c.recipientRows.map((r) => {
+        const steps = Array.isArray(r.stepRows) ? r.stepRows : [];
+        const current = steps.length ? steps[steps.length - 1] : null;
+        return {
+          p: {
+            initials: initialsFromEmail(r.email),
+            name: nameFromEmail(r.email),
+            email: r.email,
+            sent: r.sentCount || 0,
+          },
+          status: recipientStatus(r, current),
+          step: current?.n || 0,
+          rate: r.openRate || 0,
+          opens: r.totalOpens || 0,
+          lastOpenedAt: r.lastOpenedAt || null,
+          repliedAt: r.repliedAt || null,
+          steps,
+        };
+      });
     }
     const p = D.people;
     const demoSteps = (opened) => opened.map((o, i) => ({ n: i + 1, sent: 1, opened: o ? 1 : 0, opens: o, lastOpenedAt: null, replied: false }));
@@ -729,17 +732,6 @@
   }
 
   const RSTATUS = { REPLIED: 'b-replied', OPENED: 'b-opened', PENDING: 'b-sent', 'NO OPENS': 'b-unresp', UNSUBSCRIBED: 'b-unresp' };
-
-  // One chip per step this recipient was actually sent, filled when they opened it.
-  function StepChips({ steps }) {
-    if (!steps || steps.length === 0) return React.createElement('span', { className: 'muted' }, 'Not sent yet');
-    return React.createElement('div', { className: 'step-chips' },
-      steps.map((s) => React.createElement('span', {
-        key: s.n,
-        className: 'step-chip' + (s.opened ? ' opened' : ''),
-        title: 'Step ' + s.n + (s.opened ? ' · opened ' + s.opens + (s.opens === 1 ? ' time' : ' times') : ' · not opened'),
-      }, s.n)));
-  }
 
   function CampaignDetail({ c, onBack, onToggleStatus, onDelete, onRename, onDuplicate, onToggleUnsubscribe, onPublishStep, toast }) {
     const [moreOpen, setMoreOpen] = useState(false);
@@ -886,7 +878,7 @@
       React.createElement('div', { className: 'card', style: { overflow: 'hidden' } },
         React.createElement('table', { className: 'ptable' },
           React.createElement('thead', null, React.createElement('tr', null,
-            ['NAME', 'EMAIL', 'STATUS', 'STEPS OPENED', 'OPEN RATE'].map((h, i) => React.createElement('th', { key: i }, h)))),
+            ['NAME', 'EMAIL', 'STATUS', 'CURRENT STEP', 'OPEN RATE'].map((h, i) => React.createElement('th', { key: i }, h)))),
           React.createElement('tbody', null,
             filtered.length === 0
               ? React.createElement('tr', null, React.createElement('td', { colSpan: 5, className: 'muted', style: { textAlign: 'center', padding: 28 } },
@@ -895,7 +887,7 @@
                   React.createElement('td', { className: 'pcell-primary' }, React.createElement('div', { className: 'pcell-name' }, React.createElement(Avatar, { initials: r.p.initials, size: 32 }), React.createElement('span', { className: 'pn-main' }, r.p.name))),
                   React.createElement('td', { className: 'muted', 'data-label': 'Email' }, r.p.email),
                   React.createElement('td', { className: 'pcell-meta', 'data-label': 'Status' }, React.createElement('span', { className: 'badge ' + RSTATUS[r.status] }, r.status)),
-                  React.createElement('td', { 'data-label': 'Steps opened' }, React.createElement(StepChips, { steps: r.steps })),
+                  React.createElement('td', { className: 'muted', 'data-label': 'Current step' }, r.step ? 'Step ' + r.step : 'Not sent yet'),
                   React.createElement('td', { className: 'pcell-meta', 'data-label': 'Open rate' }, r.rate + '%'),
                 )),
           ),
@@ -1038,7 +1030,7 @@
             React.createElement('div', null, React.createElement('div', { style: { fontWeight: 600, fontSize: 16 } }, r.p.name), React.createElement('div', { className: 'muted', style: { fontSize: 13 } }, r.p.email))),
           React.createElement('div', { className: 'engage-grid', style: { marginBottom: 18 } },
             React.createElement('div', { className: 'engage-cell' }, React.createElement('div', { className: 'ec-label' }, 'STATUS'), React.createElement('div', { className: 'ec-value', style: { fontSize: 14 } }, r.status)),
-            React.createElement('div', { className: 'engage-cell' }, React.createElement('div', { className: 'ec-label' }, 'LAST STEP SENT'), React.createElement('div', { className: 'ec-value', style: { fontSize: 14 } }, r.step ? 'Step ' + r.step : '—')),
+            React.createElement('div', { className: 'engage-cell' }, React.createElement('div', { className: 'ec-label' }, 'CURRENT STEP'), React.createElement('div', { className: 'ec-value', style: { fontSize: 14 } }, r.step ? 'Step ' + r.step : '—')),
             React.createElement('div', { className: 'engage-cell' }, React.createElement('div', { className: 'ec-label' }, 'OPEN RATE'), React.createElement('div', { className: 'ec-value', style: { fontSize: 14 } }, r.rate + '%')),
             React.createElement('div', { className: 'engage-cell' }, React.createElement('div', { className: 'ec-label' }, 'SENT'), React.createElement('div', { className: 'ec-value', style: { fontSize: 14 } }, r.p.sent)),
           ),
