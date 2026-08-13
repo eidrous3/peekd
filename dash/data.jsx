@@ -159,11 +159,11 @@
   ];
 
   const people = [
-    { initials: 'SM', name: 'Sarah Mitchell', email: 'sarah@acmecorp.com', sent: 12, rate: 83, dot: 'g', last: '2 days ago', status: 'ACTIVE' },
-    { initials: 'JO', name: 'James Okafor', email: 'james@venturelab.io', sent: 7, rate: 14, dot: 'r', last: '1 week ago', status: 'UNRESPONSIVE' },
-    { initials: 'LH', name: 'Lena Hoffmann', email: 'lena@designstudio.de', sent: 4, rate: 75, dot: 'g', last: 'Today', status: 'REPLIED' },
-    { initials: 'CR', name: 'Carlos Rivera', email: 'carlos@startupx.co', sent: 9, rate: 44, dot: 'y', last: '3 days ago', status: 'ACTIVE' },
-    { initials: 'PN', name: 'Priya Nair', email: 'priya@techbridge.in', sent: 2, rate: 0, dot: 'r', last: '2 weeks ago', status: 'UNRESPONSIVE' },
+    { id: 'p1', initials: 'SM', name: 'Sarah Mitchell', email: 'sarah@acmecorp.com', listIds: ['l1'], sent: 12, rate: 83, dot: 'g', last: '2 days ago', status: 'ACTIVE' },
+    { id: 'p2', initials: 'JO', name: 'James Okafor', email: 'james@venturelab.io', listIds: [], sent: 7, rate: 14, dot: 'r', last: '1 week ago', status: 'UNRESPONSIVE' },
+    { id: 'p3', initials: 'LH', name: 'Lena Hoffmann', email: 'lena@designstudio.de', listIds: ['l2'], sent: 4, rate: 75, dot: 'g', last: 'Today', status: 'REPLIED' },
+    { id: 'p4', initials: 'CR', name: 'Carlos Rivera', email: 'carlos@startupx.co', listIds: ['l1', 'l2'], sent: 9, rate: 44, dot: 'y', last: '3 days ago', status: 'ACTIVE' },
+    { id: 'p5', initials: 'PN', name: 'Priya Nair', email: 'priya@techbridge.in', listIds: [], sent: 2, rate: 0, dot: 'r', last: '2 weeks ago', status: 'UNRESPONSIVE' },
   ];
 
   const lists = [

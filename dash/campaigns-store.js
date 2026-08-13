@@ -369,12 +369,14 @@
 
     if (listId) {
       const { data, error } = await sb
-        .from('people')
-        .select('id, email')
+        .from('list_members')
+        .select('people!inner(id, email)')
         .eq('user_id', userId)
         .eq('list_id', listId);
       if (error) return { ok: false, error: error.message, rows: [] };
-      for (const person of data || []) {
+      for (const row of data || []) {
+        const person = row.people;
+        if (!person) continue;
         const email = normalizeEmail(person.email);
         if (!isEmail(email)) continue;
         map.set(email, { email, person_id: person.id, status: 'active' });

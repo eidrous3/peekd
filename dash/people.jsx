@@ -14,12 +14,27 @@
     return 'Something went wrong. Try again.';
   }
 
+  // A person can belong to any number of lists, so this is a multi-select.
   function ListPicker({ lists, value, onChange, disabled }) {
     const [open, setOpen] = useState(false);
-    const selected = (lists || []).find((l) => l.id === value);
-    const label = selected ? selected.name : 'No list';
-    return React.createElement('div', { className: 'field', style: { position: 'relative' } },
-      React.createElement('label', { className: 'field-label' }, 'ADD TO LIST'),
+    const wrapRef = useRef(null);
+    const selected = value || [];
+    const names = (lists || []).filter((l) => selected.includes(l.id)).map((l) => l.name);
+    const label = names.length === 0 ? 'No list'
+      : names.length <= 2 ? names.join(', ')
+      : names.length + ' lists';
+
+    useEffect(() => {
+      if (!open) return;
+      const h = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+      document.addEventListener('mousedown', h);
+      return () => document.removeEventListener('mousedown', h);
+    }, [open]);
+
+    const toggle = (id) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+
+    return React.createElement('div', { className: 'field', style: { position: 'relative' }, ref: wrapRef },
+      React.createElement('label', { className: 'field-label' }, 'LISTS'),
       React.createElement('button', {
         type: 'button',
         className: 'select',
@@ -27,14 +42,19 @@
         onClick: () => !disabled && setOpen(!open),
         disabled,
       }, label, React.createElement(Icon, { name: 'chevDown', size: 14 })),
-      open && !disabled && React.createElement('div', { className: 'card', style: { position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 5, padding: 5, boxShadow: 'var(--shadow-md)' } },
-        React.createElement('button', { className: 'check-line', style: { width: '100%' }, onClick: () => { onChange(null); setOpen(false); } }, 'No list'),
-        (lists || []).map((l) => React.createElement('button', {
-          key: l.id,
-          className: 'check-line',
-          style: { width: '100%' },
-          onClick: () => { onChange(l.id); setOpen(false); },
-        }, l.name)),
+      open && !disabled && React.createElement('div', { className: 'card', style: { position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 5, padding: 5, boxShadow: 'var(--shadow-md)', maxHeight: 220, overflowY: 'auto' } },
+        (lists || []).length === 0
+          ? React.createElement('div', { className: 'muted', style: { fontSize: 12.5, padding: '8px 10px' } }, 'No lists yet.')
+          : (lists || []).map((l) => React.createElement('button', {
+            key: l.id,
+            type: 'button',
+            className: 'check-line',
+            style: { width: '100%' },
+            onClick: () => toggle(l.id),
+          },
+            React.createElement('span', { className: 'checkbox' + (selected.includes(l.id) ? ' on' : '') },
+              selected.includes(l.id) && React.createElement(Icon, { name: 'check', size: 12 })),
+            React.createElement('span', { style: { flex: 1, textAlign: 'left' } }, l.name))),
       ),
     );
   }
@@ -107,8 +127,8 @@
         return;
       }
       setAdding(false);
-      await loadPeople();
-      toast('Person added ✓');
+      await Promise.all([loadPeople(), loadLists()]);
+      toast(res.listError ? 'Person added, but lists could not be updated.' : 'Person added ✓');
     }
 
     async function handleUpdatePerson(id, payload) {
@@ -124,8 +144,8 @@
         return;
       }
       setEditingPerson(null);
-      await loadPeople();
-      toast('Changes saved ✓');
+      await Promise.all([loadPeople(), loadLists()]);
+      toast(res.listError ? 'Changes saved, but lists could not be updated.' : 'Changes saved ✓');
     }
 
     async function handleDeletePerson(id) {
@@ -179,22 +199,32 @@
       toast('List created ✓');
     }
 
-    async function handleUpdateList(id, name) {
-      if (!window.PeekdLists?.updateList) {
-        setLists(lists.map(x => x.id === id ? { ...x, name } : x));
+    async function handleUpdateList(id, name, memberIds) {
+      const Lists = window.PeekdLists;
+      if (!Lists?.updateList) {
+        setLists(lists.map(x => x.id === id ? { ...x, name, count: (memberIds || []).length } : x));
+        setPeople(people.map(p => ({
+          ...p,
+          listIds: (memberIds || []).includes(p.id)
+            ? [...new Set([...(p.listIds || []), id])]
+            : (p.listIds || []).filter(x => x !== id),
+        })));
         setEditingList(null);
         toast('List updated ✓');
         return;
       }
-      const res = await window.PeekdLists.updateList(id, name);
+      const res = await Lists.updateList(id, name);
       if (!res.ok) {
         const msg = res.error === 'duplicate_name' ? 'A list with that name already exists.' : 'Could not update list.';
         toast(msg);
         return;
       }
+      const synced = memberIds && Lists.setListMembers
+        ? await Lists.setListMembers(id, memberIds)
+        : { ok: true };
       setEditingList(null);
-      await loadLists();
-      toast('List updated ✓');
+      await Promise.all([loadLists(), loadPeople()]);
+      toast(synced.ok ? 'List updated ✓' : 'Name saved, but members could not be updated.');
     }
 
     async function handleDeleteList(id) {
@@ -228,13 +258,10 @@
       toast('List duplicated ✓');
     }
 
+    // Both tabs need people and lists: the Lists tab manages membership.
     React.useEffect(() => {
-      if (tab === 'people') {
-        loadPeople();
-        loadLists();
-        return;
-      }
-      if (free || tab !== 'lists') return;
+      if (free && tab === 'lists') return;
+      loadPeople();
       loadLists();
     }, [free, tab]);
 
@@ -321,7 +348,7 @@
       adding && React.createElement(AddPerson, { lists, onClose: () => setAdding(false), onCreate: handleCreatePerson }),
       creatingList && React.createElement(CreateList, { people, onClose: () => setCreatingList(false), onCreate: handleCreateList }),
       editingPerson && React.createElement(EditPerson, { p: editingPerson, lists, onClose: () => setEditingPerson(null), onSave: (payload) => handleUpdatePerson(editingPerson.id, payload) }),
-      editingList && React.createElement(EditList, { l: editingList, people, onClose: () => setEditingList(null), onSave: (name) => handleUpdateList(editingList.id, name) }),
+      editingList && React.createElement(EditList, { l: editingList, people, onClose: () => setEditingList(null), onSave: (name, memberIds) => handleUpdateList(editingList.id, name, memberIds) }),
     );
   }
 
@@ -342,14 +369,14 @@
     const [last, setLast] = useState('');
     const [email, setEmail] = useState('');
     const [company, setCompany] = useState('');
-    const [listId, setListId] = useState(null);
+    const [listIds, setListIds] = useState([]);
     const [saving, setSaving] = useState(false);
     const badEmail = email.trim() && !(window.PeekdPeople?.isEmail?.(email) ?? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()));
 
     async function submit() {
       if (saving) return;
       setSaving(true);
-      await onCreate({ firstName: first, lastName: last, email, company, listId });
+      await onCreate({ firstName: first, lastName: last, email, company, listIds });
       setSaving(false);
     }
 
@@ -375,7 +402,7 @@
           badEmail && React.createElement('span', { style: { fontSize: 11.5, color: 'var(--danger)' } }, 'Enter a valid email address')),
         React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'COMPANY (optional)'),
           React.createElement('input', { className: 'input', placeholder: 'Acme Corp', value: company, onChange: e => setCompany(e.target.value), disabled: saving })),
-        React.createElement(ListPicker, { lists, value: listId, onChange: setListId, disabled: saving }),
+        React.createElement(ListPicker, { lists, value: listIds, onChange: setListIds, disabled: saving }),
       ),
     );
   }
@@ -476,14 +503,14 @@
     const [last, setLast] = useState(p.lastName || (p.name || '').split(' ').slice(1).join(' ') || '');
     const [email, setEmail] = useState(p.email || '');
     const [company, setCompany] = useState(p.company || '');
-    const [listId, setListId] = useState(p.listId || null);
+    const [listIds, setListIds] = useState(p.listIds || []);
     const [saving, setSaving] = useState(false);
     const badEmail = email.trim() && !(window.PeekdPeople?.isEmail?.(email) ?? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()));
 
     async function submit() {
       if (saving) return;
       setSaving(true);
-      await onSave({ firstName: first, lastName: last, email, company, listId });
+      await onSave({ firstName: first, lastName: last, email, company, listIds });
       setSaving(false);
     }
 
@@ -509,30 +536,85 @@
           badEmail && React.createElement('span', { style: { fontSize: 11.5, color: 'var(--danger)' } }, 'Enter a valid email address')),
         React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'COMPANY'),
           React.createElement('input', { className: 'input', placeholder: 'Acme Corp', value: company, onChange: e => setCompany(e.target.value), disabled: saving })),
-        React.createElement(ListPicker, { lists, value: listId, onChange: setListId, disabled: saving }),
+        React.createElement(ListPicker, { lists, value: listIds, onChange: setListIds, disabled: saving }),
       ),
     );
   }
 
   function EditList({ l, people, onClose, onSave }) {
     const [name, setName] = useState(l.name);
-    const members = (people || []).filter((p) => p.listId === l.id);
+    const [memberIds, setMemberIds] = useState(
+      () => (people || []).filter((p) => (p.listIds || []).includes(l.id)).map((p) => p.id),
+    );
+    const [query, setQuery] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const inList = new Set(memberIds);
+    const members = (people || []).filter((p) => inList.has(p.id));
+    const q = query.trim().toLowerCase();
+    const matches = q
+      ? (people || []).filter((p) => !inList.has(p.id)
+        && (p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q))).slice(0, 8)
+      : [];
+
+    const add = (id) => setMemberIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
+    const remove = (id) => setMemberIds((ids) => ids.filter((x) => x !== id));
+
+    async function submit() {
+      if (saving) return;
+      setSaving(true);
+      await onSave(name.trim() || l.name, memberIds);
+      setSaving(false);
+    }
+
     return React.createElement(ModalShell, {
       title: 'Edit List', onClose, wide: true,
       foot: [
-        React.createElement('button', { key: 'c', className: 'btn btn-ghost', onClick: onClose }, 'Cancel'),
-        React.createElement('button', { key: 's', className: 'btn btn-primary', onClick: () => onSave(name.trim() || l.name) }, 'Save changes'),
+        React.createElement('button', { key: 'c', className: 'btn btn-ghost', onClick: onClose, disabled: saving }, 'Cancel'),
+        React.createElement('button', { key: 's', className: 'btn btn-primary', onClick: submit, disabled: saving }, saving ? 'Saving…' : 'Save changes'),
       ],
     },
       React.createElement('div', { className: 'field', style: { marginBottom: 16 } }, React.createElement('label', { className: 'field-label' }, 'LIST NAME'),
-        React.createElement('input', { className: 'input', value: name, onChange: e => setName(e.target.value) })),
-      React.createElement('div', { className: 'field-label', style: { marginBottom: 8 } }, 'PEOPLE IN THIS LIST'),
-      React.createElement('div', { className: 'search-input', style: { marginBottom: 12 } }, React.createElement(Icon, { name: 'search', size: 15 }), React.createElement('input', { placeholder: 'Search to add people...' })),
+        React.createElement('input', { className: 'input', value: name, onChange: e => setName(e.target.value), disabled: saving })),
+      React.createElement('div', { className: 'field-label', style: { marginBottom: 8 } }, 'PEOPLE IN THIS LIST · ' + members.length),
+      React.createElement('div', { className: 'search-input', style: { marginBottom: 12 } },
+        React.createElement(Icon, { name: 'search', size: 15 }),
+        React.createElement('input', {
+          placeholder: 'Search to add people...',
+          value: query,
+          onChange: e => setQuery(e.target.value),
+          disabled: saving,
+        })),
+      q && React.createElement('div', { style: { marginBottom: 12 } },
+        matches.length === 0
+          ? React.createElement('div', { className: 'muted', style: { fontSize: 13, padding: '8px 2px' } }, 'No matching people outside this list.')
+          : matches.map((m) => React.createElement('button', {
+            key: m.id,
+            type: 'button',
+            className: 'check-line',
+            style: { width: '100%' },
+            onClick: () => add(m.id),
+            disabled: saving,
+          },
+            React.createElement(Avatar, { initials: m.initials, size: 26 }),
+            React.createElement('div', { style: { flex: 1, minWidth: 0, textAlign: 'left' } },
+              React.createElement('div', { style: { fontSize: 13, fontWeight: 500 } }, m.name),
+              React.createElement('div', { className: 'pn-email' }, m.email)),
+            React.createElement(Icon, { name: 'plus', size: 15 }))),
+      ),
       members.length === 0
         ? React.createElement('div', { className: 'muted', style: { fontSize: 13, padding: '8px 2px' } }, 'No members yet.')
         : members.map((m) => React.createElement('div', { key: m.id, className: 'member-row' },
             React.createElement(Avatar, { initials: m.initials, size: 28 }),
-            React.createElement('div', { style: { flex: 1, minWidth: 0 } }, React.createElement('div', { style: { fontSize: 13, fontWeight: 500 } }, m.name), React.createElement('div', { className: 'pn-email' }, m.email)))),
+            React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+              React.createElement('div', { style: { fontSize: 13, fontWeight: 500 } }, m.name),
+              React.createElement('div', { className: 'pn-email' }, m.email)),
+            React.createElement('button', {
+              className: 'row-act',
+              title: 'Remove from list',
+              onClick: () => remove(m.id),
+              disabled: saving,
+            }, React.createElement(Icon, { name: 'x', size: 14 })))),
     );
   }
 

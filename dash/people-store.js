@@ -1,5 +1,6 @@
 (function () {
-  const PUBLIC_COLUMNS = 'id, first_name, last_name, email, company, list_id, created_at';
+  const PUBLIC_COLUMNS = 'id, first_name, last_name, email, company, created_at';
+  const COLUMNS_WITH_LISTS = `${PUBLIC_COLUMNS}, list_members(list_id)`;
 
   async function session() {
     const Auth = window.PeekdAuth;
@@ -97,7 +98,7 @@
       name: fullName(first, last),
       email: row.email || '',
       company: row.company || '',
-      listId: row.list_id || null,
+      listIds: (row.list_members || []).map((m) => m.list_id).filter(Boolean),
       initials: initials(first, last, row.email),
       sent: 0,
       rate: 0,
@@ -112,8 +113,53 @@
     const lastName = String(input.lastName ?? input.last_name ?? '').trim();
     const email = String(input.email || '').trim().toLowerCase();
     const company = String(input.company || '').trim() || null;
-    const listId = input.listId || input.list_id || null;
-    return { firstName, lastName, email, company, listId };
+    // Left undefined when the caller says nothing about lists, so an update that
+    // only touches name/email does not wipe existing membership.
+    let listIds;
+    if (Array.isArray(input.listIds)) listIds = [...new Set(input.listIds.filter(Boolean))];
+    else if ('listId' in input || 'list_id' in input) {
+      const single = input.listId || input.list_id;
+      listIds = single ? [single] : [];
+    }
+    return { firstName, lastName, email, company, listIds };
+  }
+
+  // Writes only the difference between a person's current lists and `listIds`.
+  async function syncPersonLists(sb, userId, personId, listIds) {
+    const { data, error } = await sb
+      .from('list_members')
+      .select('list_id')
+      .eq('person_id', personId)
+      .eq('user_id', userId);
+
+    if (error) return { ok: false, error: error.message };
+
+    const current = (data || []).map((r) => r.list_id);
+    const next = [...new Set((listIds || []).filter(Boolean))];
+    const toAdd = next.filter((id) => !current.includes(id));
+    const toRemove = current.filter((id) => !next.includes(id));
+
+    if (toAdd.length) {
+      const { error: addError } = await sb
+        .from('list_members')
+        .upsert(
+          toAdd.map((listId) => ({ list_id: listId, person_id: personId, user_id: userId })),
+          { onConflict: 'list_id,person_id', ignoreDuplicates: true },
+        );
+      if (addError) return { ok: false, error: addError.message };
+    }
+
+    if (toRemove.length) {
+      const { error: removeError } = await sb
+        .from('list_members')
+        .delete()
+        .eq('person_id', personId)
+        .eq('user_id', userId)
+        .in('list_id', toRemove);
+      if (removeError) return { ok: false, error: removeError.message };
+    }
+
+    return { ok: true };
   }
 
   async function fetchPeople() {
@@ -123,11 +169,15 @@
     const sb = window.PeekdAuth.client();
     if (!sb) return { ok: false, error: 'not_configured', people: [] };
 
-    const { data, error } = await sb
+    const query = (columns) => sb
       .from('people')
-      .select(PUBLIC_COLUMNS)
+      .select(columns)
       .eq('user_id', s.user.id)
       .order('created_at', { ascending: false });
+
+    let { data, error } = await query(COLUMNS_WITH_LISTS);
+    // Tolerate a database that has not run the list_members migration yet.
+    if (error) ({ data, error } = await query(PUBLIC_COLUMNS));
 
     if (error) return { ok: false, error: error.message, people: [] };
 
@@ -141,7 +191,7 @@
   }
 
   async function createPerson(input) {
-    const { firstName, lastName, email, company, listId } = normalizeInput(input);
+    const { firstName, lastName, email, company, listIds } = normalizeInput(input);
     if (!email) return { ok: false, error: 'email_required' };
     if (!isEmail(email)) return { ok: false, error: 'invalid_email' };
 
@@ -159,7 +209,6 @@
         last_name: lastName,
         email,
         company,
-        list_id: listId || null,
       })
       .select(PUBLIC_COLUMNS)
       .single();
@@ -169,13 +218,20 @@
       return { ok: false, error: error.message };
     }
 
-    return { ok: true, person: toUiPerson(data) };
+    const person = toUiPerson(data);
+    if (listIds?.length) {
+      const synced = await syncPersonLists(sb, s.user.id, data.id, listIds);
+      if (!synced.ok) return { ok: true, person, listError: synced.error };
+      person.listIds = listIds;
+    }
+
+    return { ok: true, person };
   }
 
   async function updatePerson(id, input) {
     if (!id) return { ok: false, error: 'invalid_input' };
 
-    const { firstName, lastName, email, company, listId } = normalizeInput(input);
+    const { firstName, lastName, email, company, listIds } = normalizeInput(input);
     if (!email) return { ok: false, error: 'email_required' };
     if (!isEmail(email)) return { ok: false, error: 'invalid_email' };
 
@@ -192,7 +248,6 @@
         last_name: lastName,
         email,
         company,
-        list_id: listId || null,
       })
       .eq('id', id)
       .eq('user_id', s.user.id)
@@ -204,7 +259,14 @@
       return { ok: false, error: error.message };
     }
 
-    return { ok: true, person: toUiPerson(data) };
+    const person = toUiPerson(data);
+    if (listIds) {
+      const synced = await syncPersonLists(sb, s.user.id, id, listIds);
+      if (!synced.ok) return { ok: true, person, listError: synced.error };
+      person.listIds = listIds;
+    }
+
+    return { ok: true, person };
   }
 
   async function deletePerson(id) {
@@ -300,7 +362,6 @@
           last_name: lastName,
           email,
           company: null,
-          list_id: null,
         })
         .select(PUBLIC_COLUMNS)
         .single();
