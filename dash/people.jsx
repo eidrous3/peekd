@@ -7,6 +7,11 @@
 
   const statusClass = { ACTIVE: 'b-active', REPLIED: 'b-replied', UNRESPONSIVE: 'b-unresp' };
 
+  function membershipErrorMessage(error, fallback) {
+    if (error === 'migration_missing') return 'List membership is not set up in the database yet.';
+    return fallback;
+  }
+
   function personErrorMessage(error) {
     if (error === 'duplicate_email') return 'A contact with that email already exists.';
     if (error === 'email_required') return 'Enter an email address.';
@@ -180,13 +185,20 @@
       setListsStatus('ready');
     }
 
-    async function handleCreateList(name) {
-      if (!window.PeekdLists?.createList) {
+    async function handleCreateList(name, personIds) {
+      const Lists = window.PeekdLists;
+      const members = personIds || [];
+      if (!Lists?.createList) {
+        const id = 'l' + Date.now();
+        setLists(ls => [{ id, name, count: members.length, created: 'Today', sent: 0, rate: 0, dot: 'r', last: '—' }, ...ls]);
+        setPeople(people.map(p => (members.includes(p.id)
+          ? { ...p, listIds: [...new Set([...(p.listIds || []), id])] }
+          : p)));
         setCreatingList(false);
         toast('List created ✓');
         return;
       }
-      const res = await window.PeekdLists.createList(name);
+      const res = await Lists.createList(name);
       if (!res.ok) {
         const msg = res.error === 'duplicate_name' ? 'A list with that name already exists.'
           : res.error === 'name_required' ? 'Enter a list name.'
@@ -194,9 +206,13 @@
         toast(msg);
         return;
       }
+      const added = members.length && Lists.addPeopleToList
+        ? await Lists.addPeopleToList(res.list.id, members)
+        : { ok: true };
       setCreatingList(false);
-      await loadLists();
-      toast('List created ✓');
+      await Promise.all([loadLists(), loadPeople()]);
+      toast(added.ok ? 'List created ✓'
+        : membershipErrorMessage(added.error, 'List created, but people could not be added.'));
     }
 
     async function handleUpdateList(id, name, memberIds) {
@@ -224,7 +240,8 @@
         : { ok: true };
       setEditingList(null);
       await Promise.all([loadLists(), loadPeople()]);
-      toast(synced.ok ? 'List updated ✓' : 'Name saved, but members could not be updated.');
+      toast(synced.ok ? 'List updated ✓'
+        : membershipErrorMessage(synced.error, 'Name saved, but members could not be updated.'));
     }
 
     async function handleDeleteList(id) {
@@ -411,12 +428,19 @@
     const [tab, setTab] = useState('select');
     const [sel, setSel] = useState({});
     const [name, setName] = useState('');
+    const [query, setQuery] = useState('');
     const [saving, setSaving] = useState(false);
+
+    const selectedIds = Object.keys(sel).filter((id) => sel[id]);
+    const q = query.trim().toLowerCase();
+    const shown = q
+      ? (people || []).filter((p) => p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
+      : (people || []);
 
     async function submit() {
       if (saving) return;
       setSaving(true);
-      await onCreate(name);
+      await onCreate(name, selectedIds);
       setSaving(false);
     }
 
@@ -429,15 +453,23 @@
     },
       React.createElement('div', { className: 'field', style: { marginBottom: 16 } }, React.createElement('label', { className: 'field-label' }, 'LIST NAME'),
         React.createElement('input', { className: 'input', placeholder: 'Enterprise Leads', value: name, onChange: e => setName(e.target.value), disabled: saving })),
-      React.createElement('div', { className: 'field-label', style: { marginBottom: 8 } }, 'ADD PEOPLE'),
+      React.createElement('div', { className: 'field-label', style: { marginBottom: 8 } },
+        'ADD PEOPLE' + (selectedIds.length ? ' · ' + selectedIds.length + ' selected' : '')),
       React.createElement('div', { className: 'tabs', style: { width: 'fit-content', marginBottom: 12 } },
         React.createElement('button', { className: 'tab' + (tab === 'select' ? ' active' : ''), onClick: () => setTab('select') }, 'Search & select'),
         React.createElement('button', { className: 'tab' + (tab === 'upload' ? ' active' : ''), onClick: () => setTab('upload') }, 'Bulk upload')),
       tab === 'select'
-        ? React.createElement('div', null, (people || []).map((p) => React.createElement('label', { key: p.id, className: 'check-line', onClick: () => setSel({ ...sel, [p.id]: !sel[p.id] }) },
-            React.createElement('span', { className: 'checkbox' + (sel[p.id] ? ' on' : '') }, sel[p.id] && React.createElement(Icon, { name: 'check', size: 12 })),
-            React.createElement(Avatar, { initials: p.initials, size: 26 }),
-            React.createElement('div', { style: { flex: 1 } }, React.createElement('div', { style: { fontSize: 13, fontWeight: 500 } }, p.name), React.createElement('div', { className: 'pn-email' }, p.email)))))
+        ? React.createElement('div', null,
+            React.createElement('div', { className: 'search-input', style: { marginBottom: 8 } },
+              React.createElement(Icon, { name: 'search', size: 15 }),
+              React.createElement('input', { placeholder: 'Search people...', value: query, onChange: e => setQuery(e.target.value), disabled: saving })),
+            shown.length === 0
+              ? React.createElement('div', { className: 'muted', style: { fontSize: 13, padding: '8px 2px' } },
+                  (people || []).length === 0 ? 'No contacts yet.' : 'No people match that search.')
+              : shown.map((p) => React.createElement('label', { key: p.id, className: 'check-line', onClick: () => setSel({ ...sel, [p.id]: !sel[p.id] }) },
+                React.createElement('span', { className: 'checkbox' + (sel[p.id] ? ' on' : '') }, sel[p.id] && React.createElement(Icon, { name: 'check', size: 12 })),
+                React.createElement(Avatar, { initials: p.initials, size: 26 }),
+                React.createElement('div', { style: { flex: 1 } }, React.createElement('div', { style: { fontSize: 13, fontWeight: 500 } }, p.name), React.createElement('div', { className: 'pn-email' }, p.email)))))
         : React.createElement('div', { className: 'dropzone' },
             React.createElement(Icon, { name: 'upload', size: 24, style: { margin: '0 auto 8px' } }),
             React.createElement('div', null, 'Drag & drop a .csv or .xlsx file'),

@@ -8,6 +8,14 @@
     return Auth.ensureSession();
   }
 
+  // True when the database has not run the list_members migration yet.
+  function missingListMembers(error) {
+    const code = error?.code;
+    if (code === 'PGRST200' || code === 'PGRST205' || code === '42P01') return true;
+    const message = error?.message || '';
+    return /list_members/.test(message) && /(does not exist|not find)/i.test(message);
+  }
+
   function isEmail(s) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim());
   }
@@ -176,8 +184,10 @@
       .order('created_at', { ascending: false });
 
     let { data, error } = await query(COLUMNS_WITH_LISTS);
-    // Tolerate a database that has not run the list_members migration yet.
-    if (error) ({ data, error } = await query(PUBLIC_COLUMNS));
+    if (error && missingListMembers(error)) {
+      console.warn('[Peekd] The list_members table is missing. Run supabase/migrations/20260813120000_create_list_members.sql — list membership will read as empty until then.');
+      ({ data, error } = await query(PUBLIC_COLUMNS));
+    }
 
     if (error) return { ok: false, error: error.message, people: [] };
 

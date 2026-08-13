@@ -14,6 +14,25 @@
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
+  // True when the database has not run the list_members migration yet.
+  function missingListMembers(error) {
+    const code = error?.code;
+    if (code === 'PGRST200' || code === 'PGRST205' || code === '42P01') return true;
+    return /list_members/.test(error?.message || '') && /(does not exist|not find)/i.test(error?.message || '');
+  }
+
+  function warnMissingListMembers() {
+    console.warn('[Peekd] The list_members table is missing. Run supabase/migrations/20260813120000_create_list_members.sql — list membership will read as empty until then.');
+  }
+
+  function membershipError(error) {
+    if (missingListMembers(error)) {
+      warnMissingListMembers();
+      return 'migration_missing';
+    }
+    return error.message;
+  }
+
   function memberCount(row) {
     const agg = row.list_members;
     if (Array.isArray(agg)) return agg[0]?.count || 0;
@@ -47,8 +66,10 @@
       .order('created_at', { ascending: false });
 
     let { data, error } = await query(`${PUBLIC_COLUMNS}, list_members(count)`);
-    // Tolerate a database that has not run the list_members migration yet.
-    if (error) ({ data, error } = await query(PUBLIC_COLUMNS));
+    if (error && missingListMembers(error)) {
+      warnMissingListMembers();
+      ({ data, error } = await query(PUBLIC_COLUMNS));
+    }
 
     if (error) return { ok: false, error: error.message, lists: [] };
 
@@ -146,7 +167,7 @@
       .eq('list_id', listId)
       .eq('user_id', s.user.id);
 
-    if (error) return { ok: false, error: error.message, personIds: [] };
+    if (error) return { ok: false, error: membershipError(error), personIds: [] };
     return { ok: true, personIds: (data || []).map((r) => r.person_id) };
   }
 
@@ -168,7 +189,7 @@
         { onConflict: 'list_id,person_id', ignoreDuplicates: true },
       );
 
-    if (error) return { ok: false, error: error.message };
+    if (error) return { ok: false, error: membershipError(error) };
     return { ok: true, added: ids.length };
   }
 
@@ -190,7 +211,7 @@
       .eq('user_id', s.user.id)
       .in('person_id', ids);
 
-    if (error) return { ok: false, error: error.message };
+    if (error) return { ok: false, error: membershipError(error) };
     return { ok: true, removed: ids.length };
   }
 
