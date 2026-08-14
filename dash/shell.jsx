@@ -138,7 +138,7 @@
         extra,
         React.createElement('button', { className: 'icon-btn', onClick: onBell, title: 'Notifications' },
           React.createElement(Icon, { name: 'bell', size: 18 }),
-          unread > 0 && React.createElement('span', { className: 'dot-badge' }, unread),
+          unread > 0 && React.createElement('span', { className: 'dot-badge' }, unread > 99 ? '99+' : unread),
         ),
         cta,
       ),

@@ -25,6 +25,7 @@
     const [bell, setBell] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
     const [notifs, setNotifs] = useState([]);
+    const [unread, setUnread] = useState(0);
     const [notifsLoading, setNotifsLoading] = useState(true);
     // Rows read by clicking them; kept here so a refresh does not un-read them.
     const readIds = useRef(new Set());
@@ -92,18 +93,20 @@
     }, []);
 
     const toast = (msg) => { setToastMsg(msg); clearTimeout(window.__toastT); window.__toastT = setTimeout(() => setToastMsg(''), 3000); };
-    const unread = notifs.filter(n => n.unread).length;
-
     async function loadNotifs() {
       if (!window.PeekdNotifications?.fetchNotifications) {
         setNotifs(D.notifications);
+        setUnread(D.notifications.filter(n => n.unread).length);
         setNotifsLoading(false);
         return;
       }
       const res = await window.PeekdNotifications.fetchNotifications();
       setNotifsLoading(false);
       if (!res.ok) return;
+      // Rows read in this session may not be saved server-side yet.
+      const pending = res.notifications.filter(n => n.unread && readIds.current.has(n.id)).length;
       setNotifs(res.notifications.map(n => (readIds.current.has(n.id) ? { ...n, unread: false } : n)));
+      setUnread(Math.max(0, (res.unreadCount || 0) - pending));
     }
 
     useEffect(() => {
@@ -115,6 +118,7 @@
 
     async function markAllNotifsRead() {
       setNotifs(notifs.map(n => ({ ...n, unread: false })));
+      setUnread(0);
       if (!window.PeekdNotifications?.markAllNotificationsRead) return;
       const res = await window.PeekdNotifications.markAllNotificationsRead();
       if (!res.ok) toast('Could not mark notifications read.');
@@ -124,6 +128,7 @@
       if (!n.unread) return;
       readIds.current.add(n.id);
       setNotifs(notifs.map(x => (x.id === n.id ? { ...x, unread: false } : x)));
+      setUnread(c => Math.max(0, c - 1));
       window.PeekdNotifications?.markNotificationRead?.(n.id);
     }
 

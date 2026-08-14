@@ -233,14 +233,18 @@
 
     items.sort((a, b) => new Date(b.at) - new Date(a.at));
 
+    const withRead = items.map((n) => ({
+      ...n,
+      time: relativeTime(n.at),
+      unread: new Date(n.at).getTime() > readCutoff && !readKeys.has(n.id),
+    }));
+
     return {
       ok: true,
       readAt,
-      notifications: items.slice(0, FEED_LIMIT).map((n) => ({
-        ...n,
-        time: relativeTime(n.at),
-        unread: new Date(n.at).getTime() > readCutoff && !readKeys.has(n.id),
-      })),
+      // Counted before truncating, so the bell badge is not capped by FEED_LIMIT.
+      unreadCount: withRead.filter((n) => n.unread).length,
+      notifications: withRead.slice(0, FEED_LIMIT),
     };
   }
 

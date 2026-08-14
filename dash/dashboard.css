@@ -129,7 +129,7 @@ svg{display:block}
 .header-actions{display:flex;align-items:center;gap:10px}
 .icon-btn{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;color:var(--fg-dim);border:1px solid var(--line);background:var(--bg);position:relative;transition:background .12s,border-color .12s}
 .icon-btn:hover{background:var(--bg-2);color:var(--fg)}
-.icon-btn .dot-badge{position:absolute;top:-5px;right:-5px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;min-width:17px;height:17px;border-radius:9px;display:grid;place-items:center;border:2px solid var(--bg)}
+.icon-btn .dot-badge{position:absolute;top:-5px;right:-5px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;min-width:17px;height:17px;padding:0 4px;border-radius:9px;display:grid;place-items:center;border:2px solid var(--bg)}
 .page{flex:1;overflow-y:auto;min-height:0}
 .page-pad{padding:24px}
 
