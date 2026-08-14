@@ -248,14 +248,12 @@
     );
   }
 
-  function NotifDrawer({ onClose, notifs, setNotifs, onOpenEmail }) {
+  function NotifDrawer({ onClose, notifs, loading, onMarkAllRead, onSelect }) {
     const [tab, setTab] = useState('all');
     React.useEffect(() => { const k = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, []);
     let list = notifs;
-    if (tab === 'unread') list = notifs.filter(n => n.unread);
-    else if (tab === 'opens') list = notifs.filter(n => n.type === 'open');
+    if (tab === 'opens') list = notifs.filter(n => n.type === 'open');
     else if (tab === 'replies') list = notifs.filter(n => n.type === 'reply');
-    const initials = (name) => name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
     return React.createElement('div', { className: 'drawer-wrap' },
       React.createElement('div', { className: 'drawer-bg', onClick: onClose }),
@@ -263,20 +261,23 @@
         React.createElement('div', { className: 'modal-head' },
           React.createElement('h3', null, 'Notifications'),
           React.createElement('div', { className: 'flex center gap12' },
-            React.createElement('button', { className: 'banner-link', style: { marginLeft: 0 }, onClick: () => setNotifs(notifs.map(n => ({ ...n, unread: false }))) }, 'Mark all read'),
+            React.createElement('button', { className: 'banner-link', style: { marginLeft: 0 }, onClick: onMarkAllRead }, 'Mark all read'),
             React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose }, React.createElement(Icon, { name: 'x', size: 16 }))),
         ),
         React.createElement('div', { style: { padding: '12px 16px', borderBottom: '1px solid var(--line)' } },
           React.createElement('div', { className: 'tabs' },
-            [['all', 'All'], ['unread', 'Unread'], ['opens', 'Opens'], ['replies', 'Replies']].map(([id, l]) =>
+            [['all', 'All'], ['opens', 'Opens'], ['replies', 'Replies']].map(([id, l]) =>
               React.createElement('button', { key: id, className: 'tab' + (tab === id ? ' active' : ''), onClick: () => setTab(id) }, l))),
         ),
         React.createElement('div', { style: { flex: 1, overflowY: 'auto' } },
-          list.length === 0
-            ? React.createElement('div', { style: { textAlign: 'center', color: 'var(--fg-mute)', padding: 40, fontSize: 13 } }, 'Nothing here yet')
+          loading && list.length === 0
+            ? React.createElement('div', { style: { textAlign: 'center', color: 'var(--fg-mute)', padding: 40, fontSize: 13 } }, 'Loading…')
+            : list.length === 0
+            ? React.createElement('div', { style: { textAlign: 'center', color: 'var(--fg-mute)', padding: 40, fontSize: 13 } },
+                tab === 'opens' ? 'No opens yet' : tab === 'replies' ? 'No replies yet' : 'Nothing here yet')
             : list.map(n => React.createElement('button', {
                 key: n.id, className: 'notif-row-d',
-                onClick: () => { setNotifs(notifs.map(x => x.id === n.id ? { ...x, unread: false } : x)); onOpenEmail(); },
+                onClick: () => onSelect(n),
               },
                 React.createElement('span', { className: 'timeline-ico ti-' + (n.type === 'reply' ? 'replied' : 'opened') }, React.createElement(Icon, { name: n.type === 'reply' ? 'cornerUpLeft' : 'eye', size: 15 })),
                 React.createElement('div', { style: { flex: 1, minWidth: 0, textAlign: 'left' } },

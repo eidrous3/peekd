@@ -1,6 +1,6 @@
 // Peekd dashboard — root app: state, routing, overlays.
 (function () {
-  const { useState, useEffect } = React;
+  const { useState, useEffect, useRef } = React;
   const { Sidebar, Header, Toast, InboxPage, AnalyticsPage, CampaignsPage, PeoplePage, SettingsPage, HelpPage, Compose, Upgrade, NotifDrawer, MobileBottomNav, MoreSheet } = window;
   const D = window.PeekdData;
 
@@ -24,7 +24,10 @@
     const [upgrade, setUpgrade] = useState(false);
     const [bell, setBell] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
-    const [notifs, setNotifs] = useState(D.notifications);
+    const [notifs, setNotifs] = useState([]);
+    const [notifsLoading, setNotifsLoading] = useState(true);
+    // Rows read by clicking them; kept here so a refresh does not un-read them.
+    const readIds = useRef(new Set());
     const [toastMsg, setToastMsg] = useState('');
     const [headerExtra, setHeaderExtra] = useState(null);
     const [headerCTA, setHeaderCTA] = useState(null);
@@ -90,6 +93,40 @@
 
     const toast = (msg) => { setToastMsg(msg); clearTimeout(window.__toastT); window.__toastT = setTimeout(() => setToastMsg(''), 3000); };
     const unread = notifs.filter(n => n.unread).length;
+
+    async function loadNotifs() {
+      if (!window.PeekdNotifications?.fetchNotifications) {
+        setNotifs(D.notifications);
+        setNotifsLoading(false);
+        return;
+      }
+      const res = await window.PeekdNotifications.fetchNotifications();
+      setNotifsLoading(false);
+      if (!res.ok) return;
+      setNotifs(res.notifications.map(n => (readIds.current.has(n.id) ? { ...n, unread: false } : n)));
+    }
+
+    useEffect(() => {
+      if (!authReady) return undefined;
+      loadNotifs();
+      const timer = setInterval(loadNotifs, 60_000);
+      return () => clearInterval(timer);
+    }, [authReady]);
+
+    async function markAllNotifsRead() {
+      setNotifs(notifs.map(n => ({ ...n, unread: false })));
+      if (!window.PeekdNotifications?.markAllNotificationsRead) return;
+      const res = await window.PeekdNotifications.markAllNotificationsRead();
+      if (!res.ok) toast('Could not mark notifications read.');
+    }
+
+    function openNotif(n) {
+      readIds.current.add(n.id);
+      setNotifs(notifs.map(x => (x.id === n.id ? { ...x, unread: false } : x)));
+      setBell(false);
+      setPage('inbox');
+    }
+
     const openCompose = (body) => { setComposeBody(typeof body === 'string' ? body : ''); setCompose(true); };
     const openUpgrade = () => setUpgrade(true);
     const goPro = () => { setPro(true); localStorage.setItem('peekd_pro', '1'); setUpgrade(false); toast('Welcome to Pro 🎉 All features unlocked'); };
@@ -110,12 +147,12 @@
     return React.createElement('div', { className: 'app' + (collapsed ? ' collapsed' : '') },
       React.createElement(Sidebar, { page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade: openUpgrade, pro, onToggleFree: goFree, profile }),
       React.createElement('div', { className: 'main' },
-        React.createElement(Header, { title: TITLES[page] || 'Peekd', unread, onBell: () => setBell(true), extra: headerExtra, cta: headerCTA }),
+        React.createElement(Header, { title: TITLES[page] || 'Peekd', unread, onBell: () => { setBell(true); loadNotifs(); }, extra: headerExtra, cta: headerCTA }),
         React.createElement('div', { className: 'page', style: isInbox ? { overflow: 'hidden' } : {} }, body),
       ),
       compose && React.createElement(Compose, { free, initialBody: composeBody, onClose: () => setCompose(false), onUpgrade: () => { setCompose(false); openUpgrade(); }, toast, onSent: () => setInboxRefreshKey((k) => k + 1) }),
       upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, toast }),
-      bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, setNotifs, onOpenEmail: () => { setBell(false); setPage('inbox'); } }),
+      bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, loading: notifsLoading, onMarkAllRead: markAllNotifsRead, onSelect: openNotif }),
       React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen }),
       moreOpen && React.createElement(MoreSheet, { page, setPage, dark, setDark, onClose: () => setMoreOpen(false), profile }),
       React.createElement(Toast, { msg: toastMsg }),

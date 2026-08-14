@@ -93,9 +93,166 @@
     };
   }
 
+  // ── Notification feed ──────────────────────────────────────────────────────
+  // Derived from tracking data rather than stored: an open event is an "opened"
+  // notification, a replied recipient is a "replied" one.
+
+  const FEED_LIMIT = 50;
+
+  function relativeTime(value) {
+    const t = value ? new Date(value).getTime() : NaN;
+    if (Number.isNaN(t)) return '';
+    const ms = Date.now() - t;
+    if (ms < 60_000) return 'Just now';
+    if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+    if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+    if (ms < 172_800_000) return 'Yesterday';
+    if (ms < 604_800_000) return `${Math.floor(ms / 86_400_000)} days ago`;
+    return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function ordinal(n) {
+    const tens = n % 100;
+    if (tens >= 11 && tens <= 13) return `${n}th`;
+    if (n % 10 === 1) return `${n}st`;
+    if (n % 10 === 2) return `${n}nd`;
+    if (n % 10 === 3) return `${n}rd`;
+    return `${n}th`;
+  }
+
+  function titleCase(s) {
+    return s.replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  function displayName(email, namesByEmail) {
+    const known = namesByEmail.get(String(email || '').toLowerCase());
+    if (known) return known;
+    const local = String(email || '').split('@')[0].replace(/[._-]+/g, ' ').replace(/\d+/g, '').trim();
+    return local ? titleCase(local) : (email || 'Someone');
+  }
+
+  async function fetchNamesByEmail(sb, userId) {
+    const names = new Map();
+    const { data } = await sb
+      .from('people')
+      .select('first_name, last_name, email')
+      .eq('user_id', userId);
+
+    for (const row of data || []) {
+      const name = [row.first_name, row.last_name].map((p) => String(p || '').trim()).filter(Boolean).join(' ');
+      if (name) names.set(String(row.email || '').toLowerCase(), name);
+    }
+    return names;
+  }
+
+  // Null when the column is missing, which reads as "nothing marked read yet".
+  async function fetchReadAt(sb, userId) {
+    const { data, error } = await sb
+      .from('notification_settings')
+      .select('notifications_read_at')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[Peekd] notification_settings.notifications_read_at is missing. Run supabase/migrations/20260813230000_add_notifications_read_at.sql — notifications will stay unread until then.');
+      return null;
+    }
+    return data?.notifications_read_at || null;
+  }
+
+  async function fetchNotifications() {
+    const Auth = window.PeekdAuth;
+    if (!Auth?.ready()) return { ok: false, error: 'not_configured', notifications: [] };
+
+    const session = await Auth.ensureSession();
+    if (!session?.user) return { ok: false, error: 'no_session', notifications: [] };
+
+    const sb = Auth.client();
+    if (!sb) return { ok: false, error: 'not_configured', notifications: [] };
+
+    const { data, error } = await sb
+      .from('tracked_recipients')
+      .select('id, email, is_replied, replied_at, tracked_emails!inner(user_id, subject), email_open_events(id, opened_at, classification)')
+      .eq('tracked_emails.user_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(400);
+
+    if (error) return { ok: false, error: error.message, notifications: [] };
+
+    const [namesByEmail, readAt] = await Promise.all([
+      fetchNamesByEmail(sb, session.user.id),
+      fetchReadAt(sb, session.user.id),
+    ]);
+    const readCutoff = readAt ? new Date(readAt).getTime() : 0;
+    const items = [];
+
+    for (const recipient of data || []) {
+      const subject = String(recipient.tracked_emails?.subject || '').trim() || '(no subject)';
+      const who = displayName(recipient.email, namesByEmail);
+
+      // Only human opens count, matching how open rate is calculated elsewhere.
+      const opens = (recipient.email_open_events || [])
+        .filter((e) => e.classification === 'human' && e.opened_at)
+        .sort((a, b) => new Date(a.opened_at) - new Date(b.opened_at));
+
+      opens.forEach((event, i) => {
+        items.push({
+          id: 'open:' + event.id,
+          type: 'open',
+          who,
+          text: `opened "${subject}"` + (i > 0 ? ` · ${ordinal(i + 1)} time` : ''),
+          at: event.opened_at,
+        });
+      });
+
+      if (recipient.is_replied && recipient.replied_at) {
+        items.push({
+          id: 'reply:' + recipient.id,
+          type: 'reply',
+          who,
+          text: `replied to "${subject}"`,
+          at: recipient.replied_at,
+        });
+      }
+    }
+
+    items.sort((a, b) => new Date(b.at) - new Date(a.at));
+
+    return {
+      ok: true,
+      readAt,
+      notifications: items.slice(0, FEED_LIMIT).map((n) => ({
+        ...n,
+        time: relativeTime(n.at),
+        unread: new Date(n.at).getTime() > readCutoff,
+      })),
+    };
+  }
+
+  async function markAllNotificationsRead() {
+    const Auth = window.PeekdAuth;
+    if (!Auth?.ready()) return { ok: false, error: 'not_configured' };
+
+    const session = await Auth.ensureSession();
+    if (!session?.user) return { ok: false, error: 'no_session' };
+
+    const sb = Auth.client();
+    if (!sb) return { ok: false, error: 'not_configured' };
+
+    const readAt = new Date().toISOString();
+    const { error } = await sb
+      .from('notification_settings')
+      .upsert({ id: session.user.id, notifications_read_at: readAt }, { onConflict: 'id' });
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, readAt };
+  }
+
   window.PeekdNotifications = {
     fetchNotificationSettings,
     updateNotificationSettings,
+    fetchNotifications,
+    markAllNotificationsRead,
     DEFAULTS,
     fromRow,
     toRow,
