@@ -121,10 +121,10 @@
     }
 
     function openNotif(n) {
+      if (!n.unread) return;
       readIds.current.add(n.id);
       setNotifs(notifs.map(x => (x.id === n.id ? { ...x, unread: false } : x)));
-      setBell(false);
-      setPage('inbox');
+      window.PeekdNotifications?.markNotificationRead?.(n.id);
     }
 
     const openCompose = (body) => { setComposeBody(typeof body === 'string' ? body : ''); setCompose(true); };

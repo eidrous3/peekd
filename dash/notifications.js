@@ -160,6 +160,20 @@
     return data?.notifications_read_at || null;
   }
 
+  // Keys read individually; empty when the table is missing.
+  async function fetchReadKeys(sb, userId) {
+    const { data, error } = await sb
+      .from('notification_reads')
+      .select('notification_key')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.warn('[Peekd] The notification_reads table is missing. Run supabase/migrations/20260813235000_create_notification_reads.sql — opened notifications will not stay read until then.');
+      return new Set();
+    }
+    return new Set((data || []).map((r) => r.notification_key));
+  }
+
   async function fetchNotifications() {
     const Auth = window.PeekdAuth;
     if (!Auth?.ready()) return { ok: false, error: 'not_configured', notifications: [] };
@@ -179,9 +193,10 @@
 
     if (error) return { ok: false, error: error.message, notifications: [] };
 
-    const [namesByEmail, readAt] = await Promise.all([
+    const [namesByEmail, readAt, readKeys] = await Promise.all([
       fetchNamesByEmail(sb, session.user.id),
       fetchReadAt(sb, session.user.id),
+      fetchReadKeys(sb, session.user.id),
     ]);
     const readCutoff = readAt ? new Date(readAt).getTime() : 0;
     const items = [];
@@ -224,9 +239,33 @@
       notifications: items.slice(0, FEED_LIMIT).map((n) => ({
         ...n,
         time: relativeTime(n.at),
-        unread: new Date(n.at).getTime() > readCutoff,
+        unread: new Date(n.at).getTime() > readCutoff && !readKeys.has(n.id),
       })),
     };
+  }
+
+  async function markNotificationRead(notificationId) {
+    const key = String(notificationId || '').trim();
+    if (!key) return { ok: false, error: 'invalid_input' };
+
+    const Auth = window.PeekdAuth;
+    if (!Auth?.ready()) return { ok: false, error: 'not_configured' };
+
+    const session = await Auth.ensureSession();
+    if (!session?.user) return { ok: false, error: 'no_session' };
+
+    const sb = Auth.client();
+    if (!sb) return { ok: false, error: 'not_configured' };
+
+    const { error } = await sb
+      .from('notification_reads')
+      .upsert(
+        { user_id: session.user.id, notification_key: key, read_at: new Date().toISOString() },
+        { onConflict: 'user_id,notification_key' },
+      );
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
   }
 
   async function markAllNotificationsRead() {
@@ -245,6 +284,10 @@
       .upsert({ id: session.user.id, notifications_read_at: readAt }, { onConflict: 'id' });
 
     if (error) return { ok: false, error: error.message };
+
+    // The watermark now covers every existing row, so per-row reads are redundant.
+    await sb.from('notification_reads').delete().eq('user_id', session.user.id);
+
     return { ok: true, readAt };
   }
 
@@ -252,6 +295,7 @@
     fetchNotificationSettings,
     updateNotificationSettings,
     fetchNotifications,
+    markNotificationRead,
     markAllNotificationsRead,
     DEFAULTS,
     fromRow,
