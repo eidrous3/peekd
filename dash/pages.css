@@ -356,7 +356,9 @@ tr.clickable{cursor:pointer}
 .radio-dot{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--line-2);display:grid;place-items:center}
 .radio-dot.on{border-color:var(--accent)}
 .radio-dot.on::after{content:'';width:8px;height:8px;border-radius:50%;background:var(--accent)}
-.dropzone{border:1.5px dashed var(--line-2);border-radius:11px;padding:28px;text-align:center;color:var(--fg-mute);font-size:13px;background:var(--bg-1)}
+.dropzone{border:1.5px dashed var(--line-2);border-radius:11px;padding:28px;text-align:center;color:var(--fg-mute);font-size:13px;background:var(--bg-1);transition:border-color .12s,background .12s}
+.dropzone.dragging{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.import-summary{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg-1);margin-bottom:8px}
 
 /* ── Help & docs ───────────────────────────────────────────── */
 .help-wrap{display:grid;grid-template-columns:1.5fr 1fr;gap:28px;max-width:1080px;align-items:start}

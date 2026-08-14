@@ -316,17 +316,19 @@
       if (typeof item === 'string') {
         const email = String(item || '').trim().toLowerCase();
         if (!isEmail(email)) continue;
-        map.set(email, map.get(email) || { email, firstName: '', lastName: '' });
+        map.set(email, map.get(email) || { email, firstName: '', lastName: '', company: '' });
       } else if (item && typeof item === 'object') {
         const email = String(item.email || '').trim().toLowerCase();
         if (!isEmail(email)) continue;
-        const existing = map.get(email) || { email, firstName: '', lastName: '' };
+        const existing = map.get(email) || { email, firstName: '', lastName: '', company: '' };
         const firstName = String(item.firstName ?? item.first_name ?? existing.firstName ?? '').trim();
         const lastName = String(item.lastName ?? item.last_name ?? existing.lastName ?? '').trim();
+        const company = String(item.company ?? existing.company ?? '').trim();
         map.set(email, {
           email,
           firstName: firstName || existing.firstName,
           lastName: lastName || existing.lastName,
+          company: company || existing.company || '',
         });
       }
     }
@@ -390,6 +392,63 @@
     return { ok: true, added, skipped };
   }
 
+  function chunk(items, size) {
+    const out = [];
+    for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+    return out;
+  }
+
+  // Bulk import: reuses contacts that already exist and returns ids for every
+  // address in the file, so the caller can drop them all into a list.
+  async function importPeople(contacts) {
+    const list = normalizeContactList(contacts);
+    if (!list.length) return { ok: true, personIds: [], added: 0, existing: 0 };
+
+    const s = await session();
+    if (!s?.user) return { ok: false, error: 'no_session' };
+
+    const sb = window.PeekdAuth.client();
+    if (!sb) return { ok: false, error: 'not_configured' };
+
+    const idByEmail = new Map();
+    for (const emails of chunk(list.map((c) => c.email), 200)) {
+      const { data, error } = await sb
+        .from('people')
+        .select('id, email')
+        .eq('user_id', s.user.id)
+        .in('email', emails);
+
+      if (error) return { ok: false, error: error.message };
+      for (const row of data || []) idByEmail.set(String(row.email).toLowerCase(), row.id);
+    }
+
+    const existing = idByEmail.size;
+    const missing = list.filter((c) => !idByEmail.has(c.email));
+
+    for (const batch of chunk(missing, 200)) {
+      const { data, error } = await sb
+        .from('people')
+        .insert(batch.map((c) => ({
+          user_id: s.user.id,
+          first_name: c.firstName || nameFromEmailLocal(c.email),
+          last_name: c.lastName || '',
+          email: c.email,
+          company: c.company || null,
+        })))
+        .select('id, email');
+
+      if (error) return { ok: false, error: error.message };
+      for (const row of data || []) idByEmail.set(String(row.email).toLowerCase(), row.id);
+    }
+
+    return {
+      ok: true,
+      personIds: list.map((c) => idByEmail.get(c.email)).filter(Boolean),
+      added: idByEmail.size - existing,
+      existing,
+    };
+  }
+
   async function ensurePeopleFromInboxMessages(messages, { excludeEmails = [] } = {}) {
     const excluded = new Set(
       (Array.isArray(excludeEmails) ? excludeEmails : [])
@@ -421,6 +480,7 @@
     deletePerson,
     ensurePeopleFromEmails,
     ensurePeopleFromInboxMessages,
+    importPeople,
     isEmail,
   };
 })();

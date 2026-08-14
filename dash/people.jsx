@@ -185,9 +185,10 @@
       setListsStatus('ready');
     }
 
-    async function handleCreateList(name, personIds) {
+    async function handleCreateList(name, personIds, contacts) {
       const Lists = window.PeekdLists;
       const members = personIds || [];
+      const imported = contacts || [];
       if (!Lists?.createList) {
         const id = 'l' + Date.now();
         setLists(ls => [{ id, name, count: members.length, created: 'Today', sent: 0, rate: 0, dot: 'r', last: '—' }, ...ls]);
@@ -206,13 +207,29 @@
         toast(msg);
         return;
       }
-      const added = members.length && Lists.addPeopleToList
-        ? await Lists.addPeopleToList(res.list.id, members)
+      let importedIds = [];
+      if (imported.length) {
+        const res2 = await window.PeekdPeople.importPeople(imported);
+        if (!res2.ok) {
+          setCreatingList(false);
+          await loadLists();
+          toast('List created, but the file could not be imported.');
+          return;
+        }
+        importedIds = res2.personIds;
+      }
+
+      const all = [...new Set([...members, ...importedIds])];
+      const added = all.length && Lists.addPeopleToList
+        ? await Lists.addPeopleToList(res.list.id, all)
         : { ok: true };
       setCreatingList(false);
       await Promise.all([loadLists(), loadPeople()]);
-      toast(added.ok ? 'List created ✓'
-        : membershipErrorMessage(added.error, 'List created, but people could not be added.'));
+      if (!added.ok) {
+        toast(membershipErrorMessage(added.error, 'List created, but people could not be added.'));
+        return;
+      }
+      toast(all.length ? `List created · ${all.length} ${all.length === 1 ? 'person' : 'people'} added ✓` : 'List created ✓');
     }
 
     async function handleUpdateList(id, name, memberIds) {
@@ -303,7 +320,7 @@
           React.createElement('div', { className: 'search-input people-search' },
             React.createElement(Icon, { name: 'search', size: 16 }),
             React.createElement('input', { placeholder: tab === 'lists' ? 'Search lists...' : 'Search people...', value: query, onChange: e => setQuery(e.target.value) })),
-          React.createElement('button', { className: 'btn btn-ghost', onClick: () => setCreatingList(true) }, React.createElement(Icon, { name: 'upload', size: 15 }), 'Import'),
+          React.createElement('button', { className: 'btn btn-ghost', onClick: () => setCreatingList('upload') }, React.createElement(Icon, { name: 'upload', size: 15 }), 'Import'),
         ),
       ),
       tab === 'people'
@@ -363,7 +380,12 @@
               )),
 
       adding && React.createElement(AddPerson, { lists, onClose: () => setAdding(false), onCreate: handleCreatePerson }),
-      creatingList && React.createElement(CreateList, { people, onClose: () => setCreatingList(false), onCreate: handleCreateList }),
+      creatingList && React.createElement(CreateList, {
+        people,
+        initialTab: creatingList === 'upload' ? 'upload' : 'select',
+        onClose: () => setCreatingList(false),
+        onCreate: handleCreateList,
+      }),
       editingPerson && React.createElement(EditPerson, { p: editingPerson, lists, onClose: () => setEditingPerson(null), onSave: (payload) => handleUpdatePerson(editingPerson.id, payload) }),
       editingList && React.createElement(EditList, { l: editingList, people, onClose: () => setEditingList(null), onSave: (name, memberIds) => handleUpdateList(editingList.id, name, memberIds) }),
     );
@@ -424,23 +446,105 @@
     );
   }
 
-  function CreateList({ people, onClose, onCreate }) {
-    const [tab, setTab] = useState('select');
+  // Bulk upload tab: pick or drop a file, parse it, then show what will import.
+  function UploadContacts({ file, result, error, busy, disabled, onFile, onClear }) {
+    const [dragging, setDragging] = useState(false);
+    const inputRef = useRef(null);
+
+    const take = (f) => { setDragging(false); if (f) onFile(f); };
+
+    if (file && (result || error)) {
+      return React.createElement('div', null,
+        React.createElement('div', { className: 'import-summary' },
+          React.createElement(Icon, { name: error ? 'alertCircle' : 'checkCircle', size: 16, style: { color: error ? 'var(--danger)' : 'var(--good)', flex: '0 0 auto' } }),
+          React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+            React.createElement('div', { style: { fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, file.name),
+            React.createElement('div', { className: 'muted', style: { fontSize: 12, marginTop: 2 } },
+              error || `${result.contacts.length} contact${result.contacts.length === 1 ? '' : 's'} ready`
+                + (result.invalid ? ` · ${result.invalid} row${result.invalid === 1 ? '' : 's'} skipped` : '')
+                + (result.duplicates ? ` · ${result.duplicates} duplicate${result.duplicates === 1 ? '' : 's'}` : ''))),
+          React.createElement('button', { className: 'row-act', onClick: onClear, disabled, title: 'Remove file' },
+            React.createElement(Icon, { name: 'x', size: 14 }))),
+        result && result.contacts.slice(0, 4).map((c) => React.createElement('div', { key: c.email, className: 'member-row' },
+          React.createElement(Avatar, { initials: (c.firstName || c.email).slice(0, 2).toUpperCase(), size: 26 }),
+          React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+            React.createElement('div', { style: { fontSize: 13, fontWeight: 500 } }, [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email),
+            React.createElement('div', { className: 'pn-email' }, c.email)))),
+        result && result.contacts.length > 4 && React.createElement('div', { className: 'muted', style: { fontSize: 12, padding: '8px 2px' } },
+          `and ${result.contacts.length - 4} more`),
+      );
+    }
+
+    return React.createElement('div', null,
+      React.createElement('input', {
+        ref: inputRef,
+        type: 'file',
+        accept: '.csv,.tsv,.xlsx,.xls',
+        style: { display: 'none' },
+        onChange: (e) => { take(e.target.files?.[0]); e.target.value = ''; },
+      }),
+      React.createElement('div', {
+        className: 'dropzone' + (dragging ? ' dragging' : ''),
+        style: { cursor: disabled ? 'default' : 'pointer' },
+        onClick: () => !disabled && inputRef.current?.click(),
+        onDragOver: (e) => { e.preventDefault(); if (!disabled) setDragging(true); },
+        onDragLeave: () => setDragging(false),
+        onDrop: (e) => { e.preventDefault(); if (!disabled) take(e.dataTransfer.files?.[0]); },
+      },
+        React.createElement(Icon, { name: 'upload', size: 24, style: { margin: '0 auto 8px' } }),
+        React.createElement('div', null, busy ? 'Reading file…' : 'Drag & drop a .csv or .xlsx file'),
+        React.createElement('div', { style: { fontSize: 12, marginTop: 4 } }, busy ? '' : 'or click to browse')),
+      React.createElement('div', { className: 'muted', style: { fontSize: 12, marginTop: 8 } },
+        'Needs an ', React.createElement('b', null, 'email'), ' column. Sample: ',
+        React.createElement('a', { className: 'banner-link', href: 'samples/peekd-contacts-sample.csv', download: true, onClick: (e) => e.stopPropagation() }, 'CSV'),
+        ' · ',
+        React.createElement('a', { className: 'banner-link', href: 'samples/peekd-contacts-sample.xlsx', download: true, onClick: (e) => e.stopPropagation() }, 'XLSX')),
+    );
+  }
+
+  function CreateList({ people, initialTab, onClose, onCreate }) {
+    const [tab, setTab] = useState(initialTab || 'select');
     const [sel, setSel] = useState({});
     const [name, setName] = useState('');
     const [query, setQuery] = useState('');
     const [saving, setSaving] = useState(false);
+    const [file, setFile] = useState(null);
+    const [parsed, setParsed] = useState(null);
+    const [parseError, setParseError] = useState('');
+    const [parsing, setParsing] = useState(false);
 
     const selectedIds = Object.keys(sel).filter((id) => sel[id]);
+    const imported = parsed?.contacts || [];
     const q = query.trim().toLowerCase();
     const shown = q
       ? (people || []).filter((p) => p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q))
       : (people || []);
 
+    async function handleFile(f) {
+      setFile(f);
+      setParsed(null);
+      setParseError('');
+      if (!window.PeekdImport?.parseContactsFile) {
+        setParseError('File import is unavailable. Try refreshing.');
+        return;
+      }
+      setParsing(true);
+      const res = await window.PeekdImport.parseContactsFile(f);
+      setParsing(false);
+      if (!res.ok) setParseError(window.PeekdImport.importErrorMessage(res.error));
+      else setParsed(res);
+    }
+
+    function clearFile() {
+      setFile(null);
+      setParsed(null);
+      setParseError('');
+    }
+
     async function submit() {
       if (saving) return;
       setSaving(true);
-      await onCreate(name, selectedIds);
+      await onCreate(name, selectedIds, imported);
       setSaving(false);
     }
 
@@ -454,7 +558,9 @@
       React.createElement('div', { className: 'field', style: { marginBottom: 16 } }, React.createElement('label', { className: 'field-label' }, 'LIST NAME'),
         React.createElement('input', { className: 'input', placeholder: 'Enterprise Leads', value: name, onChange: e => setName(e.target.value), disabled: saving })),
       React.createElement('div', { className: 'field-label', style: { marginBottom: 8 } },
-        'ADD PEOPLE' + (selectedIds.length ? ' · ' + selectedIds.length + ' selected' : '')),
+        'ADD PEOPLE'
+          + (selectedIds.length ? ' · ' + selectedIds.length + ' selected' : '')
+          + (imported.length ? ' · ' + imported.length + ' from file' : '')),
       React.createElement('div', { className: 'tabs', style: { width: 'fit-content', marginBottom: 12 } },
         React.createElement('button', { className: 'tab' + (tab === 'select' ? ' active' : ''), onClick: () => setTab('select') }, 'Search & select'),
         React.createElement('button', { className: 'tab' + (tab === 'upload' ? ' active' : ''), onClick: () => setTab('upload') }, 'Bulk upload')),
@@ -470,10 +576,10 @@
                 React.createElement('span', { className: 'checkbox' + (sel[p.id] ? ' on' : '') }, sel[p.id] && React.createElement(Icon, { name: 'check', size: 12 })),
                 React.createElement(Avatar, { initials: p.initials, size: 26 }),
                 React.createElement('div', { style: { flex: 1 } }, React.createElement('div', { style: { fontSize: 13, fontWeight: 500 } }, p.name), React.createElement('div', { className: 'pn-email' }, p.email)))))
-        : React.createElement('div', { className: 'dropzone' },
-            React.createElement(Icon, { name: 'upload', size: 24, style: { margin: '0 auto 8px' } }),
-            React.createElement('div', null, 'Drag & drop a .csv or .xlsx file'),
-            React.createElement('div', { style: { fontSize: 12, marginTop: 4 } }, 'or click to browse')),
+        : React.createElement(UploadContacts, {
+            file, result: parsed, error: parseError, busy: parsing, disabled: saving,
+            onFile: handleFile, onClear: clearFile,
+          }),
     );
   }
 
