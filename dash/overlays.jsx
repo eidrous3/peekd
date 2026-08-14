@@ -29,14 +29,14 @@
     });
   }
 
-  function Compose({ free, onClose, onUpgrade, toast, initialBody, onSent }) {
-    const [to, setTo] = useState([]);
+  function Compose({ free, onClose, onUpgrade, toast, initialBody, onSent, reply }) {
+    const [to, setTo] = useState(reply?.to ? [reply.to] : []);
     const [draft, setDraft] = useState('');
     const [fromOpen, setFromOpen] = useState(false);
     const [accounts, setAccounts] = useState([]);
     const [from, setFrom] = useState('');
-    const [subject, setSubject] = useState('');
-    const [body, setBody] = useState(initialBody || '');
+    const [subject, setSubject] = useState(reply?.subject || '');
+    const [body, setBody] = useState(reply?.body || initialBody || '');
     const [attachments, setAttachments] = useState([]);
     const [sending, setSending] = useState(false);
     const [accountsLoading, setAccountsLoading] = useState(true);
@@ -45,7 +45,7 @@
     React.useEffect(() => { const k = e => e.key === 'Escape' && !sending && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [sending, onClose]);
 
     React.useEffect(() => {
-      if (initialBody) setBody(initialBody);
+      if (initialBody && !reply) setBody(initialBody);
     }, [initialBody]);
 
     React.useEffect(() => {
@@ -59,7 +59,9 @@
         if (cancelled) return;
         const list = res.ok ? (res.accounts || []) : [];
         setAccounts(list);
-        const primary = list.find((a) => a.is_primary) || list[0];
+        // A reply must go out from the mailbox holding the thread, when it's still connected.
+        const replyAccount = reply?.fromEmail && list.find((a) => a.email === reply.fromEmail);
+        const primary = replyAccount || list.find((a) => a.is_primary) || list[0];
         if (primary) setFrom(primary.email);
         setAccountsLoading(false);
       })();
@@ -116,6 +118,10 @@
       setAttachments(attachments.filter((file) => file.id !== id));
     }
 
+    // Thread ids and Message-IDs only resolve inside the mailbox they came from, so
+    // switching the from-account turns the reply back into a plain new email.
+    const threading = reply && from === reply.fromEmail ? reply : null;
+
     async function handleSend() {
       if (!canSend || sending || !window.PeekdGmail?.sendEmail) return;
       setSending(true);
@@ -124,6 +130,12 @@
         to: allTo,
         subject: subject.trim(),
         html: body,
+        reply: threading && {
+          threadId: threading.threadId,
+          inReplyTo: threading.inReplyTo,
+          references: threading.references,
+          replyToMessageId: threading.replyToMessageId,
+        },
         addBranding: free,
         trackLinks: !free,
         attachments: attachments.map((file) => ({
@@ -148,12 +160,12 @@
       }
       onSent?.();
       onClose();
-      toast('Email sent & tracking ✓');
+      toast(reply ? 'Reply sent & tracking ✓' : 'Email sent & tracking ✓');
     }
 
     return React.createElement('div', { className: 'backdrop', onMouseDown: sending ? undefined : onClose },
       React.createElement('div', { className: 'modal wide', onMouseDown: e => e.stopPropagation() },
-        React.createElement('div', { className: 'modal-head' }, React.createElement('h3', null, 'New Email'),
+        React.createElement('div', { className: 'modal-head' }, React.createElement('h3', null, reply ? 'Reply' : 'New Email'),
           React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose, disabled: sending }, React.createElement(Icon, { name: 'x', size: 16 }))),
         React.createElement('div', { className: 'modal-body', style: { display: 'flex', flexDirection: 'column', gap: 14 } },
           React.createElement('div', { className: 'field', style: { position: 'relative' } }, React.createElement('label', { className: 'field-label' }, 'FROM'),
@@ -169,6 +181,8 @@
               React.createElement('div', { className: 'divider', style: { margin: '4px 0' } }),
               React.createElement('button', { className: 'check-line', style: { width: '100%', color: 'var(--accent)' }, onClick: () => { window.location.href = 'Peekd Dashboard.html?settings=integrations'; } }, React.createElement(Icon, { name: 'plus', size: 14 }), 'Connect another account')),
           ),
+          reply && !threading && React.createElement('div', { className: 'muted', style: { fontSize: 12, marginTop: -6 } },
+            `Sending from a different account, so this won't join the original thread with ${reply.fromEmail}.`),
           React.createElement('div', { className: 'field' }, React.createElement('label', { className: 'field-label' }, 'TO'),
             React.createElement('div', { className: 'pill-input' },
               to.map((em, i) => React.createElement('span', { key: i, className: 'email-pill' + (validEmail(em) ? '' : ' bad'), title: validEmail(em) ? '' : 'Invalid email' }, em,

@@ -36,6 +36,11 @@ export async function sendTrackedEmail({
   // Pass the campaign's flag when the caller already has it to save a lookup;
   // leave it null and it's read from the campaign row.
   unsubscribeEnabled = null,
+  // Threading: set together to file this send into an existing conversation.
+  inReplyTo = null,
+  references = null,
+  threadId = null,
+  replyToMessageId = null,
 }) {
   const recipients = Array.isArray(to) ? to : [];
   if (!userId || !accessToken || !fromEmail || !recipients.length || !subject) {
@@ -97,6 +102,10 @@ export async function sendTrackedEmail({
     subject,
     html: finalHtml,
     attachments,
+    inReplyTo,
+    references,
+    threadId,
+    replyToMessageId,
   });
 
   if (!sent.ok) {

@@ -19,6 +19,45 @@
 
   const badgeClass = { OPENED: 'b-opened', REPLIED: 'b-replied', SENT: 'b-sent' };
 
+  function escapeHtml(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /**
+   * Build the Compose descriptor for replying to a message. `fetched` is the full
+   * body from the provider; without it the reply still works, just unquoted.
+   */
+  function buildReply(e, fetched) {
+    const sent = (e.gmailLabelIds || []).includes('SENT');
+    // On a message we sent, "reply" means writing again to the recipient.
+    const target = sent ? (e.toEmail || e.email) : (e.from || e.email);
+    const subject = /^re:/i.test(e.subject || '') ? e.subject : `Re: ${e.subject || ''}`.trim();
+
+    const original = fetched?.html
+      || (fetched?.text ? `<p>${escapeHtml(fetched.text).replace(/\n/g, '<br>')}</p>` : '');
+    const attribution = `On ${e.sentAt}, ${escapeHtml(e.name || target)} &lt;${escapeHtml(target)}&gt; wrote:`;
+    const quoted = original
+      ? `<p><br></p><p style="color:#6b7280;font-size:13px;">${attribution}</p>`
+        + `<blockquote style="margin:0;padding-left:12px;border-left:2px solid #d1d5db;color:#6b7280;">${original}</blockquote>`
+      : '';
+
+    return {
+      to: target,
+      subject,
+      body: `<p><br></p>${quoted}`,
+      fromEmail: e.accountEmail || '',
+      threadId: e.threadId || null,
+      inReplyTo: fetched?.rfcMessageId || e.rfcMessageId || null,
+      references: fetched?.rfcMessageId || e.rfcMessageId || null,
+      // Graph replies are created off the mailbox item, not the RFC id.
+      replyToMessageId: e.provider === 'outlook' ? e.id : null,
+    };
+  }
+
   function EmailRow({ e, active, onClick, wide }) {
     if (wide) {
       return React.createElement('button', { className: 'mailrow mailrow-wide' + (active ? ' active' : ''), onClick },
@@ -87,8 +126,19 @@
     const [notify, setNotify] = useState(false);
     const [engRcpt, setEngRcpt] = useState('all');
     const [engOpen, setEngOpen] = useState(false);
+    const [replyLoading, setReplyLoading] = useState(false);
     const engRef = useRef(null);
-    useEffect(() => { setEngRcpt('all'); setEngOpen(false); }, [e && e.id]);
+    useEffect(() => { setEngRcpt('all'); setEngOpen(false); setReplyLoading(false); }, [e && e.id]);
+
+    async function handleReply() {
+      if (replyLoading) return;
+      setReplyLoading(true);
+      const res = await window.PeekdGmail?.fetchMessageBody?.({ messageId: e.id, accountEmail: e.accountEmail });
+      setReplyLoading(false);
+      // A failed body fetch shouldn't block the reply — compose without the quote.
+      if (res && !res.ok) toast('Could not load the original message to quote');
+      onCompose(buildReply(e, res?.ok ? res : null));
+    }
     useEffect(() => {
       if (!engOpen) return;
       const h = (ev) => { if (engRef.current && !engRef.current.contains(ev.target)) setEngOpen(false); };
@@ -162,8 +212,8 @@
           React.createElement(Icon, { name: 'chevLeft', size: 16 }), 'Back'),
         React.createElement('button', { className: 'btn btn-ghost btn-sm' + (notify ? ' on' : ''), onClick: () => { setNotify(!notify); toast(notify ? 'Notifications off' : 'You\'ll be notified on next open'); } },
           React.createElement(Icon, { name: 'bell', size: 15 }), notify ? 'Notifying' : 'Notify on next open'),
-        React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: onCompose },
-          React.createElement(Icon, { name: 'reply', size: 15 }), 'Reply'),
+        React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: handleReply, disabled: replyLoading },
+          React.createElement(Icon, { name: 'reply', size: 15 }), replyLoading ? 'Opening…' : 'Reply'),
         React.createElement('button', {
           className: 'icon-btn' + (layout === 'full' ? ' has-filter' : ''), style: { width: 30, height: 30 },
           title: layout === 'full' ? 'Switch to split view' : 'Switch to full view',

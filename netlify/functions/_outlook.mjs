@@ -159,42 +159,7 @@ function graphAttachments(list) {
   }));
 }
 
-/**
- * Send via Microsoft Graph as a draft-then-send pair. `/me/sendMail` would be one
- * call but returns no identifiers, and we need the conversation id to detect
- * replies later, so we create the message first to read its ids.
- */
-export async function sendOutlookMessage(accessToken, { to, subject, html, attachments }) {
-  const recipients = graphRecipients(to);
-  if (!accessToken || !recipients.length) return { ok: false, error: 'invalid_send' };
-
-  const files = graphAttachments(attachments);
-  const draftRes = await fetch(`${GRAPH}/me/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      subject: String(subject || ''),
-      body: { contentType: 'HTML', content: html || '<p></p>' },
-      toRecipients: recipients,
-      ...(files.length ? { attachments: files } : {}),
-    }),
-  });
-
-  const draft = await draftRes.json().catch(() => ({}));
-  if (!draftRes.ok || !draft.id) {
-    const code = draft.error?.code || draftRes.status;
-    console.error('[outlook] draft create failed:', draftRes.status, JSON.stringify(draft.error || {}).slice(0, 500));
-    // Tokens issued before Mail.ReadWrite was requested can't create drafts; a
-    // refresh won't widen granted scopes, so the account has to be reconnected.
-    if (code === 'ErrorAccessDenied' || draftRes.status === 403) {
-      return { ok: false, error: 'outlook_reconnect_required' };
-    }
-    return { ok: false, error: `outlook_draft_failed: ${code}` };
-  }
-
+async function sendOutlookDraft(accessToken, draft) {
   const sendRes = await fetch(`${GRAPH}/me/messages/${encodeURIComponent(draft.id)}/send`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -217,6 +182,118 @@ export async function sendOutlookMessage(accessToken, { to, subject, html, attac
     ok: true,
     messageId: draft.internetMessageId || draft.id,
     threadId: draft.conversationId || null,
+  };
+}
+
+/** Graph draft that continues an existing conversation, so the reply threads. */
+async function createReplyDraft(accessToken, replyToMessageId, { subject, html, recipients, files }) {
+  const res = await fetch(`${GRAPH}/me/messages/${encodeURIComponent(replyToMessageId)}/createReply`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+
+  const draft = await res.json().catch(() => ({}));
+  if (!res.ok || !draft.id) return null;
+
+  // createReply seeds its own quoted body and recipients; replace them with ours.
+  const patchRes = await fetch(`${GRAPH}/me/messages/${encodeURIComponent(draft.id)}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      subject: String(subject || draft.subject || ''),
+      body: { contentType: 'HTML', content: html || '<p></p>' },
+      toRecipients: recipients,
+    }),
+  });
+  if (!patchRes.ok) {
+    // Fall back to a plain send rather than stranding a half-built draft.
+    await fetch(`${GRAPH}/me/messages/${encodeURIComponent(draft.id)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).catch(() => {});
+    return null;
+  }
+
+  for (const file of files) {
+    await fetch(`${GRAPH}/me/messages/${encodeURIComponent(draft.id)}/attachments`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(file),
+    }).catch(() => {});
+  }
+
+  const readRes = await fetch(
+    `${GRAPH}/me/messages/${encodeURIComponent(draft.id)}?$select=id,internetMessageId,conversationId`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const full = await readRes.json().catch(() => ({}));
+  return { ...draft, ...full, id: draft.id };
+}
+
+/**
+ * Send via Microsoft Graph as a draft-then-send pair. `/me/sendMail` would be one
+ * call but returns no identifiers, and we need the conversation id to detect
+ * replies later, so we create the message first to read its ids.
+ */
+export async function sendOutlookMessage(accessToken, { to, subject, html, attachments, replyToMessageId }) {
+  const recipients = graphRecipients(to);
+  if (!accessToken || !recipients.length) return { ok: false, error: 'invalid_send' };
+
+  const files = graphAttachments(attachments);
+
+  let draft = replyToMessageId
+    ? await createReplyDraft(accessToken, replyToMessageId, { subject, html, recipients, files })
+    : null;
+  if (draft) return sendOutlookDraft(accessToken, draft);
+
+  const draftRes = await fetch(`${GRAPH}/me/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      subject: String(subject || ''),
+      body: { contentType: 'HTML', content: html || '<p></p>' },
+      toRecipients: recipients,
+      ...(files.length ? { attachments: files } : {}),
+    }),
+  });
+
+  draft = await draftRes.json().catch(() => ({}));
+  if (!draftRes.ok || !draft.id) {
+    const code = draft.error?.code || draftRes.status;
+    console.error('[outlook] draft create failed:', draftRes.status, JSON.stringify(draft.error || {}).slice(0, 500));
+    // Tokens issued before Mail.ReadWrite was requested can't create drafts; a
+    // refresh won't widen granted scopes, so the account has to be reconnected.
+    if (code === 'ErrorAccessDenied' || draftRes.status === 403) {
+      return { ok: false, error: 'outlook_reconnect_required' };
+    }
+    return { ok: false, error: `outlook_draft_failed: ${code}` };
+  }
+
+  return sendOutlookDraft(accessToken, draft);
+}
+
+export async function fetchOutlookMessageBody(accessToken, messageId) {
+  if (!accessToken || !messageId) return { ok: false, error: 'invalid_request' };
+
+  const res = await fetch(
+    `${GRAPH}/me/messages/${encodeURIComponent(messageId)}?$select=body,bodyPreview,internetMessageId,conversationId`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data.error?.code || 'outlook_message_failed' };
+
+  const isHtml = data.body?.contentType?.toLowerCase() === 'html';
+  const content = data.body?.content || '';
+  return {
+    ok: true,
+    html: isHtml ? content : '',
+    text: isHtml ? (data.bodyPreview || '') : (content || data.bodyPreview || ''),
+    rfcMessageId: data.internetMessageId || '',
+    threadId: data.conversationId || null,
   };
 }
 
@@ -267,6 +344,7 @@ function mapOutlookMessage(msg, { inSent }) {
     trackingKey: msg.internetMessageId || msg.id,
     provider: 'outlook',
     threadId: msg.conversationId || null,
+    rfcMessageId: msg.internetMessageId || '',
     internalDate: date.getTime(),
     from: from.email,
     initials: initials(displayPerson.name, displayPerson.email),

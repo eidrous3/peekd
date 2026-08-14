@@ -73,6 +73,11 @@ export default async (req) => {
   const trackLinks = body.trackLinks === true;
   const campaignId = body.campaignId || body.campaign_id || null;
   const campaignStepId = body.campaignStepId || body.campaign_step_id || null;
+  const header = (v) => String(v || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 2000) || null;
+  const inReplyTo = header(body.inReplyTo);
+  const references = header(body.references);
+  const threadId = String(body.threadId || '').trim() || null;
+  const replyToMessageId = String(body.replyToMessageId || '').trim() || null;
   const parsedAttachments = parseAttachments(body.attachments);
   if (!parsedAttachments.ok) return json({ error: parsedAttachments.error }, 400);
 
@@ -102,6 +107,10 @@ export default async (req) => {
     campaignStepId,
     senderIp: getClientIp(req),
     provider: tokenRes.provider,
+    inReplyTo,
+    references,
+    threadId,
+    replyToMessageId,
   });
 
   if (!result.ok) {

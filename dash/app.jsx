@@ -21,6 +21,7 @@
     const [inboxRefreshKey, setInboxRefreshKey] = useState(0);
     const [compose, setCompose] = useState(false);
     const [composeBody, setComposeBody] = useState('');
+    const [composeReply, setComposeReply] = useState(null);
     const [upgrade, setUpgrade] = useState(false);
     const [bell, setBell] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
@@ -132,7 +133,12 @@
       window.PeekdNotifications?.markNotificationRead?.(n.id);
     }
 
-    const openCompose = (body) => { setComposeBody(typeof body === 'string' ? body : ''); setCompose(true); };
+    // Accepts either a prefilled body string or a reply descriptor from the inbox.
+    const openCompose = (arg) => {
+      setComposeBody(typeof arg === 'string' ? arg : '');
+      setComposeReply(arg && typeof arg === 'object' ? arg : null);
+      setCompose(true);
+    };
     const openUpgrade = () => setUpgrade(true);
     const goPro = () => { setPro(true); localStorage.setItem('peekd_pro', '1'); setUpgrade(false); toast('Welcome to Pro 🎉 All features unlocked'); };
     const goFree = () => { setPro(false); localStorage.setItem('peekd_pro', '0'); toast('Switched to Free plan'); };
@@ -155,7 +161,7 @@
         React.createElement(Header, { title: TITLES[page] || 'Peekd', unread, onBell: () => { setBell(true); loadNotifs(); }, extra: headerExtra, cta: headerCTA }),
         React.createElement('div', { className: 'page', style: isInbox ? { overflow: 'hidden' } : {} }, body),
       ),
-      compose && React.createElement(Compose, { free, initialBody: composeBody, onClose: () => setCompose(false), onUpgrade: () => { setCompose(false); openUpgrade(); }, toast, onSent: () => setInboxRefreshKey((k) => k + 1) }),
+      compose && React.createElement(Compose, { free, initialBody: composeBody, reply: composeReply, onClose: () => setCompose(false), onUpgrade: () => { setCompose(false); openUpgrade(); }, toast, onSent: () => setInboxRefreshKey((k) => k + 1) }),
       upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, toast }),
       bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, loading: notifsLoading, onMarkAllRead: markAllNotifsRead, onSelect: openNotif }),
       React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen }),

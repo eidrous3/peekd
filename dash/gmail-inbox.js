@@ -35,7 +35,25 @@
     };
   }
 
-  async function sendEmail({ fromEmail, to, subject, html, addBranding, trackLinks, attachments, campaignId, campaignStepId }) {
+  async function fetchMessageBody({ messageId, accountEmail } = {}) {
+    const s = await session();
+    if (!s?.access_token) return { ok: false, error: 'no_session' };
+
+    const res = await fetch('/.netlify/functions/mail-message', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${s.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ messageId, accountEmail }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) return { ok: false, error: data.error || 'fetch_failed' };
+    return data;
+  }
+
+  async function sendEmail({ fromEmail, to, subject, html, addBranding, trackLinks, attachments, campaignId, campaignStepId, reply }) {
     const s = await session();
     if (!s?.access_token) return { ok: false, error: 'no_session' };
 
@@ -59,6 +77,10 @@
         addBranding: !!addBranding,
         campaignId: campaignId || null,
         campaignStepId: campaignStepId || null,
+        inReplyTo: reply?.inReplyTo || null,
+        references: reply?.references || null,
+        threadId: reply?.threadId || null,
+        replyToMessageId: reply?.replyToMessageId || null,
         attachments: Array.isArray(attachments)
           ? attachments.map((a) => ({
             filename: a.filename || a.name,
@@ -77,5 +99,5 @@
     return { ok: true, messageId: data.messageId, threadId: data.threadId };
   }
 
-  window.PeekdGmail = { fetchInbox, sendEmail };
+  window.PeekdGmail = { fetchInbox, fetchMessageBody, sendEmail };
 })();

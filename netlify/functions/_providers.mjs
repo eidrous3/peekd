@@ -2,6 +2,7 @@ import { getConnectedAccounts } from './_accounts.mjs';
 import {
   enrichInboxWithReplies,
   fetchGmailInbox,
+  fetchGmailMessageBody,
   getValidAccessToken,
   sendGmailMessage,
   syncRepliesForTrackedEmails,
@@ -9,6 +10,7 @@ import {
 import {
   enrichOutlookInboxWithReplies,
   fetchOutlookInbox,
+  fetchOutlookMessageBody,
   getValidOutlookAccessToken,
   outlookFolderForLabel,
   sendOutlookMessage,
@@ -49,6 +51,12 @@ export async function sendProviderMessage(provider, accessToken, message) {
   return provider === 'outlook'
     ? sendOutlookMessage(accessToken, message)
     : sendGmailMessage(accessToken, message);
+}
+
+export async function fetchProviderMessageBody(provider, accessToken, messageId) {
+  return provider === 'outlook'
+    ? fetchOutlookMessageBody(accessToken, messageId)
+    : fetchGmailMessageBody(accessToken, messageId);
 }
 
 /**

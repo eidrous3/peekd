@@ -181,7 +181,7 @@ export async function fetchGmailInbox(accessToken, { maxResults = 25, labelIds =
   const ids = (listData.messages || []).map((m) => m.id).filter(Boolean);
   const messages = await Promise.all(ids.map(async (id) => {
     const res = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`,
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     const data = await res.json().catch(() => ({}));
@@ -201,6 +201,8 @@ export async function fetchGmailInbox(accessToken, { maxResults = 25, labelIds =
     return {
       id: data.id,
       threadId: data.threadId,
+      // RFC 5322 Message-ID, used as In-Reply-To/References when replying.
+      rfcMessageId: headerValue(data.payload?.headers, 'Message-ID') || '',
       internalDate: Number(data.internalDate || 0),
       from: from.email,
       initials: initials(displayPerson.name, displayPerson.email),
@@ -453,6 +455,45 @@ export function hideIncomingThreadReplies(messages) {
   });
 }
 
+function decodeBody(data) {
+  if (!data) return '';
+  try {
+    return Buffer.from(String(data).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+/** Depth-first search of the MIME tree, preferring HTML over plain text. */
+function findPart(payload, mimeType) {
+  if (!payload) return '';
+  if (payload.mimeType === mimeType && payload.body?.data) return decodeBody(payload.body.data);
+  for (const part of payload.parts || []) {
+    const found = findPart(part, mimeType);
+    if (found) return found;
+  }
+  return '';
+}
+
+export async function fetchGmailMessageBody(accessToken, messageId) {
+  if (!accessToken || !messageId) return { ok: false, error: 'invalid_request' };
+
+  const res = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=full`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data.error?.message || 'gmail_message_failed' };
+
+  return {
+    ok: true,
+    html: findPart(data.payload, 'text/html'),
+    text: findPart(data.payload, 'text/plain') || data.snippet || '',
+    rfcMessageId: headerValue(data.payload?.headers, 'Message-ID') || '',
+    threadId: data.threadId || null,
+  };
+}
+
 export function encodeRawEmail(raw) {
   return Buffer.from(raw, 'utf-8')
     .toString('base64')
@@ -461,7 +502,11 @@ export function encodeRawEmail(raw) {
     .replace(/=+$/, '');
 }
 
-export function buildMimeMessage({ from, to, subject, html, attachments = [] }) {
+function headerSafe(value) {
+  return String(value || '').replace(/[\r\n]+/g, ' ').trim();
+}
+
+export function buildMimeMessage({ from, to, subject, html, attachments = [], inReplyTo, references }) {
   const toLine = to.join(', ');
   const safeSubject = String(subject || '').replace(/\r?\n/g, ' ');
   const bodyHtml = html || '<p></p>';
@@ -469,8 +514,15 @@ export function buildMimeMessage({ from, to, subject, html, attachments = [] }) 
     `From: ${from}`,
     `To: ${toLine}`,
     `Subject: ${safeSubject}`,
-    'MIME-Version: 1.0',
   ];
+
+  // Threading headers: mail clients chain a conversation on these.
+  const replyTo = headerSafe(inReplyTo);
+  const chain = headerSafe(references) || replyTo;
+  if (replyTo) headers.push(`In-Reply-To: ${replyTo}`);
+  if (chain) headers.push(`References: ${chain}`);
+
+  headers.push('MIME-Version: 1.0');
 
   if (!attachments.length) {
     return [
@@ -516,15 +568,16 @@ export function buildMimeMessage({ from, to, subject, html, attachments = [] }) 
   ].join('\r\n');
 }
 
-export async function sendGmailMessage(accessToken, { from, to, subject, html, attachments }) {
-  const raw = buildMimeMessage({ from, to, subject, html, attachments });
+export async function sendGmailMessage(accessToken, { from, to, subject, html, attachments, inReplyTo, references, threadId }) {
+  const raw = buildMimeMessage({ from, to, subject, html, attachments, inReplyTo, references });
   const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ raw: encodeRawEmail(raw) }),
+    // Gmail needs threadId as well as the headers to file this into the thread.
+    body: JSON.stringify({ raw: encodeRawEmail(raw), ...(threadId ? { threadId } : {}) }),
   });
 
   const data = await res.json().catch(() => ({}));
