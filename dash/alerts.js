@@ -15,18 +15,30 @@
     return ctx;
   }
 
+  // Browsers keep AudioContext suspended until a user gesture. Unlock on the
+  // first click/key so later polls can chime without being inside a click.
+  function unlock() {
+    const audio = audioContext();
+    if (audio && audio.state === 'suspended') audio.resume().catch(() => {});
+  }
+  window.addEventListener('pointerdown', unlock, { capture: true });
+  window.addEventListener('keydown', unlock, { capture: true });
+
   const NOTES = [
-    { freq: 880, at: 0 },      // A5
-    { freq: 1174.66, at: 0.1 }, // D6
+    { freq: 880, at: 0 },
+    { freq: 1174.66, at: 0.1 },
   ];
 
-  function playChime() {
+  async function playChime() {
     const audio = audioContext();
     if (!audio) return false;
 
-    // Browsers keep the context suspended until the page has been interacted
-    // with; resuming is a no-op once the user has clicked anything.
-    if (audio.state === 'suspended') audio.resume().catch(() => {});
+    try {
+      if (audio.state === 'suspended') await audio.resume();
+    } catch {
+      return false;
+    }
+    if (audio.state !== 'running') return false;
 
     const now = audio.currentTime;
     for (const note of NOTES) {
@@ -36,7 +48,6 @@
 
       osc.type = 'sine';
       osc.frequency.value = note.freq;
-      // Quick attack then a decay tail, so it reads as a chime and not a beep.
       gain.gain.setValueAtTime(0.0001, start);
       gain.gain.exponentialRampToValueAtTime(0.12, start + 0.015);
       gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.3);

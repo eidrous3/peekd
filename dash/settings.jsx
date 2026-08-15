@@ -236,16 +236,22 @@
       toast('Notification settings saved ✓');
     }
 
-    // Switching a channel on previews it, so the effect is verifiable without
-    // waiting for real activity.
+    // Apply the channel immediately (don't wait for Save) and preview it.
     function toggleChannel(key) {
-      const on = !notif[key];
-      setNotif({ ...notif, [key]: on });
-      if (!on) return;
-      if (key === 'sound' && window.PeekdAlerts?.playChime() === false) {
-        toast('This browser cannot play the notification sound');
+      const next = { ...notif, [key]: !notif[key] };
+      setNotif(next);
+      window.dispatchEvent(new CustomEvent('peekd:notification-settings', { detail: next }));
+      if (!next[key]) return;
+      if (key === 'desktop') {
+        window.dispatchEvent(new CustomEvent('peekd:preview-alert', {
+          detail: { type: 'open', who: 'Peekd', text: 'will show alerts here', time: 'Just now' },
+        }));
       }
-      if (key === 'desktop') toast('Alerts will appear in the bottom-right');
+      if (key === 'sound') {
+        Promise.resolve(window.PeekdAlerts?.playChime?.()).then((ok) => {
+          if (ok === false) toast('This browser cannot play the notification sound');
+        });
+      }
     }
 
     return React.createElement('div', null,

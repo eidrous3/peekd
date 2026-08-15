@@ -33,7 +33,7 @@
     // Rows read by clicking them; kept here so a refresh does not un-read them.
     const readIds = useRef(new Set());
     const [alerts, setAlerts] = useState([]);
-    const notifPrefs = useRef(null);
+    const notifPrefs = useRef(window.PeekdNotifications?.DEFAULTS || { desktop: true, sound: false, opens: true, reply: true });
     // Null until the first poll sets a baseline, so old activity is not replayed.
     const seenNotifIds = useRef(null);
     const [toastMsg, setToastMsg] = useState('');
@@ -121,6 +121,17 @@
 
     const dismissAlert = (key) => setAlerts(list => list.filter(a => a.key !== key));
 
+    function showAlerts(items, { chime } = {}) {
+      if (!items.length) return;
+      const shown = items.slice(0, 3).map((n, i) => ({
+        ...n,
+        key: n.key || n.id || `alert-${Date.now()}-${i}`,
+      }));
+      setAlerts((current) => [...shown, ...current].slice(0, 4));
+      shown.forEach((a) => setTimeout(() => dismissAlert(a.key), 8000));
+      if (chime) window.PeekdAlerts?.playChime();
+    }
+
     // Raise a bottom-right alert (and optionally a chime) for activity that
     // appeared since the last poll, honouring the Settings → Notifications toggles.
     function announce(list) {
@@ -137,13 +148,7 @@
         && (n.type === 'reply' ? prefs.reply : prefs.opens));
       if (!fresh.length) return;
 
-      if (prefs.desktop) {
-        const shown = fresh.slice(0, 3).map(n => ({ ...n, key: n.id }));
-        setAlerts(current => [...shown, ...current].slice(0, 4));
-        shown.forEach(a => setTimeout(() => dismissAlert(a.key), 8000));
-      }
-      // One chime per batch, however many alerts it carries.
-      if (prefs.sound) window.PeekdAlerts?.playChime();
+      showAlerts(prefs.desktop ? fresh : [], { chime: !!prefs.sound });
     }
 
     useEffect(() => {
@@ -156,20 +161,32 @@
       };
       load();
 
-      // Settings dispatches this on save so alerts follow the new toggles at once.
       const onChanged = (e) => { if (e.detail) notifPrefs.current = e.detail; else load(); };
+      const onPreview = (e) => {
+        const prefs = notifPrefs.current || {};
+        showAlerts([e.detail || { type: 'open', who: 'Peekd', text: 'will show alerts here', time: 'Just now' }], {
+          chime: !!prefs.sound,
+        });
+      };
       window.addEventListener('peekd:notification-settings', onChanged);
+      window.addEventListener('peekd:preview-alert', onPreview);
       return () => {
         cancelled = true;
         window.removeEventListener('peekd:notification-settings', onChanged);
+        window.removeEventListener('peekd:preview-alert', onPreview);
       };
     }, [authReady]);
 
     useEffect(() => {
       if (!authReady) return undefined;
       loadNotifs();
-      const timer = setInterval(loadNotifs, 60_000);
-      return () => clearInterval(timer);
+      const timer = setInterval(loadNotifs, 15_000);
+      const onVisible = () => { if (document.visibilityState === 'visible') loadNotifs(); };
+      document.addEventListener('visibilitychange', onVisible);
+      return () => {
+        clearInterval(timer);
+        document.removeEventListener('visibilitychange', onVisible);
+      };
     }, [authReady]);
 
     async function markAllNotifsRead() {
