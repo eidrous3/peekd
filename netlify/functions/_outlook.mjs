@@ -523,15 +523,16 @@ export function findOutlookReply(messages, { accountEmail, sentAt, recipientEmai
     .filter((msg) => msg.email && msg.at > 0)
     .sort((a, b) => a.at - b.at);
 
+  let latest = null;
   for (const msg of candidates) {
     if (sentMs && msg.at <= sentMs) continue;
     if (msg.email === own) continue;
     if (AUTOMATED_SENDER_RE.test(msg.email.split('@')[0] || '')) continue;
     if (target && msg.email !== target) continue;
-    return { email: msg.email, who: msg.name, repliedAt: new Date(msg.at).toISOString() };
+    latest = { email: msg.email, who: msg.name, repliedAt: new Date(msg.at).toISOString(), at: msg.at };
   }
 
-  return null;
+  return latest;
 }
 
 /**
@@ -572,7 +573,6 @@ export async function syncOutlookRepliesForTrackedEmails(userId, trackedEmails) 
       if (!messages?.length) continue;
 
       for (const recip of Array.isArray(row.tracked_recipients) ? row.tracked_recipients : []) {
-        if (recip.is_replied) continue;
         const recipientEmail = normalizeEmail(recip.email);
         if (!recipientEmail) continue;
 
@@ -582,6 +582,9 @@ export async function syncOutlookRepliesForTrackedEmails(userId, trackedEmails) 
           recipientEmail,
         });
         if (!reply) continue;
+        const prev = recip.replied_at ? new Date(recip.replied_at).getTime() : 0;
+        const next = reply.at || (reply.repliedAt ? new Date(reply.repliedAt).getTime() : 0);
+        if (recip.is_replied && prev && next <= prev + 1000) continue;
 
         const res = await markRecipientReplied({
           trackedEmailId: row.id,

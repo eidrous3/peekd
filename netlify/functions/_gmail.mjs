@@ -258,6 +258,7 @@ export function findReplyInThread(thread, { accountEmail, sentMessageId, sentInt
 
   const sentMessage = messages.find((msg) => msg.id === sentMessageId);
   const anchorDate = Number(sentMessage?.internalDate || sentInternalDate || 0);
+  let latest = null;
 
   for (const msg of messages) {
     const msgDate = Number(msg.internalDate || 0);
@@ -273,7 +274,7 @@ export function findReplyInThread(thread, { accountEmail, sentMessageId, sentInt
     const fromRecipient = recipient && fromEmail === recipient;
 
     if (fromRecipient || isIncoming) {
-      return {
+      latest = {
         who: from.name || from.email.split('@')[0],
         email: fromEmail,
         initials: initials(from.name, from.email),
@@ -283,7 +284,7 @@ export function findReplyInThread(thread, { accountEmail, sentMessageId, sentInt
     }
   }
 
-  return null;
+  return latest;
 }
 
 export async function enrichMessagesWithReplies(accessToken, messages, accountEmail) {
@@ -413,7 +414,6 @@ export async function syncRepliesForTrackedEmails(userId, trackedEmails) {
       if (!thread) continue;
       const recipients = Array.isArray(row.tracked_recipients) ? row.tracked_recipients : [];
       for (const recip of recipients) {
-        if (recip.is_replied) continue;
         const recipientEmail = normalizeEmail(recip.email);
         if (!recipientEmail) continue;
         const reply = findReplyInThread(thread, {
@@ -423,6 +423,8 @@ export async function syncRepliesForTrackedEmails(userId, trackedEmails) {
           recipientEmail,
         });
         if (!reply) continue;
+        const prev = recip.replied_at ? new Date(recip.replied_at).getTime() : 0;
+        if (recip.is_replied && prev && reply.internalDate <= prev + 1000) continue;
         // Always mark the tracked recipient (reply From may use an alias).
         const res = await markRecipientReplied({
           trackedEmailId: row.id,

@@ -54,7 +54,7 @@ export default async (req) => {
     'sent_at',
     'subject',
     'campaign_id',
-    'tracked_recipients(email,is_replied)',
+    'tracked_recipients(email,is_replied,replied_at)',
   ].join(',');
   const selectBase = [
     'id',
@@ -64,7 +64,7 @@ export default async (req) => {
     'gmail_thread_id',
     'sent_at',
     'subject',
-    'tracked_recipients(email,is_replied)',
+    'tracked_recipients(email,is_replied,replied_at)',
   ].join(',');
 
   const byId = new Map();

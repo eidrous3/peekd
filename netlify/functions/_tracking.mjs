@@ -341,8 +341,7 @@ export async function markRecipientReplied({ trackedEmailId, gmailMessageId, rec
 
   const res = await dbRequest(
     `tracked_recipients?tracked_email_id=eq.${encodeURIComponent(emailId)}`
-      + `&email=eq.${encodeURIComponent(email)}`
-      + `&is_replied=eq.false`,
+      + `&email=eq.${encodeURIComponent(email)}`,
     {
       method: 'PATCH',
       body: { is_replied: true, replied_at: repliedAtIso },

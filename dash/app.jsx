@@ -102,6 +102,15 @@
     }, []);
 
     const toast = (msg) => { setToastMsg(msg); clearTimeout(window.__toastT); window.__toastT = setTimeout(() => setToastMsg(''), 3000); };
+    function applyNotifFeed(res) {
+      if (!res?.ok) return;
+      // Rows read in this session may not be saved server-side yet.
+      const pending = res.notifications.filter(n => n.unread && readIds.current.has(n.id)).length;
+      setNotifs(res.notifications.map(n => (readIds.current.has(n.id) ? { ...n, unread: false } : n)));
+      setUnread(Math.max(0, (res.unreadCount || 0) - pending));
+      announce(res.notifications);
+    }
+
     async function loadNotifs() {
       if (!window.PeekdNotifications?.fetchNotifications) {
         setNotifs(D.notifications);
@@ -109,14 +118,17 @@
         setNotifsLoading(false);
         return;
       }
+      // Read what's already stored first so those rows become the baseline.
+      // Then sync mailbox replies and announce anything that just appeared.
       const res = await window.PeekdNotifications.fetchNotifications();
       setNotifsLoading(false);
-      if (!res.ok) return;
-      // Rows read in this session may not be saved server-side yet.
-      const pending = res.notifications.filter(n => n.unread && readIds.current.has(n.id)).length;
-      setNotifs(res.notifications.map(n => (readIds.current.has(n.id) ? { ...n, unread: false } : n)));
-      setUnread(Math.max(0, (res.unreadCount || 0) - pending));
-      announce(res.notifications);
+      applyNotifFeed(res);
+
+      const sync = await window.PeekdNotifications.syncReplies?.();
+      if (sync && !sync.skipped) {
+        const again = await window.PeekdNotifications.fetchNotifications();
+        applyNotifFeed(again);
+      }
     }
 
     const dismissAlert = (key) => setAlerts(list => list.filter(a => a.key !== key));
@@ -144,10 +156,13 @@
       const prefs = notifPrefs.current;
       if (!known || !prefs) return;
 
-      const fresh = list.filter(n => n.unread
-        && !known.has(n.id + '|' + n.at)
-        && !readIds.current.has(n.id)
-        && (n.type === 'reply' || prefs.opens));
+      const fresh = list.filter((n) => {
+        if (known.has(n.id + '|' + n.at) || readIds.current.has(n.id)) return false;
+        // A reply is toasted when we first discover it, even if replied_at is
+        // older than the "mark all read" watermark (sync lags the real send).
+        if (n.type === 'reply') return true;
+        return n.unread && prefs.opens;
+      });
       if (!fresh.length) return;
 
       showAlerts(prefs.desktop ? fresh : [], { chime: !!prefs.sound });

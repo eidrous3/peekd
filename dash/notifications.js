@@ -175,17 +175,18 @@
   }
 
   // Opens land in the DB from the pixel. Replies only land after a mailbox
-  // sync, so the feed would never see a new reply unless inbox/campaigns ran.
+  // sync. The first notification read must happen BEFORE this runs, so already
+  // stored replies become the baseline and newly discovered ones can toast.
   let lastReplySync = 0;
   async function syncReplies() {
-    if (Date.now() - lastReplySync < 45_000) return;
+    if (Date.now() - lastReplySync < 20_000) return { ok: true, updated: 0, skipped: true };
     const Auth = window.PeekdAuth;
-    if (!Auth?.ready()) return;
+    if (!Auth?.ready()) return { ok: false, updated: 0 };
     const session = await Auth.ensureSession();
-    if (!session?.access_token) return;
+    if (!session?.access_token) return { ok: false, updated: 0 };
     lastReplySync = Date.now();
     try {
-      await fetch('/.netlify/functions/sync-tracked-replies', {
+      const res = await fetch('/.netlify/functions/sync-tracked-replies', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -193,8 +194,11 @@
         },
         body: '{}',
       });
+      const data = await res.json().catch(() => ({}));
+      return { ok: !!data.ok, updated: Number(data.updated) || 0 };
     } catch {
       lastReplySync = 0;
+      return { ok: false, updated: 0 };
     }
   }
 
@@ -207,8 +211,6 @@
 
     const sb = Auth.client();
     if (!sb) return { ok: false, error: 'not_configured', notifications: [] };
-
-    await syncReplies();
 
     const { data, error } = await sb
       .from('tracked_recipients')
@@ -328,6 +330,7 @@
     fetchNotificationSettings,
     updateNotificationSettings,
     fetchNotifications,
+    syncReplies,
     markNotificationRead,
     markAllNotificationsRead,
     DEFAULTS,
