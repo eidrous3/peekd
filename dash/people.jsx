@@ -320,7 +320,7 @@
           React.createElement('div', { className: 'search-input people-search' },
             React.createElement(Icon, { name: 'search', size: 16 }),
             React.createElement('input', { placeholder: tab === 'lists' ? 'Search lists...' : 'Search people...', value: query, onChange: e => setQuery(e.target.value) })),
-          React.createElement('button', { className: 'btn btn-ghost', onClick: () => setCreatingList('upload') }, React.createElement(Icon, { name: 'upload', size: 15 }), 'Import'),
+          !free && React.createElement('button', { className: 'btn btn-ghost', onClick: () => setCreatingList('upload') }, React.createElement(Icon, { name: 'upload', size: 15 }), 'Import'),
         ),
       ),
       tab === 'people'
