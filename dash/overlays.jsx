@@ -239,12 +239,16 @@
     );
   }
 
-  function Upgrade({ onClose, onConfirm, toast }) {
+  function Upgrade({ onClose, onConfirm, onRedeemCoupon, toast }) {
     const [busy, setBusy] = React.useState(false);
-    React.useEffect(() => { const k = e => e.key === 'Escape' && !busy && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [busy]);
+    const [couponOpen, setCouponOpen] = React.useState(false);
+    const [coupon, setCoupon] = React.useState('');
+    const [couponBusy, setCouponBusy] = React.useState(false);
+    const locked = busy || couponBusy;
+    React.useEffect(() => { const k = e => e.key === 'Escape' && !locked && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [locked]);
     const feats = ['Campaigns & sequences', 'People Lists', 'Link click tracking', 'AI follow-up suggestions', 'Remove branding', 'Advanced analytics', 'Priority support'];
     async function handleUpgrade() {
-      if (busy) return;
+      if (locked) return;
       setBusy(true);
       try {
         if (onConfirm) await onConfirm();
@@ -253,10 +257,25 @@
         setBusy(false);
       }
     }
-    return React.createElement('div', { className: 'backdrop', onMouseDown: () => !busy && onClose() },
+    async function handleRedeem(e) {
+      if (e) e.preventDefault();
+      if (locked || !onRedeemCoupon) return;
+      const code = coupon.trim();
+      if (!code) {
+        toast('Enter a coupon code');
+        return;
+      }
+      setCouponBusy(true);
+      try {
+        await onRedeemCoupon(code);
+      } finally {
+        setCouponBusy(false);
+      }
+    }
+    return React.createElement('div', { className: 'backdrop', onMouseDown: () => !locked && onClose() },
       React.createElement('div', { className: 'modal', style: { width: 'min(420px, calc(100vw - 40px))' }, onMouseDown: e => e.stopPropagation() },
         React.createElement('div', { className: 'modal-head' }, React.createElement('h3', null, 'Upgrade to Pro'),
-          React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose, disabled: busy }, React.createElement(Icon, { name: 'x', size: 16 }))),
+          React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose, disabled: locked }, React.createElement(Icon, { name: 'x', size: 16 }))),
         React.createElement('div', { className: 'modal-body' },
           React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 } },
             React.createElement('span', { className: 'gate-ico', style: { width: 42, height: 42, margin: 0, borderRadius: 11, background: 'linear-gradient(135deg,#3b82f6,#6366f1)', color: '#fff' } }, React.createElement(Icon, { name: 'bolt', size: 20, stroke: 2 })),
@@ -265,8 +284,30 @@
           feats.map((f, i) => React.createElement('div', { key: i, className: 'upgrade-feature' }, React.createElement(Icon, { name: 'check', size: 16 }), f)),
         ),
         React.createElement('div', { className: 'modal-foot', style: { flexDirection: 'column', gap: 8 } },
-          React.createElement('button', { className: 'btn btn-upgrade', onClick: handleUpgrade, disabled: busy }, React.createElement(Icon, { name: 'bolt', size: 15, fill: 'currentColor', stroke: 0 }), busy ? 'Opening checkout…' : 'Upgrade now — $7/mo'),
-          React.createElement('button', { className: 'btn btn-ghost btn-block', onClick: onClose, disabled: busy }, 'Maybe later'),
+          React.createElement('button', { className: 'btn btn-upgrade', onClick: handleUpgrade, disabled: locked }, React.createElement(Icon, { name: 'bolt', size: 15, fill: 'currentColor', stroke: 0 }), busy ? 'Opening checkout…' : 'Upgrade now — $7/mo'),
+          couponOpen
+            ? React.createElement('form', { onSubmit: handleRedeem, style: { display: 'flex', gap: 8, width: '100%' } },
+                React.createElement('input', {
+                  className: 'input',
+                  value: coupon,
+                  onChange: (e) => setCoupon(e.target.value),
+                  placeholder: 'Coupon code',
+                  autoFocus: true,
+                  disabled: locked,
+                  style: { flex: 1, minWidth: 0, textTransform: 'uppercase' },
+                }),
+                React.createElement('button', {
+                  className: 'btn btn-primary',
+                  type: 'submit',
+                  disabled: locked || !coupon.trim(),
+                  style: { width: 'auto', padding: '0 14px', flex: '0 0 auto' },
+                }, couponBusy ? '…' : 'Redeem'))
+            : React.createElement('button', {
+              className: 'btn btn-ghost btn-block',
+              onClick: () => setCouponOpen(true),
+              disabled: locked,
+            }, 'Have a coupon?'),
+          React.createElement('button', { className: 'btn btn-ghost btn-block', onClick: onClose, disabled: locked }, 'Maybe later'),
           React.createElement('div', { className: 'muted', style: { fontSize: 11.5, textAlign: 'center' } }, 'Secure checkout by Paddle · cancel anytime'),
         ),
       ),

@@ -49,7 +49,7 @@
         'You can try everything on Pro and downgrade any time — your data stays intact, only the Pro-only features lock.' ] },
       { t: 'How to upgrade to Pro', body: [
         'Click Upgrade anywhere you see it (or the banner in the sidebar). Peekd opens a Paddle checkout so you can pay $7/month.',
-        'Pro unlocks as soon as payment succeeds — campaigns and Lists you\'ve previewed become fully usable.' ] },
+        'Have a coupon? Enter it on the same Upgrade screen. A valid unused code unlocks lifetime Pro — you are never billed.' ] },
       { t: 'Cancel or change your plan', body: [
         'Manage billing from Settings → Account or the Pro card in the sidebar. That opens the Paddle customer portal, where you can update the card or cancel. Access continues until the end of the period you\'ve paid for.',
         'Need a hand or a refund? Open a ticket below and we\'ll sort it out within a few hours.' ] },

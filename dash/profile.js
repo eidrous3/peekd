@@ -1,10 +1,14 @@
 (function () {
-  const PLANS = ['free', 'premium'];
+  const PLANS = ['free', 'premium', 'lifetime'];
   const COLUMNS = 'id, name, timezone, plan, paddle_customer_id, is_deleted';
 
   function normalizePlan(value) {
     const plan = String(value || '').trim().toLowerCase();
     return PLANS.includes(plan) ? plan : 'free';
+  }
+
+  function isProPlan(plan) {
+    return plan === 'premium' || plan === 'lifetime';
   }
 
   // The plan column ships in 20260814220000_add_profile_plan.sql; without it every
@@ -250,5 +254,5 @@
     };
   }
 
-  window.PeekdProfile = { fetchProfile, updateProfile, updatePlan, restoreProfile, softDeleteProfile, initials, displayProfile };
+  window.PeekdProfile = { fetchProfile, updateProfile, updatePlan, restoreProfile, softDeleteProfile, initials, displayProfile, isProPlan, normalizePlan };
 })();

@@ -155,9 +155,12 @@
           React.createElement('div', { className: 'pr-name' }, displayName,
             pro && React.createElement('span', { className: 'pro-badge' }, React.createElement(Icon, { name: 'bolt', size: 12, fill: 'currentColor', stroke: 0 }), 'Pro')),
           React.createElement('div', { className: 'pr-email' }, displayEmail),
-          React.createElement('div', { className: 'pr-plan' + (pro ? ' pr-plan-pro' : '') }, pro ? 'PRO PLAN · all features unlocked' : 'FREE PLAN · limited tracking')),
+          React.createElement('div', { className: 'pr-plan' + (pro ? ' pr-plan-pro' : '') },
+            profile?.plan === 'lifetime' ? 'LIFETIME · never billed'
+              : pro ? 'PRO PLAN · all features unlocked'
+                : 'FREE PLAN · limited tracking')),
         !pro && React.createElement('button', { className: 'btn btn-upgrade', style: { width: 'auto', padding: '0 16px' }, onClick: onUpgrade }, React.createElement(Icon, { name: 'bolt', size: 14, fill: 'currentColor', stroke: 0 }), 'Upgrade to Premium'),
-        pro && React.createElement('button', { className: 'btn btn-ghost', style: { width: 'auto', padding: '0 16px' }, onClick: onManageBilling }, 'Manage billing')),
+        pro && profile?.plan !== 'lifetime' && React.createElement('button', { className: 'btn btn-ghost', style: { width: 'auto', padding: '0 16px' }, onClick: onManageBilling }, 'Manage billing')),
       React.createElement('div', { className: 'field', style: { maxWidth: 360, marginBottom: 16 } },
         React.createElement('label', { className: 'field-label' }, 'DISPLAY NAME'),
         React.createElement('input', {

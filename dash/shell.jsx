@@ -35,6 +35,7 @@
     const [menuOpen, setMenuOpen] = useState(false);
     const [logoutConfirm, setLogoutConfirm] = useState(false);
     const footRef = useRef(null);
+    const lifetime = profile?.plan === 'lifetime';
     useEffect(() => {
       if (!menuOpen) return;
       const h = (e) => { if (footRef.current && !footRef.current.contains(e.target)) setMenuOpen(false); };
@@ -79,22 +80,27 @@
       collapsed
         ? React.createElement('button', {
             className: 'plan-mini' + (pro ? ' pro' : ''),
-            onClick: pro ? onManageBilling : onUpgrade,
-            title: pro ? 'Pro plan — manage billing' : 'Upgrade to Premium',
+            onClick: lifetime ? undefined : (pro ? onManageBilling : onUpgrade),
+            title: lifetime ? 'Lifetime Pro' : (pro ? 'Pro plan — manage billing' : 'Upgrade to Premium'),
           }, React.createElement(Icon, { name: 'bolt', size: 16, fill: 'currentColor', stroke: 0 }))
         : React.createElement('div', { className: 'plan-card' + (pro ? ' plan-pro' : '') },
-          pro
+          lifetime
             ? [
-                React.createElement('div', { key: 't', className: 'pc-tag', style: { color: '#fff' } }, '⚡ PRO PLAN'),
-                React.createElement('div', { key: 'x', className: 'pc-text', style: { color: 'rgba(255,255,255,0.85)' } }, "You're on Pro — every feature unlocked."),
-                React.createElement('button', { key: 'b', className: 'btn btn-sm', style: { width: '100%', background: 'rgba(255,255,255,0.16)', color: '#fff' }, onClick: onManageBilling }, 'Manage billing'),
+                React.createElement('div', { key: 't', className: 'pc-tag', style: { color: '#fff' } }, '⚡ LIFETIME'),
+                React.createElement('div', { key: 'x', className: 'pc-text', style: { color: 'rgba(255,255,255,0.85)' } }, "You're on lifetime Pro — never billed."),
               ]
-            : [
-                React.createElement('div', { key: 't', className: 'pc-tag' }, 'FREE PLAN'),
-                React.createElement('div', { key: 'x', className: 'pc-text' }, 'Unlock unlimited tracking, campaigns & team lists.'),
-                React.createElement('button', { key: 'b', className: 'btn btn-upgrade btn-sm', onClick: onUpgrade },
-                  React.createElement(Icon, { name: 'bolt', size: 14, fill: 'currentColor', stroke: 0 }), 'Upgrade to Premium'),
-              ],
+            : pro
+              ? [
+                  React.createElement('div', { key: 't', className: 'pc-tag', style: { color: '#fff' } }, '⚡ PRO PLAN'),
+                  React.createElement('div', { key: 'x', className: 'pc-text', style: { color: 'rgba(255,255,255,0.85)' } }, "You're on Pro — every feature unlocked."),
+                  React.createElement('button', { key: 'b', className: 'btn btn-sm', style: { width: '100%', background: 'rgba(255,255,255,0.16)', color: '#fff' }, onClick: onManageBilling }, 'Manage billing'),
+                ]
+              : [
+                  React.createElement('div', { key: 't', className: 'pc-tag' }, 'FREE PLAN'),
+                  React.createElement('div', { key: 'x', className: 'pc-text' }, 'Unlock unlimited tracking, campaigns & team lists.'),
+                  React.createElement('button', { key: 'b', className: 'btn btn-upgrade btn-sm', onClick: onUpgrade },
+                    React.createElement(Icon, { name: 'bolt', size: 14, fill: 'currentColor', stroke: 0 }), 'Upgrade to Premium'),
+                ],
         ),
       React.createElement('div', { className: 'side-foot', ref: footRef },
         React.createElement('button', { className: 'collapse-btn', onClick: () => setCollapsed(!collapsed) },

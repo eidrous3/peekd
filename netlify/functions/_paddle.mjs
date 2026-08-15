@@ -99,12 +99,22 @@ function billingIds(data) {
 async function grantPremium(data) {
   const userId = await findUserId(data);
   if (!userId) return { ok: false, error: 'user_not_found' };
+  const loaded = await loadBillingProfile(userId);
+  if (loaded.ok && loaded.profile.plan === 'lifetime') {
+    const ids = billingIds(data);
+    if (!Object.keys(ids).length) return { ok: true, skipped: true };
+    return patchProfile(userId, ids);
+  }
   return patchProfile(userId, { plan: 'premium', ...billingIds(data) });
 }
 
 async function revokePremium(data) {
   const userId = await findUserId(data);
   if (!userId) return { ok: false, error: 'user_not_found' };
+  const loaded = await loadBillingProfile(userId);
+  if (loaded.ok && loaded.profile.plan === 'lifetime') {
+    return { ok: true, skipped: true };
+  }
   return patchProfile(userId, { plan: 'free', ...billingIds(data) });
 }
 

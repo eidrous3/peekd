@@ -96,7 +96,7 @@
   async function waitForPremium(fetchProfile, { attempts = 20, delayMs = 1000 } = {}) {
     for (let i = 0; i < attempts; i += 1) {
       const res = await fetchProfile();
-      if (res?.ok && res.profile?.plan === 'premium') return res.profile;
+      if (res?.ok && window.PeekdProfile?.isProPlan?.(res.profile?.plan)) return res.profile;
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
     return null;

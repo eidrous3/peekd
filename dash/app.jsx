@@ -233,7 +233,7 @@
     const openUpgrade = () => setUpgrade(true);
 
     function applyPlan(plan) {
-      const isPro = plan === 'premium';
+      const isPro = window.PeekdProfile?.isProPlan?.(plan) || plan === 'premium' || plan === 'lifetime';
       setPro(isPro);
       localStorage.setItem('peekd_pro', isPro ? '1' : '0');
     }
@@ -290,6 +290,46 @@
       toast('Could not open billing. Try again in a moment.');
     }
 
+    async function redeemCoupon(code) {
+      const session = await window.PeekdAuth?.ensureSession?.();
+      const token = session?.access_token;
+      if (!token) {
+        toast('Sign in to redeem a coupon');
+        return false;
+      }
+      let res;
+      try {
+        res = await fetch('/.netlify/functions/redeem-coupon', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ code }),
+        });
+      } catch {
+        toast('Could not reach the server. Try again.');
+        return false;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        const err = data.error || '';
+        toast(
+          err === 'invalid_code' ? 'That coupon is not valid'
+            : err === 'already_used' ? 'That coupon has already been used'
+              : err === 'already_lifetime' ? 'You already have lifetime access'
+                : err === 'coupons_missing' ? 'Coupons are not set up in the database yet'
+                  : 'Could not redeem that coupon',
+        );
+        return false;
+      }
+      applyPlan('lifetime');
+      setProfile((p) => (p ? { ...p, plan: 'lifetime' } : p));
+      setUpgrade(false);
+      toast('Lifetime Pro unlocked — you will not be billed');
+      return true;
+    }
+
     const goPro = () => startCheckout();
 
     let body;
@@ -311,7 +351,7 @@
         React.createElement('div', { className: 'page', style: isInbox ? { overflow: 'hidden' } : {} }, body),
       ),
       compose && React.createElement(Compose, { free, initialBody: composeBody, reply: composeReply, onClose: () => setCompose(false), onUpgrade: () => { setCompose(false); openUpgrade(); }, toast, onSent: () => setInboxRefreshKey((k) => k + 1) }),
-      upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, toast }),
+      upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, onRedeemCoupon: redeemCoupon, toast }),
       bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, loading: notifsLoading, onMarkAllRead: markAllNotifsRead, onSelect: openNotif }),
       React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen }),
       moreOpen && React.createElement(MoreSheet, { page, setPage, dark, setDark, onClose: () => setMoreOpen(false), profile }),
