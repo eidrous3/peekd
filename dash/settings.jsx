@@ -443,7 +443,7 @@
     );
   }
 
-  function SettingsPage({ onUpgrade, onManageBilling, toast, pro, onProfileChange }) {
+  function SettingsPage({ onUpgrade, onManageBilling, toast, pro, profile: appProfile, onProfileChange }) {
     const [tab, setTab] = useState(() => {
       const params = new URLSearchParams(window.location.search);
       const settingsTab = params.get('settings');
@@ -452,7 +452,14 @@
     });
     const [profileStatus, setProfileStatus] = useState('loading');
     const [profile, setProfile] = useState(null);
+    const appPlanRef = useRef(appProfile?.plan);
+    appPlanRef.current = appProfile?.plan;
     const tabs = [['account', 'Account'], ['notifications', 'Notifications'], ['integrations', 'Integrations'], ['privacy', 'Privacy']];
+
+    useEffect(() => {
+      if (!appProfile?.plan) return;
+      setProfile((p) => (p && p.plan !== appProfile.plan ? { ...p, plan: appProfile.plan } : p));
+    }, [appProfile?.plan]);
 
     useEffect(() => {
       if (tab !== 'account') return;
@@ -466,8 +473,11 @@
           setProfileStatus(res.error === 'no_session' ? 'no_session' : 'error');
           return;
         }
-        setProfile(res.profile);
-        onProfileChange && onProfileChange(res.profile);
+        const next = appPlanRef.current === 'lifetime'
+          ? { ...res.profile, plan: 'lifetime' }
+          : res.profile;
+        setProfile(next);
+        onProfileChange && onProfileChange(next);
         setProfileStatus('ready');
       })();
       return () => { cancelled = true; };

@@ -325,6 +325,8 @@
       }
       applyPlan('lifetime');
       setProfile((p) => (p ? { ...p, plan: 'lifetime' } : p));
+      const refreshed = await window.PeekdProfile?.fetchProfile?.();
+      if (refreshed?.ok) setProfile({ ...refreshed.profile, plan: 'lifetime' });
       setUpgrade(false);
       toast('Welcome to lifetime membership.');
       return true;
@@ -337,7 +339,7 @@
     else if (page === 'analytics') body = React.createElement(AnalyticsPage, { toast, setHeaderExtra, free, onUpgrade: openUpgrade });
     else if (page === 'campaigns') body = React.createElement(CampaignsPage, { free, onUpgrade: openUpgrade, toast, setHeaderExtra, setHeaderCTA, seed: campaignSeed, clearSeed: () => setCampaignSeed(null) });
     else if (page === 'people') body = React.createElement(PeoplePage, { free, onUpgrade: openUpgrade, toast, setHeaderExtra, setHeaderCTA, onUseInCampaign: (list) => { setCampaignSeed(list); setPage('campaigns'); } });
-    else if (page === 'settings') body = React.createElement(SettingsPage, { onUpgrade: openUpgrade, onManageBilling: manageBilling, toast, pro, onProfileChange: setProfile });
+    else if (page === 'settings') body = React.createElement(SettingsPage, { onUpgrade: openUpgrade, onManageBilling: manageBilling, toast, pro, profile, onProfileChange: setProfile });
     else body = React.createElement(HelpPage, { toast });
 
     const isInbox = page === 'inbox';
