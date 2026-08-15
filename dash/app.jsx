@@ -316,7 +316,7 @@
         const err = data.error || '';
         toast(
           err === 'invalid_code' ? 'That coupon is not valid'
-            : err === 'already_used' ? 'That coupon has already been used'
+            : err === 'already_used' ? 'invalid coupon'
               : err === 'already_lifetime' ? 'You already have lifetime access'
                 : err === 'coupons_missing' ? 'Coupons are not set up in the database yet'
                   : 'Could not redeem that coupon',
