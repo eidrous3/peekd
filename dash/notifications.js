@@ -210,15 +210,18 @@
         .filter((e) => e.classification === 'human' && e.opened_at)
         .sort((a, b) => new Date(a.opened_at) - new Date(b.opened_at));
 
-      opens.forEach((event, i) => {
+      // One row per email showing its most recent open, rather than one per open.
+      // Keying on the latest event id means a new open resurfaces it as unread.
+      const latestOpen = opens[opens.length - 1];
+      if (latestOpen) {
         items.push({
-          id: 'open:' + event.id,
+          id: 'open:' + latestOpen.id,
           type: 'open',
           who,
-          text: `opened "${subject}"` + (i > 0 ? ` · ${ordinal(i + 1)} time` : ''),
-          at: event.opened_at,
+          text: `opened "${subject}"` + (opens.length > 1 ? ` · ${ordinal(opens.length)} time` : ''),
+          at: latestOpen.opened_at,
         });
-      });
+      }
 
       if (recipient.is_replied && recipient.replied_at) {
         items.push({

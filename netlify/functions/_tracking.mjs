@@ -33,6 +33,15 @@ export function pixelOpenUrl(token) {
   return `${base}/.netlify/functions/track-open?k=${encodeURIComponent(token)}`;
 }
 
+/**
+ * Remove tracking pixels already present in the body. A reply quotes the original
+ * message, and its pixel would otherwise fire again on every read of the reply,
+ * recording phantom opens against the original email.
+ */
+export function stripTrackingPixels(html) {
+  return String(html || '').replace(/<img\b[^>]*\/\.netlify\/functions\/track-open[^>]*>/gi, '');
+}
+
 export function injectTrackingPixels(html, pixelUrls) {
   const body = String(html || '').trim() || '<p></p>';
   const urls = Array.isArray(pixelUrls) ? pixelUrls.filter(Boolean) : [];

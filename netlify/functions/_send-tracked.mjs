@@ -3,6 +3,7 @@ import {
   createTrackedSend,
   createTrackedLinksForSend,
   injectTrackingPixels,
+  stripTrackingPixels,
   updateTrackedSendGmailIds,
   wrapLinksInHtml,
 } from './_tracking.mjs';
@@ -64,7 +65,8 @@ export async function sendTrackedEmail({
     }
   }
 
-  let finalHtml = html || '<p></p>';
+  // Quoted replies carry the original message's pixel; only this send's own may stay.
+  let finalHtml = stripTrackingPixels(html) || '<p></p>';
   if (track && tracked?.pixelUrls?.length) {
     finalHtml = injectTrackingPixels(finalHtml, tracked.pixelUrls);
   }

@@ -37,7 +37,11 @@
     const target = sent ? (e.toEmail || e.email) : (e.from || e.email);
     const subject = /^re:/i.test(e.subject || '') ? e.subject : `Re: ${e.subject || ''}`.trim();
 
-    const original = fetched?.html
+    // The original's tracking pixel would fire on every read of the reply and
+    // record phantom opens against the original email.
+    const quotedHtml = String(fetched?.html || '')
+      .replace(/<img\b[^>]*\/\.netlify\/functions\/track-open[^>]*>/gi, '');
+    const original = quotedHtml
       || (fetched?.text ? `<p>${escapeHtml(fetched.text).replace(/\n/g, '<br>')}</p>` : '');
     const attribution = `On ${e.sentAt}, ${escapeHtml(e.name || target)} &lt;${escapeHtml(target)}&gt; wrote:`;
     const quoted = original
