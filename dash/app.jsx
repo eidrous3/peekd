@@ -238,33 +238,66 @@
       localStorage.setItem('peekd_pro', isPro ? '1' : '0');
     }
 
-    // Switch optimistically, then roll back if the profile write is rejected.
-    async function savePlan(plan) {
-      const previous = pro ? 'premium' : 'free';
-      applyPlan(plan);
-
-      const res = await window.PeekdProfile?.updatePlan?.(plan);
-      if (res && !res.ok) {
-        applyPlan(previous);
-        toast(res.error === 'plan_column_missing'
-          ? 'Plans are not set up in the database yet'
-          : 'Could not change your plan. Try again.');
-        return false;
+    async function startCheckout() {
+      const Billing = window.PeekdPaddle;
+      if (!Billing?.configured()) {
+        toast('Payments are not set up yet');
+        return;
       }
-
-      setProfile((p) => (p ? { ...p, plan } : p));
-      return true;
+      if (!profile?.id) {
+        toast('Sign in to upgrade');
+        return;
+      }
+      setUpgrade(false);
+      const res = await Billing.openCheckout({
+        userId: profile.id,
+        email: profile.email,
+        customerId: profile.paddleCustomerId,
+        dark,
+      });
+      if (res.status === 'closed') return;
+      if (res.status === 'error') {
+        toast(res.error || 'Could not open checkout');
+        return;
+      }
+      toast('Payment received — unlocking Pro…');
+      const next = await Billing.waitForPremium(window.PeekdProfile.fetchProfile);
+      if (next) {
+        applyPlan('premium');
+        setProfile(next);
+        toast('Welcome to Pro 🎉 All features unlocked');
+        return;
+      }
+      toast('Payment received. Refresh in a moment if Pro is not unlocked yet.');
     }
 
-    const goPro = async () => { setUpgrade(false); if (await savePlan('premium')) toast('Welcome to Pro 🎉 All features unlocked'); };
-    const goFree = async () => { if (await savePlan('free')) toast('Switched to Free plan'); };
+    async function manageBilling() {
+      const Billing = window.PeekdPaddle;
+      if (!Billing?.openPortal) {
+        toast('Could not open billing');
+        return;
+      }
+      const res = await Billing.openPortal();
+      if (res.ok) return;
+      if (res.error === 'no_paddle_customer') {
+        toast('No Paddle billing profile yet — upgrade to create one');
+        return;
+      }
+      if (res.error === 'paddle_not_configured') {
+        toast('Billing portal is not set up yet');
+        return;
+      }
+      toast('Could not open billing. Try again in a moment.');
+    }
+
+    const goPro = () => startCheckout();
 
     let body;
     if (page === 'inbox') body = React.createElement(InboxPage, { free, onUpgrade: openUpgrade, onCompose: openCompose, toast, setHeaderExtra, setHeaderCTA, inboxRefreshKey });
     else if (page === 'analytics') body = React.createElement(AnalyticsPage, { toast, setHeaderExtra, free, onUpgrade: openUpgrade });
     else if (page === 'campaigns') body = React.createElement(CampaignsPage, { free, onUpgrade: openUpgrade, toast, setHeaderExtra, setHeaderCTA, seed: campaignSeed, clearSeed: () => setCampaignSeed(null) });
     else if (page === 'people') body = React.createElement(PeoplePage, { free, onUpgrade: openUpgrade, toast, setHeaderExtra, setHeaderCTA, onUseInCampaign: (list) => { setCampaignSeed(list); setPage('campaigns'); } });
-    else if (page === 'settings') body = React.createElement(SettingsPage, { onUpgrade: openUpgrade, toast, pro, onProfileChange: setProfile });
+    else if (page === 'settings') body = React.createElement(SettingsPage, { onUpgrade: openUpgrade, onManageBilling: manageBilling, toast, pro, onProfileChange: setProfile });
     else body = React.createElement(HelpPage, { toast });
 
     const isInbox = page === 'inbox';
@@ -272,7 +305,7 @@
       return React.createElement('div', { className: 'app app-loading', style: { display: 'grid', placeItems: 'center', minHeight: '100vh', color: 'var(--fg-mute)' } }, 'Loading…');
     }
     return React.createElement('div', { className: 'app' + (collapsed ? ' collapsed' : '') },
-      React.createElement(Sidebar, { page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade: openUpgrade, pro, onToggleFree: goFree, profile }),
+      React.createElement(Sidebar, { page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade: openUpgrade, pro, onManageBilling: manageBilling, profile }),
       React.createElement('div', { className: 'main' },
         React.createElement(Header, { title: TITLES[page] || 'Peekd', unread, onBell: () => { setBell(true); loadNotifs(); }, extra: headerExtra, cta: headerCTA }),
         React.createElement('div', { className: 'page', style: isInbox ? { overflow: 'hidden' } : {} }, body),

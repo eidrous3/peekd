@@ -3,6 +3,13 @@ const path = require('path');
 
 const url = process.env.SUPABASE_URL || '';
 const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+const paddleToken = process.env.PADDLE_CLIENT_TOKEN || '';
+const paddlePriceId = process.env.PADDLE_PRICE_ID || '';
+const paddleSandboxFlag = String(process.env.PADDLE_SANDBOX || '').trim().toLowerCase();
+const paddleSandbox = paddleSandboxFlag === '1'
+  || paddleSandboxFlag === 'true'
+  || paddleSandboxFlag === 'sandbox'
+  || paddleToken.startsWith('test_');
 
 const out = `// Auto-generated at build time — do not commit.
 // Netlify env vars:
@@ -11,10 +18,15 @@ const out = `// Auto-generated at build time — do not commit.
 //   SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) — signup existing-user check, delete account, Gmail callback, support admin
 //   SUPPORT_ADMIN_EMAIL, SUPPORT_ADMIN_PASSWORD, SUPPORT_ADMIN_SECRET — support ticket admin login
 //   RESEND_API_KEY, RESEND_FROM_EMAIL       — support ticket + transactional email (Resend)
+//   PADDLE_CLIENT_TOKEN, PADDLE_PRICE_ID, PADDLE_SANDBOX — overlay checkout (public)
+//   PADDLE_API_KEY, PADDLE_WEBHOOK_SECRET — billing webhook + customer portal (secret)
 window.PeekdConfig = {
   supabaseUrl: ${JSON.stringify(url)},
   supabasePublishableKey: ${JSON.stringify(key)},
   resendFromEmail: ${JSON.stringify(process.env.RESEND_FROM_EMAIL || '')},
+  paddleClientToken: ${JSON.stringify(paddleToken)},
+  paddlePriceId: ${JSON.stringify(paddlePriceId)},
+  paddleSandbox: ${paddleSandbox},
 };
 `;
 

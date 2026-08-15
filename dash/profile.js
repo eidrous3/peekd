@@ -1,6 +1,6 @@
 (function () {
   const PLANS = ['free', 'premium'];
-  const COLUMNS = 'id, name, timezone, plan, is_deleted';
+  const COLUMNS = 'id, name, timezone, plan, paddle_customer_id, is_deleted';
 
   function normalizePlan(value) {
     const plan = String(value || '').trim().toLowerCase();
@@ -10,6 +10,15 @@
   // The plan column ships in 20260814220000_add_profile_plan.sql; without it every
   // profile read would fail, so fall back to a free plan and say so once.
   let warnedMissingPlan = false;
+  let warnedMissingPaddle = false;
+  function missingPaddleColumn(error) {
+    const missing = error && /column .*paddle_customer_id.* does not exist/i.test(error.message || '');
+    if (missing && !warnedMissingPaddle) {
+      warnedMissingPaddle = true;
+      console.warn('[Peekd] profiles.paddle_customer_id is missing. Run supabase/migrations/20260815180000_paddle_billing.sql');
+    }
+    return missing;
+  }
   function missingPlanColumn(error) {
     const missing = error && /column .*plan.* does not exist/i.test(error.message || '');
     if (missing && !warnedMissingPlan) {
@@ -80,6 +89,13 @@
       .eq('id', session.user.id)
       .maybeSingle();
 
+    if (missingPaddleColumn(error)) {
+      ({ data, error } = await sb
+        .from('profiles')
+        .select('id, name, timezone, plan, is_deleted')
+        .eq('id', session.user.id)
+        .maybeSingle());
+    }
     if (missingPlanColumn(error)) {
       ({ data, error } = await sb
         .from('profiles')
@@ -101,36 +117,16 @@
         email,
         timezone,
         plan: normalizePlan(data?.plan),
+        paddleCustomerId: data?.paddle_customer_id || '',
         initials: initials(name, email),
         isDeleted: !!data?.is_deleted,
       },
     };
   }
 
-  /** Move the account between the free and premium tiers. */
-  async function updatePlan(plan) {
-    const Auth = window.PeekdAuth;
-    if (!Auth?.ready()) return { ok: false, error: 'not_configured' };
-
-    const session = await Auth.ensureSession();
-    if (!session?.user) return { ok: false, error: 'no_session' };
-
-    const sb = Auth.client();
-    if (!sb) return { ok: false, error: 'not_configured' };
-
-    const next = normalizePlan(plan);
-    const { data, error } = await sb
-      .from('profiles')
-      .upsert({ id: session.user.id, plan: next }, { onConflict: 'id' })
-      .select('plan')
-      .single();
-
-    if (error) {
-      if (missingPlanColumn(error)) return { ok: false, error: 'plan_column_missing' };
-      return { ok: false, error: error.message };
-    }
-
-    return { ok: true, plan: normalizePlan(data?.plan) };
+  /** Plan is billed through Paddle; the client cannot write it. */
+  async function updatePlan() {
+    return { ok: false, error: 'use_checkout' };
   }
 
   async function updateProfile({ name, timezone } = {}) {
@@ -157,6 +153,13 @@
       .select(COLUMNS)
       .single();
 
+    if (missingPaddleColumn(error)) {
+      ({ data, error } = await sb
+        .from('profiles')
+        .upsert(payload, { onConflict: 'id' })
+        .select('id, name, timezone, plan, is_deleted')
+        .single());
+    }
     if (missingPlanColumn(error)) {
       ({ data, error } = await sb
         .from('profiles')
@@ -178,6 +181,7 @@
         email,
         timezone: savedTimezone,
         plan: normalizePlan(data?.plan),
+        paddleCustomerId: data?.paddle_customer_id || '',
         initials: initials(savedName, email),
         isDeleted: !!data?.is_deleted,
       },

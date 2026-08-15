@@ -31,7 +31,7 @@
     ]},
   ];
 
-  function Sidebar({ page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade, pro, onToggleFree, profile }) {
+  function Sidebar({ page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade, pro, onManageBilling, profile }) {
     const [menuOpen, setMenuOpen] = useState(false);
     const [logoutConfirm, setLogoutConfirm] = useState(false);
     const footRef = useRef(null);
@@ -79,15 +79,15 @@
       collapsed
         ? React.createElement('button', {
             className: 'plan-mini' + (pro ? ' pro' : ''),
-            onClick: pro ? onToggleFree : onUpgrade,
-            title: pro ? 'Pro plan — switch to Free (demo)' : 'Upgrade to Premium',
+            onClick: pro ? onManageBilling : onUpgrade,
+            title: pro ? 'Pro plan — manage billing' : 'Upgrade to Premium',
           }, React.createElement(Icon, { name: 'bolt', size: 16, fill: 'currentColor', stroke: 0 }))
         : React.createElement('div', { className: 'plan-card' + (pro ? ' plan-pro' : '') },
           pro
             ? [
                 React.createElement('div', { key: 't', className: 'pc-tag', style: { color: '#fff' } }, '⚡ PRO PLAN'),
                 React.createElement('div', { key: 'x', className: 'pc-text', style: { color: 'rgba(255,255,255,0.85)' } }, "You're on Pro — every feature unlocked."),
-                React.createElement('button', { key: 'b', className: 'btn btn-sm', style: { width: '100%', background: 'rgba(255,255,255,0.16)', color: '#fff' }, onClick: onToggleFree }, 'Switch to Free (demo)'),
+                React.createElement('button', { key: 'b', className: 'btn btn-sm', style: { width: '100%', background: 'rgba(255,255,255,0.16)', color: '#fff' }, onClick: onManageBilling }, 'Manage billing'),
               ]
             : [
                 React.createElement('div', { key: 't', className: 'pc-tag' }, 'FREE PLAN'),

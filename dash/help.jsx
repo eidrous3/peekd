@@ -48,10 +48,10 @@
         'Free covers core open tracking and a single connected inbox. Pro unlocks Lists, multi-step Campaigns, link-click tracking, the Top Links report, location data, and the morning Daily Digest.',
         'You can try everything on Pro and downgrade any time — your data stays intact, only the Pro-only features lock.' ] },
       { t: 'How to upgrade to Pro', body: [
-        'Click Upgrade anywhere you see it (or the banner in the sidebar), confirm your plan, and Pro features unlock instantly. Pro is $7/month, billed monthly.',
-        'Switching is immediate — campaigns and Lists you\'ve previewed become fully usable the moment you upgrade.' ] },
+        'Click Upgrade anywhere you see it (or the banner in the sidebar). Peekd opens a Paddle checkout so you can pay $7/month.',
+        'Pro unlocks as soon as payment succeeds — campaigns and Lists you\'ve previewed become fully usable.' ] },
       { t: 'Cancel or change your plan', body: [
-        'Manage your subscription from Settings → Account. You can switch between monthly and annual billing or cancel — access continues until the end of the period you\'ve paid for.',
+        'Manage billing from Settings → Account or the Pro card in the sidebar. That opens the Paddle customer portal, where you can update the card or cancel. Access continues until the end of the period you\'ve paid for.',
         'Need a hand or a refund? Open a ticket below and we\'ll sort it out within a few hours.' ] },
     ]},
   ];

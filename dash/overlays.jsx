@@ -240,12 +240,23 @@
   }
 
   function Upgrade({ onClose, onConfirm, toast }) {
-    React.useEffect(() => { const k = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, []);
+    const [busy, setBusy] = React.useState(false);
+    React.useEffect(() => { const k = e => e.key === 'Escape' && !busy && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [busy]);
     const feats = ['Campaigns & sequences', 'People Lists', 'Link click tracking', 'AI follow-up suggestions', 'Remove branding', 'Advanced analytics', 'Priority support'];
-    return React.createElement('div', { className: 'backdrop', onMouseDown: onClose },
+    async function handleUpgrade() {
+      if (busy) return;
+      setBusy(true);
+      try {
+        if (onConfirm) await onConfirm();
+        else { onClose(); toast('Welcome to Pro! 🎉'); }
+      } finally {
+        setBusy(false);
+      }
+    }
+    return React.createElement('div', { className: 'backdrop', onMouseDown: () => !busy && onClose() },
       React.createElement('div', { className: 'modal', style: { width: 'min(420px, calc(100vw - 40px))' }, onMouseDown: e => e.stopPropagation() },
         React.createElement('div', { className: 'modal-head' }, React.createElement('h3', null, 'Upgrade to Pro'),
-          React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose }, React.createElement(Icon, { name: 'x', size: 16 }))),
+          React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose, disabled: busy }, React.createElement(Icon, { name: 'x', size: 16 }))),
         React.createElement('div', { className: 'modal-body' },
           React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 } },
             React.createElement('span', { className: 'gate-ico', style: { width: 42, height: 42, margin: 0, borderRadius: 11, background: 'linear-gradient(135deg,#3b82f6,#6366f1)', color: '#fff' } }, React.createElement(Icon, { name: 'bolt', size: 20, stroke: 2 })),
@@ -254,9 +265,9 @@
           feats.map((f, i) => React.createElement('div', { key: i, className: 'upgrade-feature' }, React.createElement(Icon, { name: 'check', size: 16 }), f)),
         ),
         React.createElement('div', { className: 'modal-foot', style: { flexDirection: 'column', gap: 8 } },
-          React.createElement('button', { className: 'btn btn-upgrade', onClick: () => (onConfirm ? onConfirm() : (onClose(), toast('Welcome to Pro! 🎉'))) }, React.createElement(Icon, { name: 'bolt', size: 15, fill: 'currentColor', stroke: 0 }), 'Upgrade now — $7/mo'),
-          React.createElement('button', { className: 'btn btn-ghost btn-block', onClick: onClose }, 'Maybe later'),
-          React.createElement('div', { className: 'muted', style: { fontSize: 11.5, textAlign: 'center' } }, 'No contracts · cancel anytime'),
+          React.createElement('button', { className: 'btn btn-upgrade', onClick: handleUpgrade, disabled: busy }, React.createElement(Icon, { name: 'bolt', size: 15, fill: 'currentColor', stroke: 0 }), busy ? 'Opening checkout…' : 'Upgrade now — $7/mo'),
+          React.createElement('button', { className: 'btn btn-ghost btn-block', onClick: onClose, disabled: busy }, 'Maybe later'),
+          React.createElement('div', { className: 'muted', style: { fontSize: 11.5, textAlign: 'center' } }, 'Secure checkout by Paddle · cancel anytime'),
         ),
       ),
     );

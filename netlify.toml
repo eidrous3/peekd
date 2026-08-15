@@ -34,5 +34,11 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/webhooks/paddle"
+  to = "/.netlify/functions/paddle-webhook"
+  status = 200
+  force = true
+
 [build.environment]
   NODE_VERSION = "20"

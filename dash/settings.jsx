@@ -88,7 +88,7 @@
     );
   }
 
-  function AccountTab({ onUpgrade, toast, pro, profileStatus, profile, setProfile, onProfileChange }) {
+  function AccountTab({ onUpgrade, onManageBilling, toast, pro, profileStatus, profile, setProfile, onProfileChange }) {
     const [draftName, setDraftName] = useState('');
     const [draftTimezone, setDraftTimezone] = useState('America/New_York');
     const [saving, setSaving] = useState(false);
@@ -156,7 +156,8 @@
             pro && React.createElement('span', { className: 'pro-badge' }, React.createElement(Icon, { name: 'bolt', size: 12, fill: 'currentColor', stroke: 0 }), 'Pro')),
           React.createElement('div', { className: 'pr-email' }, displayEmail),
           React.createElement('div', { className: 'pr-plan' + (pro ? ' pr-plan-pro' : '') }, pro ? 'PRO PLAN · all features unlocked' : 'FREE PLAN · limited tracking')),
-        !pro && React.createElement('button', { className: 'btn btn-upgrade', style: { width: 'auto', padding: '0 16px' }, onClick: onUpgrade }, React.createElement(Icon, { name: 'bolt', size: 14, fill: 'currentColor', stroke: 0 }), 'Upgrade to Premium')),
+        !pro && React.createElement('button', { className: 'btn btn-upgrade', style: { width: 'auto', padding: '0 16px' }, onClick: onUpgrade }, React.createElement(Icon, { name: 'bolt', size: 14, fill: 'currentColor', stroke: 0 }), 'Upgrade to Premium'),
+        pro && React.createElement('button', { className: 'btn btn-ghost', style: { width: 'auto', padding: '0 16px' }, onClick: onManageBilling }, 'Manage billing')),
       React.createElement('div', { className: 'field', style: { maxWidth: 360, marginBottom: 16 } },
         React.createElement('label', { className: 'field-label' }, 'DISPLAY NAME'),
         React.createElement('input', {
@@ -434,7 +435,7 @@
     );
   }
 
-  function SettingsPage({ onUpgrade, toast, pro, onProfileChange }) {
+  function SettingsPage({ onUpgrade, onManageBilling, toast, pro, onProfileChange }) {
     const [tab, setTab] = useState(() => {
       const params = new URLSearchParams(window.location.search);
       const settingsTab = params.get('settings');
@@ -469,7 +470,7 @@
         React.createElement('div', { className: 'set-nav' },
           tabs.map(([id, label]) => React.createElement('button', { key: id, className: tab === id ? 'active' : '', onClick: () => setTab(id) }, label))),
         React.createElement('div', { className: 'set-panel' },
-          tab === 'account' && React.createElement(AccountTab, { onUpgrade, toast, pro, profileStatus, profile, setProfile, onProfileChange }),
+          tab === 'account' && React.createElement(AccountTab, { onUpgrade, onManageBilling, toast, pro, profileStatus, profile, setProfile, onProfileChange }),
           tab === 'notifications' && React.createElement(NotificationsTab, { toast }),
           tab === 'integrations' && React.createElement(IntegrationsTab, { toast }),
           tab === 'privacy' && React.createElement('div', null,
