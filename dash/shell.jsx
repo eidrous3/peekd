@@ -152,6 +152,26 @@
         React.createElement(Icon, { name: 'checkCircle', size: 16 }), msg));
   }
 
+  // Live tracking alerts, bottom-right. Kept separate from the centered action
+  // toast so an alert and a confirmation can be on screen at the same time.
+  function AlertStack({ alerts, onDismiss, onSelect }) {
+    if (!alerts?.length) return null;
+    return React.createElement('div', { className: 'alert-stack' },
+      alerts.map((a) => React.createElement('div', { key: a.key, className: 'alert-toast' },
+        React.createElement('span', { className: 'timeline-ico ti-' + (a.type === 'reply' ? 'replied' : 'opened') },
+          React.createElement(Icon, { name: a.type === 'reply' ? 'cornerUpLeft' : 'eye', size: 15 })),
+        React.createElement('button', { className: 'alert-body', onClick: () => onSelect?.(a) },
+          React.createElement('div', { className: 'alert-text' },
+            React.createElement('b', null, a.who + ' '),
+            React.createElement('span', { className: 'dim' }, a.text)),
+          React.createElement('div', { className: 'alert-time' }, a.time)),
+        React.createElement('button', {
+          className: 'alert-x', title: 'Dismiss', onClick: () => onDismiss(a.key),
+        }, React.createElement(Icon, { name: 'x', size: 13 })),
+      )),
+    );
+  }
+
   // Interactive line chart — move across it to reveal the value at each point.
   // Pass `data` for a single line, or `series` ([{ label, data, color }]) to
   // overlay several lines on a shared scale with a legend.
@@ -285,5 +305,5 @@
     return React.createElement('div', { className: 'chart-wrap' }, chart, legend);
   }
 
-  Object.assign(window, { Avatar, Switch, Sidebar, Header, Toast, Chart });
+  Object.assign(window, { Avatar, Switch, Sidebar, Header, Toast, AlertStack, Chart });
 })();

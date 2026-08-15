@@ -231,7 +231,21 @@
       }
       setSavedNotif(res.settings);
       setNotif(res.settings);
+      // Let the running dashboard pick the new toggles up without a reload.
+      window.dispatchEvent(new CustomEvent('peekd:notification-settings', { detail: res.settings }));
       toast('Notification settings saved ✓');
+    }
+
+    // Switching a channel on previews it, so the effect is verifiable without
+    // waiting for real activity.
+    function toggleChannel(key) {
+      const on = !notif[key];
+      setNotif({ ...notif, [key]: on });
+      if (!on) return;
+      if (key === 'sound' && window.PeekdAlerts?.playChime() === false) {
+        toast('This browser cannot play the notification sound');
+      }
+      if (key === 'desktop') toast('Alerts will appear in the bottom-right');
     }
 
     return React.createElement('div', null,
@@ -246,8 +260,8 @@
         React.createElement(ToggleRow, { title: 'Link clicks', badge: 'NEW', desc: 'Push alert when a recipient clicks a link', on: notif.links, onToggle: () => setNotif({ ...notif, links: !notif.links }) }),
         React.createElement(ToggleRow, { title: 'Reply read', desc: 'When someone reads a reply you sent', on: notif.reply, onToggle: () => setNotif({ ...notif, reply: !notif.reply }) }),
         React.createElement(SetSection, { label: 'Delivery channels' }),
-        React.createElement(ToggleRow, { title: 'Desktop (Browser)', desc: 'Native browser popups in the bottom-right', on: notif.desktop, onToggle: () => setNotif({ ...notif, desktop: !notif.desktop }) }),
-        React.createElement(ToggleRow, { title: 'Notification sound', desc: 'Subtle chime on new alert', on: notif.sound, onToggle: () => setNotif({ ...notif, sound: !notif.sound }) }),
+        React.createElement(ToggleRow, { title: 'Desktop (Browser)', desc: 'Pop-up alerts in the bottom-right while Peekd is open', on: notif.desktop, onToggle: () => toggleChannel('desktop') }),
+        React.createElement(ToggleRow, { title: 'Notification sound', desc: 'Subtle chime on new alert', on: notif.sound, onToggle: () => toggleChannel('sound') }),
         React.createElement(SetSection, { label: 'Mobile app' }),
         React.createElement('p', { className: 'mobile-note' }, 'Get Peekd on your phone for instant alerts.'),
         React.createElement('div', { className: 'store-row' },

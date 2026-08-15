@@ -103,6 +103,7 @@
   /* ── Page padding (clear the bottom nav) ───────────────── */
   .page-pad{padding:16px;padding-bottom:80px}
   .toast-wrap{bottom:76px}
+  .alert-stack{bottom:76px;right:16px;left:16px;width:auto}
   /* Overlays sit above the bottom nav */
   .backdrop,.drawer-wrap{z-index:130}
   .drawer{width:100vw}

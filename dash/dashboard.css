@@ -229,6 +229,16 @@ svg{display:block}
 .toast{background:var(--fg);color:var(--bg);padding:11px 16px;border-radius:10px;font-size:13px;font-weight:500;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:8px;animation:toastIn .25s cubic-bezier(.2,.8,.3,1)}
 @keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 
+/* Live notification alerts (bottom-right) */
+.alert-stack{position:fixed;bottom:24px;right:24px;z-index:95;display:flex;flex-direction:column;gap:10px;width:min(340px,calc(100vw - 32px))}
+.alert-toast{display:flex;align-items:flex-start;gap:10px;padding:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);animation:alertIn .25s cubic-bezier(.2,.8,.3,1)}
+.alert-body{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;cursor:pointer;font:inherit;color:inherit}
+.alert-text{font-size:13px;line-height:1.45}
+.alert-time{font-size:11.5px;color:var(--fg-mute);margin-top:2px}
+.alert-x{flex:0 0 auto;background:none;border:0;padding:2px;border-radius:6px;cursor:pointer;color:var(--fg-mute);display:grid;place-items:center}
+.alert-x:hover{background:var(--bg-side);color:var(--fg)}
+@keyframes alertIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+
 /* Gate */
 .gate{max-width:440px;margin:64px auto;text-align:center;padding:32px}
 .gate .gate-ico{width:64px;height:64px;border-radius:16px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;margin:0 auto 18px}

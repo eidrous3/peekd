@@ -1,7 +1,7 @@
 // Peekd dashboard — root app: state, routing, overlays.
 (function () {
   const { useState, useEffect, useRef } = React;
-  const { Sidebar, Header, Toast, InboxPage, AnalyticsPage, CampaignsPage, PeoplePage, SettingsPage, HelpPage, Compose, Upgrade, NotifDrawer, MobileBottomNav, MoreSheet } = window;
+  const { Sidebar, Header, Toast, AlertStack, InboxPage, AnalyticsPage, CampaignsPage, PeoplePage, SettingsPage, HelpPage, Compose, Upgrade, NotifDrawer, MobileBottomNav, MoreSheet } = window;
   const D = window.PeekdData;
 
   const TITLES = { inbox: 'Inbox', analytics: 'Analytics', campaigns: 'Campaigns', people: 'People', settings: 'Settings', help: 'Help & docs' };
@@ -32,6 +32,10 @@
     const [notifsLoading, setNotifsLoading] = useState(true);
     // Rows read by clicking them; kept here so a refresh does not un-read them.
     const readIds = useRef(new Set());
+    const [alerts, setAlerts] = useState([]);
+    const notifPrefs = useRef(null);
+    // Null until the first poll sets a baseline, so old activity is not replayed.
+    const seenNotifIds = useRef(null);
     const [toastMsg, setToastMsg] = useState('');
     const [headerExtra, setHeaderExtra] = useState(null);
     const [headerCTA, setHeaderCTA] = useState(null);
@@ -112,7 +116,54 @@
       const pending = res.notifications.filter(n => n.unread && readIds.current.has(n.id)).length;
       setNotifs(res.notifications.map(n => (readIds.current.has(n.id) ? { ...n, unread: false } : n)));
       setUnread(Math.max(0, (res.unreadCount || 0) - pending));
+      announce(res.notifications);
     }
+
+    const dismissAlert = (key) => setAlerts(list => list.filter(a => a.key !== key));
+
+    // Raise a bottom-right alert (and optionally a chime) for activity that
+    // appeared since the last poll, honouring the Settings → Notifications toggles.
+    function announce(list) {
+      const ids = new Set(list.map(n => n.id));
+      const known = seenNotifIds.current;
+      seenNotifIds.current = ids;
+
+      const prefs = notifPrefs.current;
+      if (!known || !prefs) return;
+
+      const fresh = list.filter(n => n.unread
+        && !known.has(n.id)
+        && !readIds.current.has(n.id)
+        && (n.type === 'reply' ? prefs.reply : prefs.opens));
+      if (!fresh.length) return;
+
+      if (prefs.desktop) {
+        const shown = fresh.slice(0, 3).map(n => ({ ...n, key: n.id }));
+        setAlerts(current => [...shown, ...current].slice(0, 4));
+        shown.forEach(a => setTimeout(() => dismissAlert(a.key), 8000));
+      }
+      // One chime per batch, however many alerts it carries.
+      if (prefs.sound) window.PeekdAlerts?.playChime();
+    }
+
+    useEffect(() => {
+      if (!authReady) return undefined;
+      let cancelled = false;
+
+      const load = async () => {
+        const res = await window.PeekdNotifications?.fetchNotificationSettings?.();
+        if (!cancelled && res?.ok) notifPrefs.current = res.settings;
+      };
+      load();
+
+      // Settings dispatches this on save so alerts follow the new toggles at once.
+      const onChanged = (e) => { if (e.detail) notifPrefs.current = e.detail; else load(); };
+      window.addEventListener('peekd:notification-settings', onChanged);
+      return () => {
+        cancelled = true;
+        window.removeEventListener('peekd:notification-settings', onChanged);
+      };
+    }, [authReady]);
 
     useEffect(() => {
       if (!authReady) return undefined;
@@ -195,6 +246,11 @@
       bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, loading: notifsLoading, onMarkAllRead: markAllNotifsRead, onSelect: openNotif }),
       React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen }),
       moreOpen && React.createElement(MoreSheet, { page, setPage, dark, setDark, onClose: () => setMoreOpen(false), profile }),
+      React.createElement(AlertStack, {
+        alerts,
+        onDismiss: dismissAlert,
+        onSelect: (a) => { dismissAlert(a.key); setBell(true); },
+      }),
       React.createElement(Toast, { msg: toastMsg }),
     );
   }
