@@ -135,7 +135,9 @@
     // Raise a bottom-right alert (and optionally a chime) for activity that
     // appeared since the last poll, honouring the Settings → Notifications toggles.
     function announce(list) {
-      const ids = new Set(list.map(n => n.id));
+      // Fingerprint includes the event time so a newly detected reply (same
+      // recipient id, new replied_at) is treated as fresh.
+      const ids = new Set(list.map(n => n.id + '|' + n.at));
       const known = seenNotifIds.current;
       seenNotifIds.current = ids;
 
@@ -143,9 +145,9 @@
       if (!known || !prefs) return;
 
       const fresh = list.filter(n => n.unread
-        && !known.has(n.id)
+        && !known.has(n.id + '|' + n.at)
         && !readIds.current.has(n.id)
-        && (n.type === 'reply' ? prefs.reply : prefs.opens));
+        && (n.type === 'reply' || prefs.opens));
       if (!fresh.length) return;
 
       showAlerts(prefs.desktop ? fresh : [], { chime: !!prefs.sound });

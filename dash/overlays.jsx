@@ -158,9 +158,9 @@
       if (window.PeekdPeople?.ensurePeopleFromEmails) {
         await window.PeekdPeople.ensurePeopleFromEmails(allTo);
       }
+      toast('Message sent and being tracked');
       onSent?.();
       onClose();
-      toast(reply ? 'Reply sent & tracking ✓' : 'Email sent & tracking ✓');
     }
 
     return React.createElement('div', { className: 'backdrop', onMouseDown: sending ? undefined : onClose },

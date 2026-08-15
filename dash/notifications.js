@@ -174,6 +174,30 @@
     return new Set((data || []).map((r) => r.notification_key));
   }
 
+  // Opens land in the DB from the pixel. Replies only land after a mailbox
+  // sync, so the feed would never see a new reply unless inbox/campaigns ran.
+  let lastReplySync = 0;
+  async function syncReplies() {
+    if (Date.now() - lastReplySync < 45_000) return;
+    const Auth = window.PeekdAuth;
+    if (!Auth?.ready()) return;
+    const session = await Auth.ensureSession();
+    if (!session?.access_token) return;
+    lastReplySync = Date.now();
+    try {
+      await fetch('/.netlify/functions/sync-tracked-replies', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+    } catch {
+      lastReplySync = 0;
+    }
+  }
+
   async function fetchNotifications() {
     const Auth = window.PeekdAuth;
     if (!Auth?.ready()) return { ok: false, error: 'not_configured', notifications: [] };
@@ -183,6 +207,8 @@
 
     const sb = Auth.client();
     if (!sb) return { ok: false, error: 'not_configured', notifications: [] };
+
+    await syncReplies();
 
     const { data, error } = await sb
       .from('tracked_recipients')
