@@ -1,4 +1,24 @@
 (function () {
+  const PLANS = ['free', 'premium'];
+  const COLUMNS = 'id, name, timezone, plan, is_deleted';
+
+  function normalizePlan(value) {
+    const plan = String(value || '').trim().toLowerCase();
+    return PLANS.includes(plan) ? plan : 'free';
+  }
+
+  // The plan column ships in 20260814220000_add_profile_plan.sql; without it every
+  // profile read would fail, so fall back to a free plan and say so once.
+  let warnedMissingPlan = false;
+  function missingPlanColumn(error) {
+    const missing = error && /column .*plan.* does not exist/i.test(error.message || '');
+    if (missing && !warnedMissingPlan) {
+      warnedMissingPlan = true;
+      console.warn('[Peekd] profiles.plan is missing. Run supabase/migrations/20260814220000_add_profile_plan.sql — everyone stays on the free plan until then.');
+    }
+    return missing;
+  }
+
   function initials(name, email) {
     const n = (name || '').trim();
     if (n) {
@@ -54,11 +74,19 @@
     const sb = Auth.client();
     if (!sb) return { ok: false, error: 'not_configured' };
 
-    const { data, error } = await sb
+    let { data, error } = await sb
       .from('profiles')
-      .select('id, name, timezone, is_deleted')
+      .select(COLUMNS)
       .eq('id', session.user.id)
       .maybeSingle();
+
+    if (missingPlanColumn(error)) {
+      ({ data, error } = await sb
+        .from('profiles')
+        .select('id, name, timezone, is_deleted')
+        .eq('id', session.user.id)
+        .maybeSingle());
+    }
 
     if (error) return { ok: false, error: error.message };
 
@@ -72,10 +100,37 @@
         name,
         email,
         timezone,
+        plan: normalizePlan(data?.plan),
         initials: initials(name, email),
         isDeleted: !!data?.is_deleted,
       },
     };
+  }
+
+  /** Move the account between the free and premium tiers. */
+  async function updatePlan(plan) {
+    const Auth = window.PeekdAuth;
+    if (!Auth?.ready()) return { ok: false, error: 'not_configured' };
+
+    const session = await Auth.ensureSession();
+    if (!session?.user) return { ok: false, error: 'no_session' };
+
+    const sb = Auth.client();
+    if (!sb) return { ok: false, error: 'not_configured' };
+
+    const next = normalizePlan(plan);
+    const { data, error } = await sb
+      .from('profiles')
+      .upsert({ id: session.user.id, plan: next }, { onConflict: 'id' })
+      .select('plan')
+      .single();
+
+    if (error) {
+      if (missingPlanColumn(error)) return { ok: false, error: 'plan_column_missing' };
+      return { ok: false, error: error.message };
+    }
+
+    return { ok: true, plan: normalizePlan(data?.plan) };
   }
 
   async function updateProfile({ name, timezone } = {}) {
@@ -96,11 +151,19 @@
       payload.timezone = tz || 'America/New_York';
     }
 
-    const { data, error } = await sb
+    let { data, error } = await sb
       .from('profiles')
       .upsert(payload, { onConflict: 'id' })
-      .select('id, name, timezone, is_deleted')
+      .select(COLUMNS)
       .single();
+
+    if (missingPlanColumn(error)) {
+      ({ data, error } = await sb
+        .from('profiles')
+        .upsert(payload, { onConflict: 'id' })
+        .select('id, name, timezone, is_deleted')
+        .single());
+    }
 
     if (error) return { ok: false, error: error.message };
 
@@ -114,6 +177,7 @@
         name: savedName,
         email,
         timezone: savedTimezone,
+        plan: normalizePlan(data?.plan),
         initials: initials(savedName, email),
         isDeleted: !!data?.is_deleted,
       },
@@ -182,5 +246,5 @@
     };
   }
 
-  window.PeekdProfile = { fetchProfile, updateProfile, restoreProfile, softDeleteProfile, initials, displayProfile };
+  window.PeekdProfile = { fetchProfile, updateProfile, updatePlan, restoreProfile, softDeleteProfile, initials, displayProfile };
 })();

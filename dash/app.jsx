@@ -16,6 +16,8 @@
     });
     const [collapsed, setCollapsed] = useState(false);
     const [dark, setDark] = useState(() => localStorage.getItem('peekd_dark') === '1');
+    // The profile is the source of truth; localStorage only seeds the first paint
+    // so premium users don't see gated UI flash before the profile loads.
     const [pro, setPro] = useState(() => localStorage.getItem('peekd_pro') === '1');
     const free = !pro; // gates active when not Pro
     const [inboxRefreshKey, setInboxRefreshKey] = useState(0);
@@ -66,7 +68,9 @@
       (async () => {
         if (!window.PeekdProfile?.fetchProfile) return;
         const res = await window.PeekdProfile.fetchProfile();
-        if (!cancelled && res.ok) setProfile(res.profile);
+        if (cancelled || !res.ok) return;
+        setProfile(res.profile);
+        applyPlan(res.profile.plan);
       })();
       return () => { cancelled = true; };
     }, []);
@@ -140,8 +144,33 @@
       setCompose(true);
     };
     const openUpgrade = () => setUpgrade(true);
-    const goPro = () => { setPro(true); localStorage.setItem('peekd_pro', '1'); setUpgrade(false); toast('Welcome to Pro 🎉 All features unlocked'); };
-    const goFree = () => { setPro(false); localStorage.setItem('peekd_pro', '0'); toast('Switched to Free plan'); };
+
+    function applyPlan(plan) {
+      const isPro = plan === 'premium';
+      setPro(isPro);
+      localStorage.setItem('peekd_pro', isPro ? '1' : '0');
+    }
+
+    // Switch optimistically, then roll back if the profile write is rejected.
+    async function savePlan(plan) {
+      const previous = pro ? 'premium' : 'free';
+      applyPlan(plan);
+
+      const res = await window.PeekdProfile?.updatePlan?.(plan);
+      if (res && !res.ok) {
+        applyPlan(previous);
+        toast(res.error === 'plan_column_missing'
+          ? 'Plans are not set up in the database yet'
+          : 'Could not change your plan. Try again.');
+        return false;
+      }
+
+      setProfile((p) => (p ? { ...p, plan } : p));
+      return true;
+    }
+
+    const goPro = async () => { setUpgrade(false); if (await savePlan('premium')) toast('Welcome to Pro 🎉 All features unlocked'); };
+    const goFree = async () => { if (await savePlan('free')) toast('Switched to Free plan'); };
 
     let body;
     if (page === 'inbox') body = React.createElement(InboxPage, { free, onUpgrade: openUpgrade, onCompose: openCompose, toast, setHeaderExtra, setHeaderCTA, inboxRefreshKey });
