@@ -40,6 +40,63 @@
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
   }
 
+  function csvCell(value) {
+    const s = String(value ?? '');
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function csvRow(cells) {
+    return cells.map(csvCell).join(',');
+  }
+
+  function downloadCsv(filename, text) {
+    const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function slugPeriod(label) {
+    return String(label || 'analytics')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'analytics';
+  }
+
+  function buildAnalyticsCsv({ rangeLabel, stats, daily, recipients, links }) {
+    const lines = [
+      csvRow(['Peekd Analytics']),
+      csvRow(['Range', rangeLabel]),
+      '',
+      csvRow(['Summary']),
+      csvRow(['Metric', 'Value', 'Change vs prior period']),
+    ];
+    for (const s of stats || []) {
+      lines.push(csvRow([s.label, s.value, s.delta || '']));
+    }
+
+    lines.push('', csvRow(['Daily']), csvRow(['Date', 'Recipients sent', 'Opened', 'Replied', 'Open rate %', 'Reply rate %']));
+    for (const d of daily || []) {
+      lines.push(csvRow([d.date, d.sent, d.opened, d.replied, d.openRate, d.replyRate]));
+    }
+
+    lines.push('', csvRow(['Top recipients']), csvRow(['Name', 'Email', 'Open rate %', 'Emails sent']));
+    for (const r of recipients || []) {
+      lines.push(csvRow([r.name, r.email, r.rate, r.sent]));
+    }
+
+    lines.push('', csvRow(['Link performance']), csvRow(['URL', 'Clicks', 'Unique clicks', 'CTR %']));
+    for (const l of links || []) {
+      lines.push(csvRow([l.url, l.clicks, l.unique, l.ctr]));
+    }
+
+    return lines.join('\r\n') + '\r\n';
+  }
+
   function eachDay(start, end) {
     const days = [];
     const cur = startOfDay(start);
@@ -376,13 +433,24 @@
     const avgOpens = emailsSent > 0 ? openedRecipients / emailsSent : null;
 
     const dayLabels = days.map((d) => formatChartDayLabel(d));
-    const rateSeries = (field) => days.map((d) => {
-      const bucket = byDay.get(dayKey(d));
+    const rateFor = (bucket, field) => {
       if (!bucket || bucket.recipients === 0) return 0;
       return Math.round((bucket[field] / bucket.recipients) * 1000) / 10;
-    });
+    };
+    const rateSeries = (field) => days.map((d) => rateFor(byDay.get(dayKey(d)), field));
     const openSeries = { values: rateSeries('opened'), labels: dayLabels };
     const replySeries = { values: rateSeries('replied'), labels: dayLabels };
+    const daily = days.map((d) => {
+      const bucket = byDay.get(dayKey(d)) || { recipients: 0, opened: 0, replied: 0 };
+      return {
+        date: dayKey(d),
+        sent: bucket.recipients,
+        opened: bucket.opened,
+        replied: bucket.replied,
+        openRate: rateFor(bucket, 'opened'),
+        replyRate: rateFor(bucket, 'replied'),
+      };
+    });
 
     // Top recipients by open rate in this window: opened sends / sent sends.
     const topRecipients = [...byRecipient.values()]
@@ -433,6 +501,7 @@
       avgOpens,
       openSeries,
       replySeries,
+      daily,
       topRecipients,
       linkPerformance,
       sendTimes,
@@ -449,6 +518,7 @@
         avgOpens: { value: '—', delta: '', up: true, sub: 'per tracked email' },
         openSeries: { values: [], labels: [] },
         replySeries: { values: [], labels: [] },
+        daily: [],
         topRecipients: [],
         linkPerformance: [],
         sendTimes: null,
@@ -468,6 +538,7 @@
         avgOpens: { value: '—', delta: '', up: true, sub: 'per tracked email' },
         openSeries: { values: [], labels: [] },
         replySeries: { values: [], labels: [] },
+        daily: [],
         topRecipients: [],
         linkPerformance: [],
         sendTimes: null,
@@ -520,6 +591,7 @@
       avgOpens,
       openSeries: current.openSeries || { values: [], labels: [] },
       replySeries: current.replySeries || { values: [], labels: [] },
+      daily: current.daily || [],
       topRecipients,
       linkPerformance: current.linkPerformance || [],
       sendTimes: current.sendTimes || null,
@@ -636,15 +708,27 @@
     const [topRecipients, setTopRecipients] = useState(null);
     const [linkPerformance, setLinkPerformance] = useState(null);
     const [sendTimes, setSendTimes] = useState(null);
+    const [daily, setDaily] = useState([]);
+    const exportRef = useRef({ loading: true });
     const p = PERIODS[period === 'custom' ? '30d' : period];
     const stats = statsFor(p, emailsSent, openRate, replyRate, avgOpens);
     const series = openSeries.values.length ? openSeries.values : seriesFor(p);
     const seriesLabels = openSeries.labels.length === series.length ? openSeries.labels : null;
     const replySeries = replySeriesLive.values.length ? replySeriesLive.values : replySeriesFor(p);
     const replySeriesLabels = replySeriesLive.labels.length === replySeries.length ? replySeriesLive.labels : null;
-    const periodLabel = period === 'custom' ? (customLabel || 'custom range') : PERIODS[period].label.toLowerCase();
+    const rangeTitle = period === 'custom' ? (customLabel || 'Custom range') : PERIODS[period].label;
+    const periodLabel = rangeTitle.toLowerCase();
     const topList = Array.isArray(topRecipients) ? topRecipients : [];
     const linkList = Array.isArray(linkPerformance) ? linkPerformance : [];
+    const statsLoading = [emailsSent, openRate, replyRate, avgOpens].some((s) => s?.value === '…') || topRecipients == null;
+    exportRef.current = {
+      loading: statsLoading,
+      rangeLabel: rangeTitle,
+      stats,
+      daily,
+      recipients: topList,
+      links: linkList,
+    };
     const maxLinkCtr = Math.max(...linkList.map((l) => l.ctr), 1);
 
     useEffect(() => {
@@ -659,6 +743,7 @@
       setTopRecipients(null);
       setLinkPerformance(null);
       setSendTimes(null);
+      setDaily([]);
       fetchAnalyticsStats(period, customRange).then((stats) => {
         if (cancelled) return;
         setEmailsSent(stats.emailsSent);
@@ -670,6 +755,7 @@
         setTopRecipients(stats.topRecipients || []);
         setLinkPerformance(stats.linkPerformance || []);
         setSendTimes(stats.sendTimes || null);
+        setDaily(stats.daily || []);
       });
       return () => { cancelled = true; };
     }, [period, customRange?.from, customRange?.to]);
@@ -690,7 +776,21 @@
             }
           },
         }),
-        React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => toast('Exported CSV') }, React.createElement(Icon, { name: 'download', size: 14 }), 'Export'),
+        React.createElement('button', {
+          className: 'btn btn-ghost btn-sm',
+          onClick: () => {
+            const snap = exportRef.current;
+            if (snap.loading) {
+              toast('Analytics is still loading');
+              return;
+            }
+            downloadCsv(
+              'peekd-analytics-' + slugPeriod(snap.rangeLabel) + '.csv',
+              buildAnalyticsCsv(snap),
+            );
+            toast('Exported CSV');
+          },
+        }, React.createElement(Icon, { name: 'download', size: 14 }), 'Export'),
       ));
       return () => setHeaderExtra(null);
     }, [period, customLabel]);
