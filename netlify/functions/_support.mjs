@@ -291,7 +291,7 @@ function escHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-export async function sendTicketEmail({ to, subject, html, text }) {
+export async function sendTicketEmail({ to, subject, html, text, headers }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
   if (!apiKey || !from) return { ok: false, error: 'email_not_configured' };
@@ -303,6 +303,7 @@ export async function sendTicketEmail({ to, subject, html, text }) {
     subject,
     html,
     text,
+    ...(headers ? { headers } : {}),
   });
 
   if (error) return { ok: false, error: error.message };

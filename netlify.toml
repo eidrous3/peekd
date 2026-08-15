@@ -28,5 +28,11 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/d/:token"
+  to = "/.netlify/functions/digest-unsubscribe?u=:token"
+  status = 200
+  force = true
+
 [build.environment]
   NODE_VERSION = "20"

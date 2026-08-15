@@ -275,7 +275,7 @@
           React.createElement(StoreBtn, { icon: React.createElement(AndroidMark, null), top: 'GET IT ON', bottom: 'Google Play', href: 'https://play.google.com/store' })),
         React.createElement(ToggleRow, { title: 'Mobile push', desc: 'Push notifications to your phone', on: notif.mobile, disabled: !appInstalled, tip: 'Install the app first', onToggle: () => setNotif({ ...notif, mobile: !notif.mobile }) }),
         React.createElement(SetSection, { label: 'Digest' }),
-        React.createElement(ToggleRow, { title: 'Daily digest', desc: "Morning summary of yesterday's activity", on: notif.digest, onToggle: () => setNotif({ ...notif, digest: !notif.digest }) }),
+        React.createElement(ToggleRow, { title: 'Daily digest', desc: "Yesterday's activity, emailed around 8am in your timezone", on: notif.digest, onToggle: () => setNotif({ ...notif, digest: !notif.digest }) }),
         dirty && React.createElement('button', {
           className: 'btn btn-primary',
           style: { marginTop: 4, paddingRight: 15, marginRight: 15 },
@@ -437,7 +437,9 @@
   function SettingsPage({ onUpgrade, toast, pro, onProfileChange }) {
     const [tab, setTab] = useState(() => {
       const params = new URLSearchParams(window.location.search);
-      return params.get('settings') === 'integrations' ? 'integrations' : 'account';
+      const settingsTab = params.get('settings');
+      if (settingsTab === 'integrations' || settingsTab === 'notifications') return settingsTab;
+      return 'account';
     });
     const [profileStatus, setProfileStatus] = useState('loading');
     const [profile, setProfile] = useState(null);
