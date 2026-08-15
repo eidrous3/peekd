@@ -153,10 +153,12 @@
         React.createElement(Avatar, { initials: displayInitials, size: 56, fontSize: 20 }),
         React.createElement('div', { style: { flex: 1 } },
           React.createElement('div', { className: 'pr-name' }, displayName,
-            pro && React.createElement('span', { className: 'pro-badge' }, React.createElement(Icon, { name: 'bolt', size: 12, fill: 'currentColor', stroke: 0 }), 'Pro')),
+            pro && React.createElement('span', { className: 'pro-badge' },
+              React.createElement(Icon, { name: profile?.plan === 'lifetime' ? 'infinity' : 'bolt', size: 12, fill: 'none', stroke: 2.4 }),
+              profile?.plan === 'lifetime' ? 'Lifetime' : 'Pro')),
           React.createElement('div', { className: 'pr-email' }, displayEmail),
           React.createElement('div', { className: 'pr-plan' + (pro ? ' pr-plan-pro' : '') },
-            profile?.plan === 'lifetime' ? 'LIFETIME · never billed'
+            profile?.plan === 'lifetime' ? '∞ Lifetime plan. All features unlocked.'
               : pro ? 'PRO PLAN · all features unlocked'
                 : 'FREE PLAN · limited tracking')),
         !pro && React.createElement('button', { className: 'btn btn-upgrade', style: { width: 'auto', padding: '0 16px' }, onClick: onUpgrade }, React.createElement(Icon, { name: 'bolt', size: 14, fill: 'currentColor', stroke: 0 }), 'Upgrade to Premium'),

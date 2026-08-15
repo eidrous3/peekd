@@ -326,7 +326,7 @@
       applyPlan('lifetime');
       setProfile((p) => (p ? { ...p, plan: 'lifetime' } : p));
       setUpgrade(false);
-      toast('Lifetime Pro unlocked — you will not be billed');
+      toast('Welcome to lifetime membership.');
       return true;
     }
 
