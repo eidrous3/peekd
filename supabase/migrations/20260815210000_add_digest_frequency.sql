@@ -12,4 +12,4 @@ alter table public.notification_settings
   check (digest_frequency in ('daily', 'weekly'));
 
 comment on column public.notification_settings.digest_frequency is
-  'How often to email the digest when daily_digest_enabled is true: daily or weekly (Monday).';
+  'How often to email the digest when daily_digest_enabled is true: daily or weekly (Monday 8am).';

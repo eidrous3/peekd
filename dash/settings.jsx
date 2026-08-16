@@ -294,8 +294,8 @@
           title: 'Digest',
           desc: notif.digest
             ? (notif.digestFrequency === 'weekly'
-              ? "Last week's activity, emailed Monday around 8am — sent even if Email alerts above are off"
-              : "Yesterday's activity, emailed around 8am — sent even if Email alerts above are off")
+              ? 'Weekly digest, sent on 8 am Mondays'
+              : 'Daily digest, sent on 8 am')
             : null,
           on: notif.digest,
           onToggle: () => setNotif({ ...notif, digest: !notif.digest }),
