@@ -1047,8 +1047,10 @@ export function isCountableClick(event) {
   return event?.classification !== 'likely_proxy' && event?.classification !== 'self';
 }
 
-export function classifyClick({ ip, userAgent, senderIp }) {
-  if (ipsMatch(ip, senderIp)) return 'self';
+export function classifyClick({ ip, userAgent /* senderIp unused for clicks */ }) {
+  // Opens mark same-IP as 'self' (Sent-folder image loads). Links are not
+  // auto-fetched, so same-IP is almost always a real click — including the
+  // sender testing — and must still notify.
   if (isPrefetchBotUserAgent(userAgent)) return 'likely_proxy';
   if (isGoogleInfrastructureIp(ip) && !looksLikeHumanBrowser(userAgent)) return 'likely_proxy';
   if (looksLikeHumanBrowser(userAgent)) return 'human';
@@ -1142,8 +1144,8 @@ export async function recordLinkClick({ clickToken, ip, userAgent }) {
     return { ok: false, recorded: false, error: 'invalid_original_url' };
   }
 
-  // Always return the destination first — recording/alerts must not block or
-  // replace the redirect (a failed insert used to dump users on getpeekd.com).
+  // Prefer a successful redirect even if recording/alerts fail — a failed
+  // insert used to dump clickers on getpeekd.com.
   try {
     const clickedAt = new Date();
     const classification = classifyClick({ ip, userAgent, senderIp: link.tracked_emails?.sender_ip });
@@ -1162,16 +1164,20 @@ export async function recordLinkClick({ clickToken, ip, userAgent }) {
       prefer: 'return=minimal',
     });
 
-    if (insert.ok && classification === 'human' && link.tracked_emails?.user_id) {
-      notifyTrackingAlert({
-        userId: link.tracked_emails.user_id,
-        type: 'click',
-        who: 'Someone',
-        subject: link.tracked_emails.subject,
-        fromEmail: link.tracked_emails.from_email,
-      }).catch((err) => console.error('[alert-email] click failed', err));
-    } else if (!insert.ok) {
-      console.error('[track-click] record failed:', insert.error);
+    if (!insert.ok) {
+      console.error('[track-click] record failed:', insert.error, { classification });
+    } else if (isCountableClick({ classification }) && link.tracked_emails?.user_id) {
+      // Await so Netlify does not freeze the isolate before the email sends.
+      try {
+        await notifyTrackingAlert({
+          userId: link.tracked_emails.user_id,
+          type: 'click',
+          who: 'Someone',
+          subject: link.tracked_emails.subject,
+        });
+      } catch (err) {
+        console.error('[alert-email] click failed', err);
+      }
     }
   } catch (err) {
     console.error('[track-click] record unexpected error:', err);
