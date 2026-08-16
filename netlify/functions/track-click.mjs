@@ -42,9 +42,11 @@ export default async (req) => {
     if (result.redirectUrl) {
       return Response.redirect(result.redirectUrl, 302);
     }
+    console.error('[track-click] no redirect for token', token.slice(0, 12), result.error || '');
   } catch (err) {
     console.error('[track-click] unexpected error:', err);
   }
 
+  // Last resort only when the token is unknown — never replace a known destination.
   return Response.redirect('https://getpeekd.com', 302);
 };

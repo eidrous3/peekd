@@ -30,7 +30,10 @@ export function generateClickToken() {
 
 export function clickTrackUrl(token) {
   const base = siteUrl();
-  return `${base}/t/${String(token || '').trim()}`;
+  // Hit the function directly (same pattern as open pixels). The /t/:token
+  // rewrite is nicer in the address bar, but if it fails users land on
+  // getpeekd.com instead of the real destination.
+  return `${base}/.netlify/functions/track-click?k=${encodeURIComponent(String(token || '').trim())}`;
 }
 
 export function pixelOpenUrl(token) {
@@ -1126,7 +1129,7 @@ export async function recordLinkClick({ clickToken, ip, userAgent }) {
   if (!token) return { ok: true, recorded: false };
 
   const lookup = await dbRequest(
-    `tracked_links?click_token=eq.${encodeURIComponent(token)}&select=id,original_url,tracked_emails(sent_at,sender_ip,user_id,subject)`,
+    `tracked_links?click_token=eq.${encodeURIComponent(token)}&select=id,original_url,tracked_emails(sent_at,sender_ip,user_id,subject,from_email)`,
   );
 
   if (!lookup.ok || !lookup.data?.[0]) {
@@ -1134,46 +1137,65 @@ export async function recordLinkClick({ clickToken, ip, userAgent }) {
   }
 
   const link = lookup.data[0];
-  const clickedAt = new Date();
-  const classification = classifyClick({ ip, userAgent, senderIp: link.tracked_emails?.sender_ip });
-  const locationLabel = await lookupLocationLabel(ip);
-
-  const insert = await dbRequest('email_click_events', {
-    method: 'POST',
-    body: {
-      tracked_link_id: link.id,
-      ip: ip || null,
-      user_agent: userAgent ? String(userAgent).slice(0, 500) : null,
-      classification,
-      location_label: locationLabel,
-      clicked_at: clickedAt.toISOString(),
-    },
-    prefer: 'return=minimal',
-  });
-
-  if (!insert.ok) {
-    return { ok: false, recorded: false, error: insert.error };
+  const redirectUrl = absoluteHttpUrl(link.original_url);
+  if (!redirectUrl) {
+    return { ok: false, recorded: false, error: 'invalid_original_url' };
   }
 
-  if (classification === 'human' && link.tracked_emails?.user_id) {
-    try {
-      await notifyTrackingAlert({
+  // Always return the destination first — recording/alerts must not block or
+  // replace the redirect (a failed insert used to dump users on getpeekd.com).
+  try {
+    const clickedAt = new Date();
+    const classification = classifyClick({ ip, userAgent, senderIp: link.tracked_emails?.sender_ip });
+    const locationLabel = await lookupLocationLabel(ip);
+
+    const insert = await dbRequest('email_click_events', {
+      method: 'POST',
+      body: {
+        tracked_link_id: link.id,
+        ip: ip || null,
+        user_agent: userAgent ? String(userAgent).slice(0, 500) : null,
+        classification,
+        location_label: locationLabel,
+        clicked_at: clickedAt.toISOString(),
+      },
+      prefer: 'return=minimal',
+    });
+
+    if (insert.ok && classification === 'human' && link.tracked_emails?.user_id) {
+      notifyTrackingAlert({
         userId: link.tracked_emails.user_id,
         type: 'click',
         who: 'Someone',
         subject: link.tracked_emails.subject,
-      });
-    } catch (err) {
-      console.error('[alert-email] click failed', err);
+        fromEmail: link.tracked_emails.from_email,
+      }).catch((err) => console.error('[alert-email] click failed', err));
+    } else if (!insert.ok) {
+      console.error('[track-click] record failed:', insert.error);
     }
+  } catch (err) {
+    console.error('[track-click] record unexpected error:', err);
   }
 
   return {
     ok: true,
     recorded: true,
-    redirectUrl: link.original_url,
-    classification,
+    redirectUrl,
   };
+}
+
+function absoluteHttpUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+  } catch { /* try with https */ }
+  try {
+    const url = new URL(`https://${raw.replace(/^\/\//, '')}`);
+    if (url.hostname.includes('.')) return url.href;
+  } catch { /* ignore */ }
+  return '';
 }
 
 export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
