@@ -165,6 +165,7 @@ svg{display:block}
 .timeline-ico{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto}
 .ti-sent,.ti-delivered,.ti-scheduled{background:var(--bg-2);color:var(--fg-mute)}
 .ti-opened{background:var(--accent-soft);color:var(--accent)}
+.ti-clicked{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
 .ti-replied{background:var(--good-soft);color:var(--good)}
 .ti-link{background:var(--purple-soft);color:var(--purple)}
 .ti-bounced{background:var(--danger-soft);color:var(--danger)}

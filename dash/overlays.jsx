@@ -319,7 +319,14 @@
     React.useEffect(() => { const k = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, []);
     let list = notifs;
     if (tab === 'opens') list = notifs.filter(n => n.type === 'open');
+    else if (tab === 'clicks') list = notifs.filter(n => n.type === 'click');
     else if (tab === 'replies') list = notifs.filter(n => n.type === 'reply');
+
+    function ico(type) {
+      if (type === 'reply') return { ti: 'replied', name: 'cornerUpLeft' };
+      if (type === 'click') return { ti: 'clicked', name: 'link' };
+      return { ti: 'opened', name: 'eye' };
+    }
 
     return React.createElement('div', { className: 'drawer-wrap' },
       React.createElement('div', { className: 'drawer-bg', onClick: onClose }),
@@ -332,7 +339,7 @@
         ),
         React.createElement('div', { style: { padding: '12px 16px', borderBottom: '1px solid var(--line)' } },
           React.createElement('div', { className: 'tabs' },
-            [['all', 'All'], ['opens', 'Opens'], ['replies', 'Replies']].map(([id, l]) =>
+            [['all', 'All'], ['opens', 'Opens'], ['clicks', 'Clicks'], ['replies', 'Replies']].map(([id, l]) =>
               React.createElement('button', { key: id, className: 'tab' + (tab === id ? ' active' : ''), onClick: () => setTab(id) }, l))),
         ),
         React.createElement('div', { style: { flex: 1, overflowY: 'auto' } },
@@ -340,17 +347,20 @@
             ? React.createElement('div', { style: { textAlign: 'center', color: 'var(--fg-mute)', padding: 40, fontSize: 13 } }, 'Loading…')
             : list.length === 0
             ? React.createElement('div', { style: { textAlign: 'center', color: 'var(--fg-mute)', padding: 40, fontSize: 13 } },
-                tab === 'opens' ? 'No opens yet' : tab === 'replies' ? 'No replies yet' : 'Nothing here yet')
-            : list.map(n => React.createElement('button', {
-                key: n.id, className: 'notif-row-d',
-                onClick: () => onSelect(n),
-              },
-                React.createElement('span', { className: 'timeline-ico ti-' + (n.type === 'reply' ? 'replied' : 'opened') }, React.createElement(Icon, { name: n.type === 'reply' ? 'cornerUpLeft' : 'eye', size: 15 })),
-                React.createElement('div', { style: { flex: 1, minWidth: 0, textAlign: 'left' } },
-                  React.createElement('div', { style: { fontSize: 13 } }, React.createElement('b', null, n.who + ' '), React.createElement('span', { className: 'dim' }, n.text)),
-                  React.createElement('div', { className: 'muted', style: { fontSize: 11.5, marginTop: 2 } }, n.time)),
-                n.unread && React.createElement('span', { style: { width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flex: '0 0 auto', alignSelf: 'center' } }),
-              )),
+                tab === 'opens' ? 'No opens yet' : tab === 'clicks' ? 'No clicks yet' : tab === 'replies' ? 'No replies yet' : 'Nothing here yet')
+            : list.map(n => {
+                const icon = ico(n.type);
+                return React.createElement('button', {
+                  key: n.id, className: 'notif-row-d',
+                  onClick: () => onSelect(n),
+                },
+                  React.createElement('span', { className: 'timeline-ico ti-' + icon.ti }, React.createElement(Icon, { name: icon.name, size: 15 })),
+                  React.createElement('div', { style: { flex: 1, minWidth: 0, textAlign: 'left' } },
+                    React.createElement('div', { style: { fontSize: 13 } }, React.createElement('b', null, n.who + ' '), React.createElement('span', { className: 'dim' }, n.text)),
+                    React.createElement('div', { className: 'muted', style: { fontSize: 11.5, marginTop: 2 } }, n.time)),
+                  n.unread && React.createElement('span', { style: { width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flex: '0 0 auto', alignSelf: 'center' } }),
+                );
+              }),
         ),
       ),
     );

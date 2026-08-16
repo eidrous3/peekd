@@ -276,6 +276,17 @@
 
     if (error) return { ok: false, error: error.message, notifications: [] };
 
+    const { data: linkRows, error: linkError } = await sb
+      .from('tracked_links')
+      .select('id, original_url, tracked_emails!inner(user_id, subject), email_click_events(id, clicked_at, classification)')
+      .eq('tracked_emails.user_id', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (linkError) {
+      console.warn('[Peekd] Could not load link-click notifications:', linkError.message);
+    }
+
     const [namesByEmail, readAt, readKeys] = await Promise.all([
       fetchNamesByEmail(sb, session.user.id),
       fetchReadAt(sb, session.user.id),
@@ -306,6 +317,24 @@
           at: latestOpen.opened_at,
         });
       }
+    }
+
+    for (const link of linkRows || []) {
+      const subject = String(link.tracked_emails?.subject || '').trim() || '(no subject)';
+      const clicks = (link.email_click_events || [])
+        .filter((e) => e.classification !== 'likely_proxy' && e.classification !== 'self' && e.clicked_at)
+        .sort((a, b) => new Date(a.clicked_at) - new Date(b.clicked_at));
+      const latestClick = clicks[clicks.length - 1];
+      if (!latestClick) continue;
+      let host = '';
+      try { host = new URL(link.original_url).hostname.replace(/^www\./, ''); } catch { /* ignore */ }
+      items.push({
+        id: 'click:' + latestClick.id,
+        type: 'click',
+        who: 'Someone',
+        text: `clicked ${host ? host + ' ' : ''}in "${subject}"` + (clicks.length > 1 ? ` · ${clicks.length}×` : ''),
+        at: latestClick.clicked_at,
+      });
     }
 
     items.sort((a, b) => new Date(b.at) - new Date(a.at));

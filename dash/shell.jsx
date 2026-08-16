@@ -157,19 +157,27 @@
   // toast so an alert and a confirmation can be on screen at the same time.
   function AlertStack({ alerts, onDismiss, onSelect }) {
     if (!alerts?.length) return null;
+    function ico(type) {
+      if (type === 'reply') return { ti: 'replied', name: 'cornerUpLeft' };
+      if (type === 'click') return { ti: 'clicked', name: 'link' };
+      return { ti: 'opened', name: 'eye' };
+    }
     return React.createElement('div', { className: 'alert-stack' },
-      alerts.map((a) => React.createElement('div', { key: a.key, className: 'alert-toast' },
-        React.createElement('span', { className: 'timeline-ico ti-' + (a.type === 'reply' ? 'replied' : 'opened') },
-          React.createElement(Icon, { name: a.type === 'reply' ? 'cornerUpLeft' : 'eye', size: 15 })),
-        React.createElement('button', { className: 'alert-body', onClick: () => onSelect?.(a) },
-          React.createElement('div', { className: 'alert-text' },
-            React.createElement('b', null, a.who + ' '),
-            React.createElement('span', { className: 'dim' }, a.text)),
-          React.createElement('div', { className: 'alert-time' }, a.time)),
-        React.createElement('button', {
-          className: 'alert-x', title: 'Dismiss', onClick: () => onDismiss(a.key),
-        }, React.createElement(Icon, { name: 'x', size: 13 })),
-      )),
+      alerts.map((a) => {
+        const icon = ico(a.type);
+        return React.createElement('div', { key: a.key, className: 'alert-toast' },
+          React.createElement('span', { className: 'timeline-ico ti-' + icon.ti },
+            React.createElement(Icon, { name: icon.name, size: 15 })),
+          React.createElement('button', { className: 'alert-body', onClick: () => onSelect?.(a) },
+            React.createElement('div', { className: 'alert-text' },
+              React.createElement('b', null, a.who + ' '),
+              React.createElement('span', { className: 'dim' }, a.text)),
+            React.createElement('div', { className: 'alert-time' }, a.time)),
+          React.createElement('button', {
+            className: 'alert-x', title: 'Dismiss', onClick: () => onDismiss(a.key),
+          }, React.createElement(Icon, { name: 'x', size: 13 })),
+        );
+      }),
     );
   }
 

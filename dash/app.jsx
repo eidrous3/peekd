@@ -161,6 +161,7 @@
       const fresh = list.filter((n) => {
         if (known.has(n.id + '|' + n.at) || readIds.current.has(n.id)) return false;
         if (n.type === 'reply') return n.unread && prefs.reply !== false;
+        if (n.type === 'click') return n.unread && prefs.links !== false;
         return n.unread && prefs.opens;
       });
       if (!fresh.length) return;
