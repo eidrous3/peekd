@@ -310,6 +310,7 @@ tr.clickable{cursor:pointer}
 .store-row{display:flex;flex-direction:column;gap:10px;max-width:300px;margin:14px 0 6px}
 .store-btn{display:flex;align-items:center;gap:12px;width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 14px;text-align:left;color:var(--fg);transition:background .12s,border-color .12s}
 .store-btn:hover{background:var(--bg-2);border-color:var(--fg-mute)}
+.store-btn-disabled,.store-btn-disabled:hover{opacity:.55;pointer-events:none;cursor:default;background:var(--bg);border-color:var(--line)}
 .store-ico{display:grid;place-items:center;flex:0 0 auto;width:22px}
 .store-text{display:flex;flex-direction:column;line-height:1.2}
 .store-top{font-size:9.5px;color:var(--fg-mute);letter-spacing:.03em;text-transform:uppercase}

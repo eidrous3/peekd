@@ -59,12 +59,17 @@
       React.createElement('circle', { cx: 14.4, cy: 10.6, r: .95, fill: '#fff' }));
   }
 
-  function StoreBtn({ icon, top, bottom, href }) {
-    return React.createElement('a', { className: 'store-btn', href, target: '_blank', rel: 'noopener noreferrer' },
-      React.createElement('span', { className: 'store-ico' }, icon),
-      React.createElement('span', { className: 'store-text' },
+  function StoreBtn({ icon, top, bottom, href, disabled }) {
+    const kids = [
+      React.createElement('span', { key: 'i', className: 'store-ico' }, icon),
+      React.createElement('span', { key: 't', className: 'store-text' },
         React.createElement('span', { className: 'store-top' }, top),
-        React.createElement('span', { className: 'store-bottom' }, bottom)));
+        React.createElement('span', { className: 'store-bottom' }, bottom)),
+    ];
+    if (disabled) {
+      return React.createElement('div', { className: 'store-btn store-btn-disabled', 'aria-disabled': 'true' }, kids);
+    }
+    return React.createElement('a', { className: 'store-btn', href, target: '_blank', rel: 'noopener noreferrer' }, kids);
   }
 
   function DeleteAccountModal({ onClose, onConfirm, deleting }) {
@@ -281,8 +286,8 @@
         React.createElement(SetSection, { label: 'Mobile app' }),
         React.createElement('p', { className: 'mobile-note' }, 'Get Peekd on your phone for instant alerts.'),
         React.createElement('div', { className: 'store-row' },
-          React.createElement(StoreBtn, { icon: React.createElement(AppleMark, null), top: 'Download on the', bottom: 'App Store', href: 'https://www.apple.com/app-store/' }),
-          React.createElement(StoreBtn, { icon: React.createElement(AndroidMark, null), top: 'GET IT ON', bottom: 'Google Play', href: 'https://play.google.com/store' })),
+          React.createElement(StoreBtn, { icon: React.createElement(AppleMark, null), top: 'Download on the', bottom: 'App Store (coming soon)', disabled: true }),
+          React.createElement(StoreBtn, { icon: React.createElement(AndroidMark, null), top: 'GET IT ON', bottom: 'Google Play (coming soon)', disabled: true })),
         React.createElement(ToggleRow, { title: 'Mobile push', desc: 'Push notifications to your phone', on: notif.mobile, disabled: !appInstalled, tip: 'Install the app first', onToggle: () => setNotif({ ...notif, mobile: !notif.mobile }) }),
         React.createElement(SetSection, { label: 'Digest' }),
         React.createElement(ToggleRow, { title: 'Daily digest', desc: "Yesterday's activity, emailed around 8am in your timezone", on: notif.digest, onToggle: () => setNotif({ ...notif, digest: !notif.digest }) }),
