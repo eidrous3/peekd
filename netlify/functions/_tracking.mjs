@@ -9,11 +9,16 @@ import {
   relativeTime,
   siteUrl,
 } from './_support.mjs';
+import { notifyTrackingAlert } from './_alert-email.mjs';
 
 const trackingModuleDir = path.dirname(fileURLToPath(import.meta.url));
 
 const PIXEL_IMG_STYLE = 'display:block;width:1px;height:1px;border:0;';
 const OPEN_DEDUPE_WINDOW_MS = 45_000;
+
+function isReplySubject(subject) {
+  return /^\s*re\s*:/i.test(String(subject || ''));
+}
 
 export function generatePixelToken() {
   return crypto.randomBytes(16).toString('base64url');
@@ -327,13 +332,21 @@ export async function markRecipientReplied({ trackedEmailId, gmailMessageId, rec
   if (!email) return { ok: false, error: 'email_required' };
 
   let emailId = trackedEmailId || null;
+  let tracked = null;
   if (!emailId && gmailMessageId) {
     const lookup = await dbRequest(
-      `tracked_emails?gmail_message_id=eq.${encodeURIComponent(gmailMessageId)}&select=id&limit=1`,
+      `tracked_emails?gmail_message_id=eq.${encodeURIComponent(gmailMessageId)}&select=id,user_id,subject&limit=1`,
     );
-    emailId = lookup.ok && lookup.data?.[0]?.id ? lookup.data[0].id : null;
+    tracked = lookup.ok ? lookup.data?.[0] : null;
+    emailId = tracked?.id || null;
   }
   if (!emailId) return { ok: false, error: 'tracked_email_not_found' };
+  if (!tracked) {
+    const lookup = await dbRequest(
+      `tracked_emails?id=eq.${encodeURIComponent(emailId)}&select=id,user_id,subject&limit=1`,
+    );
+    tracked = lookup.ok ? lookup.data?.[0] : null;
+  }
 
   const repliedAtIso = repliedAt
     ? new Date(repliedAt).toISOString()
@@ -341,15 +354,29 @@ export async function markRecipientReplied({ trackedEmailId, gmailMessageId, rec
 
   const res = await dbRequest(
     `tracked_recipients?tracked_email_id=eq.${encodeURIComponent(emailId)}`
-      + `&email=eq.${encodeURIComponent(email)}`,
+      + `&email=eq.${encodeURIComponent(email)}`
+      + `&is_replied=eq.false`,
     {
       method: 'PATCH',
       body: { is_replied: true, replied_at: repliedAtIso },
-      prefer: 'return=minimal',
+      prefer: 'return=representation',
     },
   );
 
   if (!res.ok) return { ok: false, error: res.error || 'update_failed' };
+  const firstReply = Array.isArray(res.data) ? res.data[0] : null;
+  if (firstReply && tracked?.user_id) {
+    try {
+      await notifyTrackingAlert({
+        userId: tracked.user_id,
+        type: 'reply',
+        who: email,
+        subject: tracked.subject,
+      });
+    } catch (err) {
+      console.error('[alert-email] reply failed', err);
+    }
+  }
   return { ok: true };
 }
 
@@ -1099,7 +1126,7 @@ export async function recordLinkClick({ clickToken, ip, userAgent }) {
   if (!token) return { ok: true, recorded: false };
 
   const lookup = await dbRequest(
-    `tracked_links?click_token=eq.${encodeURIComponent(token)}&select=id,original_url,tracked_emails(sent_at,sender_ip)`,
+    `tracked_links?click_token=eq.${encodeURIComponent(token)}&select=id,original_url,tracked_emails(sent_at,sender_ip,user_id,subject)`,
   );
 
   if (!lookup.ok || !lookup.data?.[0]) {
@@ -1128,6 +1155,19 @@ export async function recordLinkClick({ clickToken, ip, userAgent }) {
     return { ok: false, recorded: false, error: insert.error };
   }
 
+  if (classification === 'human' && link.tracked_emails?.user_id) {
+    try {
+      await notifyTrackingAlert({
+        userId: link.tracked_emails.user_id,
+        type: 'click',
+        who: 'Someone',
+        subject: link.tracked_emails.subject,
+      });
+    } catch (err) {
+      console.error('[alert-email] click failed', err);
+    }
+  }
+
   return {
     ok: true,
     recorded: true,
@@ -1141,7 +1181,7 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
   if (!token) return { ok: true, recorded: false };
 
   const lookup = await dbRequest(
-    `tracked_recipients?pixel_token=eq.${encodeURIComponent(token)}&select=id,email,tracked_emails(sent_at,sender_ip)`,
+    `tracked_recipients?pixel_token=eq.${encodeURIComponent(token)}&select=id,email,tracked_emails(sent_at,sender_ip,user_id,subject)`,
   );
 
   if (!lookup.ok || !lookup.data?.[0]) {
@@ -1191,6 +1231,19 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
 
   if (!insert.ok) {
     return { ok: false, recorded: false, error: insert.error };
+  }
+
+  if (classification === 'human' && recipient.tracked_emails?.user_id) {
+    try {
+      await notifyTrackingAlert({
+        userId: recipient.tracked_emails.user_id,
+        type: isReplySubject(recipient.tracked_emails.subject) ? 'reply' : 'open',
+        who: recipient.email,
+        subject: recipient.tracked_emails.subject,
+      });
+    } catch (err) {
+      console.error('[alert-email] open failed', err);
+    }
   }
 
   return {

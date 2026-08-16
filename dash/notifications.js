@@ -5,11 +5,17 @@
     reply: true,
     desktop: true,
     sound: false,
+    email: false,
     mobile: true,
     digest: true,
   };
 
-  const SELECT = 'id, email_opens_enabled, link_clicks_enabled, reply_read_enabled, desktop_enabled, sound_enabled, mobile_push_enabled, daily_digest_enabled';
+  const SELECT = 'id, email_opens_enabled, link_clicks_enabled, reply_read_enabled, desktop_enabled, sound_enabled, email_alerts_enabled, mobile_push_enabled, daily_digest_enabled';
+  const SELECT_NO_EMAIL = 'id, email_opens_enabled, link_clicks_enabled, reply_read_enabled, desktop_enabled, sound_enabled, mobile_push_enabled, daily_digest_enabled';
+
+  function missingEmailAlertsColumn(error) {
+    return error && /column .*email_alerts_enabled.* does not exist/i.test(error.message || '');
+  }
 
   function fromRow(data) {
     if (!data) return { ...DEFAULTS };
@@ -19,13 +25,14 @@
       reply: !!data.reply_read_enabled,
       desktop: !!data.desktop_enabled,
       sound: !!data.sound_enabled,
+      email: !!data.email_alerts_enabled,
       mobile: !!data.mobile_push_enabled,
       digest: !!data.daily_digest_enabled,
     };
   }
 
-  function toRow(settings) {
-    return {
+  function toRow(settings, { includeEmailAlerts = true } = {}) {
+    const row = {
       email_opens_enabled: !!settings.opens,
       link_clicks_enabled: !!settings.links,
       reply_read_enabled: !!settings.reply,
@@ -34,6 +41,8 @@
       mobile_push_enabled: !!settings.mobile,
       daily_digest_enabled: !!settings.digest,
     };
+    if (includeEmailAlerts) row.email_alerts_enabled = !!settings.email;
+    return row;
   }
 
   function settingsEqual(a, b) {
@@ -51,11 +60,19 @@
     const sb = Auth.client();
     if (!sb) return { ok: false, error: 'not_configured' };
 
-    const { data, error } = await sb
+    let { data, error } = await sb
       .from('notification_settings')
       .select(SELECT)
       .eq('id', session.user.id)
       .maybeSingle();
+
+    if (missingEmailAlertsColumn(error)) {
+      ({ data, error } = await sb
+        .from('notification_settings')
+        .select(SELECT_NO_EMAIL)
+        .eq('id', session.user.id)
+        .maybeSingle());
+    }
 
     if (error) return { ok: false, error: error.message };
 
@@ -78,11 +95,19 @@
     if (!sb) return { ok: false, error: 'not_configured' };
 
     const payload = { id: session.user.id, ...toRow(settings) };
-    const { data, error } = await sb
+    let { data, error } = await sb
       .from('notification_settings')
       .upsert(payload, { onConflict: 'id' })
       .select(SELECT)
       .single();
+
+    if (missingEmailAlertsColumn(error)) {
+      ({ data, error } = await sb
+        .from('notification_settings')
+        .upsert({ id: session.user.id, ...toRow(settings, { includeEmailAlerts: false }) }, { onConflict: 'id' })
+        .select(SELECT_NO_EMAIL)
+        .single());
+    }
 
     if (error) return { ok: false, error: error.message };
 
@@ -122,6 +147,10 @@
 
   function titleCase(s) {
     return s.replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  function isReplySubject(subject) {
+    return /^\s*re\s*:/i.test(String(subject || ''));
   }
 
   function displayName(email, namesByEmail) {
@@ -242,22 +271,13 @@
       // Keying on the latest event id means a new open resurfaces it as unread.
       const latestOpen = opens[opens.length - 1];
       if (latestOpen) {
+        const replyRead = isReplySubject(subject);
         items.push({
           id: 'open:' + latestOpen.id,
-          type: 'open',
+          type: replyRead ? 'reply' : 'open',
           who,
           text: `opened "${subject}"` + (opens.length > 1 ? ` · ${ordinal(opens.length)} time` : ''),
           at: latestOpen.opened_at,
-        });
-      }
-
-      if (recipient.is_replied && recipient.replied_at) {
-        items.push({
-          id: 'reply:' + recipient.id,
-          type: 'reply',
-          who,
-          text: `replied to "${subject}"`,
-          at: recipient.replied_at,
         });
       }
     }

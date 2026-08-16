@@ -160,9 +160,7 @@
 
       const fresh = list.filter((n) => {
         if (known.has(n.id + '|' + n.at) || readIds.current.has(n.id)) return false;
-        // A reply is toasted when we first discover it, even if replied_at is
-        // older than the "mark all read" watermark (sync lags the real send).
-        if (n.type === 'reply') return true;
+        if (n.type === 'reply') return n.unread && prefs.reply !== false;
         return n.unread && prefs.opens;
       });
       if (!fresh.length) return;
