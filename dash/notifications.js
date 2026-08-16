@@ -8,13 +8,23 @@
     email: false,
     mobile: true,
     digest: true,
+    digestFrequency: 'daily',
   };
 
-  const SELECT = 'id, email_opens_enabled, link_clicks_enabled, reply_read_enabled, desktop_enabled, sound_enabled, email_alerts_enabled, mobile_push_enabled, daily_digest_enabled';
+  const SELECT = 'id, email_opens_enabled, link_clicks_enabled, reply_read_enabled, desktop_enabled, sound_enabled, email_alerts_enabled, mobile_push_enabled, daily_digest_enabled, digest_frequency';
+  const SELECT_NO_FREQ = 'id, email_opens_enabled, link_clicks_enabled, reply_read_enabled, desktop_enabled, sound_enabled, email_alerts_enabled, mobile_push_enabled, daily_digest_enabled';
   const SELECT_NO_EMAIL = 'id, email_opens_enabled, link_clicks_enabled, reply_read_enabled, desktop_enabled, sound_enabled, mobile_push_enabled, daily_digest_enabled';
 
   function missingEmailAlertsColumn(error) {
     return error && /column .*email_alerts_enabled.* does not exist/i.test(error.message || '');
+  }
+
+  function missingDigestFrequencyColumn(error) {
+    return error && /column .*digest_frequency.* does not exist/i.test(error.message || '');
+  }
+
+  function normalizeFrequency(value) {
+    return value === 'weekly' ? 'weekly' : 'daily';
   }
 
   function fromRow(data) {
@@ -28,10 +38,11 @@
       email: !!data.email_alerts_enabled,
       mobile: !!data.mobile_push_enabled,
       digest: !!data.daily_digest_enabled,
+      digestFrequency: normalizeFrequency(data.digest_frequency),
     };
   }
 
-  function toRow(settings, { includeEmailAlerts = true } = {}) {
+  function toRow(settings, { includeEmailAlerts = true, includeFrequency = true } = {}) {
     const row = {
       email_opens_enabled: !!settings.opens,
       link_clicks_enabled: !!settings.links,
@@ -42,6 +53,7 @@
       daily_digest_enabled: !!settings.digest,
     };
     if (includeEmailAlerts) row.email_alerts_enabled = !!settings.email;
+    if (includeFrequency) row.digest_frequency = normalizeFrequency(settings.digestFrequency);
     return row;
   }
 
@@ -66,6 +78,13 @@
       .eq('id', session.user.id)
       .maybeSingle();
 
+    if (missingDigestFrequencyColumn(error)) {
+      ({ data, error } = await sb
+        .from('notification_settings')
+        .select(SELECT_NO_FREQ)
+        .eq('id', session.user.id)
+        .maybeSingle());
+    }
     if (missingEmailAlertsColumn(error)) {
       ({ data, error } = await sb
         .from('notification_settings')
@@ -101,10 +120,17 @@
       .select(SELECT)
       .single();
 
+    if (missingDigestFrequencyColumn(error)) {
+      ({ data, error } = await sb
+        .from('notification_settings')
+        .upsert({ id: session.user.id, ...toRow(settings, { includeFrequency: false }) }, { onConflict: 'id' })
+        .select(SELECT_NO_FREQ)
+        .single());
+    }
     if (missingEmailAlertsColumn(error)) {
       ({ data, error } = await sb
         .from('notification_settings')
-        .upsert({ id: session.user.id, ...toRow(settings, { includeEmailAlerts: false }) }, { onConflict: 'id' })
+        .upsert({ id: session.user.id, ...toRow(settings, { includeEmailAlerts: false, includeFrequency: false }) }, { onConflict: 'id' })
         .select(SELECT_NO_EMAIL)
         .single());
     }

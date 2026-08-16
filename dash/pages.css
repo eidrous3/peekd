@@ -303,6 +303,8 @@ tr.clickable{cursor:pointer}
 .toggle-row.disabled{opacity:.5}
 .toggle-row .tr-title{font-size:14px;font-weight:500;display:flex;align-items:center;gap:8px}
 .toggle-row .tr-desc{font-size:12.5px;color:var(--fg-mute);margin-top:2px}
+.digest-freq{padding:0 0 15px;border-bottom:1px solid var(--line);margin-top:-4px}
+.digest-freq .tabs{width:fit-content}
 .tr-badge{font-size:9px;font-weight:700;letter-spacing:.05em;color:var(--accent);background:var(--accent-soft);padding:2px 6px;border-radius:5px;line-height:1}
 .set-section-label{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--fg-mute);text-transform:uppercase;margin:26px 0 4px}
 .set-section-label:first-of-type{margin-top:14px}

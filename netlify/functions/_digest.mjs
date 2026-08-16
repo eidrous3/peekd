@@ -132,6 +132,13 @@ export function localDayBounds(ymd, tz) {
   return { start, end };
 }
 
+function localWeekday(date, tz) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: validTimeZone(tz),
+    weekday: 'long',
+  }).format(date);
+}
+
 function formatLongDate(ymd, tz) {
   const { start } = localDayBounds(ymd, tz);
   return start.toLocaleDateString('en-US', {
@@ -311,15 +318,25 @@ function metricCard(value, label, deltaHtml, pad) {
   </td>`;
 }
 
-function buildDigestEmail({ name, email, yesterdayLabel, stats, prior, inboxUrl, settingsUrl, unsubUrl }) {
+function buildDigestEmail({ name, email, periodLabel, frequency, stats, prior, inboxUrl, settingsUrl, unsubUrl }) {
+  const weekly = frequency === 'weekly';
   const greeting = firstName(name, email);
   const sent = String(stats.sent);
   const open = stats.openRate == null ? '—' : `${stats.openRate}%`;
   const replies = String(stats.repliedRecipients);
   const clicks = String(stats.clicks);
+  const glance = weekly ? 'Last week at a glance' : 'Yesterday at a glance';
+  const hotBlurb = weekly
+    ? 'People who opened your emails more than once last week.'
+    : 'People who opened your emails more than once yesterday.';
+  const emptyNote = stats.sent === 0
+    ? (weekly
+      ? `<p style="margin:16px 0 0 0;font-size:13px;line-height:1.55;color:#64748B;">No tracked emails went out last week. We'll summarize the next week you send.</p>`
+      : `<p style="margin:16px 0 0 0;font-size:13px;line-height:1.55;color:#64748B;">No tracked emails went out yesterday. We'll summarize the next day you send.</p>`)
+    : '';
   const preview = stats.sent === 0 && stats.repliedRecipients === 0
-    ? `Your Peekd digest for ${yesterdayLabel}`
-    : `${open === '—' ? sent + ' emails sent' : open + ' open rate'} yesterday · ${replies} ${Number(replies) === 1 ? 'reply' : 'replies'}`;
+    ? `Your Peekd digest for ${periodLabel}`
+    : `${open === '—' ? sent + ' emails sent' : open + ' open rate'} ${weekly ? 'last week' : 'yesterday'} · ${replies} ${Number(replies) === 1 ? 'reply' : 'replies'}`;
 
   const hotRows = (stats.hot || []).map((p) => `
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #E2E8F0;border-left:3px solid #3B82F6;border-radius:10px;margin-bottom:10px;">
@@ -344,21 +361,17 @@ function buildDigestEmail({ name, email, yesterdayLabel, stats, prior, inboxUrl,
     ? `<tr>
 <td style="padding:30px 40px 0 40px;font-family:Inter,system-ui,-apple-system,Arial,sans-serif;">
   <p style="margin:0 0 4px 0;font-size:11px;font-weight:700;letter-spacing:0.09em;color:#94A3B8;text-transform:uppercase;">Hot right now</p>
-  <p style="margin:0 0 14px 0;font-size:13px;line-height:1.55;color:#64748B;">People who opened your emails more than once yesterday.</p>
+  <p style="margin:0 0 14px 0;font-size:13px;line-height:1.55;color:#64748B;">${hotBlurb}</p>
   ${hotRows}
 </td>
 </tr>`
-    : '';
-
-  const emptyNote = stats.sent === 0
-    ? `<p style="margin:16px 0 0 0;font-size:13px;line-height:1.55;color:#64748B;">No tracked emails went out yesterday. We'll summarize the next day you send.</p>`
     : '';
 
   const html = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Peekd — Daily Digest</title>
+<title>Peekd — ${weekly ? 'Weekly' : 'Daily'} Digest</title>
 </head>
 <body style="margin:0;padding:0;background-color:#F8FAFF;">
 <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#F8FAFF;">${esc(preview)}</div>
@@ -370,11 +383,11 @@ function buildDigestEmail({ name, email, yesterdayLabel, stats, prior, inboxUrl,
 </td></tr>
 <tr><td style="padding:26px 40px 0 40px;font-family:Inter,system-ui,Arial,sans-serif;">
   <p style="margin:0;font-size:22px;line-height:1.3;font-weight:700;color:#0F172A;letter-spacing:-0.02em;">Good morning, ${esc(greeting)}.</p>
-  <p style="margin:8px 0 0 0;font-size:14px;line-height:1.55;color:#64748B;">Here's your email intelligence for <span style="color:#0F172A;font-weight:600;">${esc(yesterdayLabel)}</span>.</p>
+  <p style="margin:8px 0 0 0;font-size:14px;line-height:1.55;color:#64748B;">Here's your email intelligence for <span style="color:#0F172A;font-weight:600;">${esc(periodLabel)}</span>.</p>
 </td></tr>
 <tr><td style="padding:24px 40px 0 40px;"><div style="height:1px;background-color:#E2E8F0;">&nbsp;</div></td></tr>
 <tr><td style="padding:26px 40px 0 40px;font-family:Inter,system-ui,Arial,sans-serif;">
-  <p style="margin:0 0 14px 0;font-size:11px;font-weight:700;letter-spacing:0.09em;color:#94A3B8;text-transform:uppercase;">Yesterday at a glance</p>
+  <p style="margin:0 0 14px 0;font-size:11px;font-weight:700;letter-spacing:0.09em;color:#94A3B8;text-transform:uppercase;">${esc(glance)}</p>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
     ${metricCard(sent, 'Sent', metricDelta(stats.sent, prior?.sent), 'padding-right:5px;')}
     ${metricCard(open, 'Open rate', metricDelta(stats.openRate, prior?.openRate), 'padding:0 2.5px;')}
@@ -389,7 +402,7 @@ ${hotSection}
   <a href="${esc(inboxUrl)}" style="display:inline-block;font-family:Inter,system-ui,Arial,sans-serif;font-size:14px;font-weight:600;color:#FFFFFF;background-color:#3B82F6;border-radius:10px;padding:13px 26px;text-decoration:none;">View full dashboard →</a>
 </td></tr>
 <tr><td align="center" style="padding:8px 40px 32px 40px;font-family:Inter,system-ui,Arial,sans-serif;">
-  <p style="margin:0;font-size:12px;line-height:1.6;color:#94A3B8;">You're receiving this because daily digest is enabled.</p>
+  <p style="margin:0;font-size:12px;line-height:1.6;color:#94A3B8;">You're receiving this because ${weekly ? 'weekly' : 'daily'} digest is enabled.</p>
   <p style="margin:14px 0 0 0;font-size:12px;line-height:1.7;color:#94A3B8;">
     <a href="${esc(unsubUrl)}" style="color:#3B82F6;text-decoration:none;">Unsubscribe from digest</a>
     &nbsp;·&nbsp;
@@ -402,7 +415,7 @@ ${hotSection}
 
   const text = [
     `Good morning, ${greeting}.`,
-    `Peekd digest for ${yesterdayLabel}`,
+    `Peekd digest for ${periodLabel}`,
     '',
     `Sent: ${sent}`,
     `Open rate: ${open}`,
@@ -416,13 +429,23 @@ ${hotSection}
   return { html, text, preview };
 }
 
+// Digest mail is independent of live-alert toggles (opens, clicks, reply read,
+// desktop, sound, email_alerts_enabled). Only daily_digest_enabled matters.
 async function loadDueUsers(now, limit) {
-  const settingsRes = await dbRequest(
+  let settingsRes = await dbRequest(
     'notification_settings?daily_digest_enabled=eq.true'
-      + '&select=id,last_digest_sent_on,daily_digest_enabled'
+      + '&select=id,last_digest_sent_on,daily_digest_enabled,digest_frequency'
       + '&order=last_digest_sent_on.asc.nullsfirst'
       + '&limit=400',
   );
+  if (!settingsRes.ok && /digest_frequency/.test(settingsRes.error || '')) {
+    settingsRes = await dbRequest(
+      'notification_settings?daily_digest_enabled=eq.true'
+        + '&select=id,last_digest_sent_on,daily_digest_enabled'
+        + '&order=last_digest_sent_on.asc.nullsfirst'
+        + '&limit=400',
+    );
+  }
   if (!settingsRes.ok) {
     if (/last_digest_sent_on/.test(settingsRes.error || '')) {
       return { ok: false, error: 'last_digest_sent_on missing — run supabase/migrations/20260815153000_add_last_digest_sent_on.sql' };
@@ -453,6 +476,8 @@ async function loadDueUsers(now, limit) {
     const tz = validTimeZone(profile.timezone);
     const { ymd, hour } = localParts(now, tz);
     if (hour < DIGEST_HOUR) continue;
+    const frequency = row.digest_frequency === 'weekly' ? 'weekly' : 'daily';
+    if (frequency === 'weekly' && localWeekday(now, tz) !== 'Monday') continue;
     const sentOn = row.last_digest_sent_on ? String(row.last_digest_sent_on).slice(0, 10) : '';
     if (sentOn === ymd) continue;
     due.push({
@@ -461,6 +486,7 @@ async function loadDueUsers(now, limit) {
       timezone: tz,
       today: ymd,
       yesterday: addDaysYmd(ymd, -1),
+      frequency,
     });
     if (due.length >= limit) break;
   }
@@ -472,9 +498,17 @@ async function sendOneDigest(user) {
   const email = await fetchUserEmail(user.id);
   if (!email) return { ok: false, error: 'no_email' };
 
-  const { start, end } = localDayBounds(user.yesterday, user.timezone);
-  const priorYmd = addDaysYmd(user.yesterday, -1);
-  const priorBounds = localDayBounds(priorYmd, user.timezone);
+  const weekly = user.frequency === 'weekly';
+  const periodEnd = user.yesterday;
+  const periodStart = weekly ? addDaysYmd(periodEnd, -6) : periodEnd;
+  const { start, end } = weekly
+    ? { start: localDayBounds(periodStart, user.timezone).start, end: localDayBounds(periodEnd, user.timezone).end }
+    : localDayBounds(periodEnd, user.timezone);
+  const priorEndYmd = addDaysYmd(periodStart, -1);
+  const priorStartYmd = weekly ? addDaysYmd(priorEndYmd, -6) : priorEndYmd;
+  const priorBounds = weekly
+    ? { start: localDayBounds(priorStartYmd, user.timezone).start, end: localDayBounds(priorEndYmd, user.timezone).end }
+    : localDayBounds(priorEndYmd, user.timezone);
 
   const [stats, prior] = await Promise.all([
     fetchYesterdayStats(user.id, start, end),
@@ -483,11 +517,14 @@ async function sendOneDigest(user) {
   if (!stats.ok) return { ok: false, error: stats.error };
 
   const unsubUrl = digestUnsubscribeUrl(user.id);
-  const yesterdayLabel = formatLongDate(user.yesterday, user.timezone);
+  const periodLabel = weekly
+    ? `${formatLongDate(periodStart, user.timezone)} – ${formatLongDate(periodEnd, user.timezone)}`
+    : formatLongDate(periodEnd, user.timezone);
   const built = buildDigestEmail({
     name: user.name,
     email,
-    yesterdayLabel,
+    periodLabel,
+    frequency: weekly ? 'weekly' : 'daily',
     stats,
     prior: prior.ok ? prior : null,
     inboxUrl: dashboardUrl(),
@@ -497,7 +534,7 @@ async function sendOneDigest(user) {
 
   const sent = await sendTicketEmail({
     to: email,
-    subject: `Your Peekd digest — ${yesterdayLabel}`,
+    subject: `Your Peekd digest — ${periodLabel}`,
     html: built.html,
     text: built.text,
     headers: unsubUrl

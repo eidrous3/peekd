@@ -11,7 +11,7 @@
     const [page, setPage] = useState(() => {
       const params = new URLSearchParams(window.location.search);
       const settingsTab = params.get('settings');
-      if (settingsTab === 'integrations' || settingsTab === 'notifications') return 'settings';
+      if (settingsTab === 'integrations' || settingsTab === 'notifications' || settingsTab === 'digest') return 'settings';
       if (params.get('help') === '1') return 'help';
       return localStorage.getItem('peekd_page') || 'inbox';
     });
@@ -83,7 +83,7 @@
     useEffect(() => {
       const params = new URLSearchParams(window.location.search);
       const settingsTab = params.get('settings');
-      const hadSettings = settingsTab === 'integrations' || settingsTab === 'notifications';
+      const hadSettings = settingsTab === 'integrations' || settingsTab === 'notifications' || settingsTab === 'digest';
       const hadHelp = params.get('help') === '1';
       if (!hadSettings && !hadHelp) return;
       if (hadSettings) params.delete('settings');

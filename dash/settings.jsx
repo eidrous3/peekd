@@ -37,7 +37,7 @@
     return React.createElement('div', { className: 'toggle-row' + (disabled ? ' disabled' : ''), title: disabled ? tip : undefined },
       React.createElement('div', null,
         React.createElement('div', { className: 'tr-title' }, title, badge && React.createElement('span', { className: 'tr-badge' }, badge)),
-        React.createElement('div', { className: 'tr-desc' }, desc)),
+        desc ? React.createElement('div', { className: 'tr-desc' }, desc) : null),
       React.createElement(Switch, { on: disabled ? false : on, onClick: disabled ? undefined : onToggle }),
     );
   }
@@ -282,7 +282,7 @@
         React.createElement(SetSection, { label: 'Delivery channels' }),
         React.createElement(ToggleRow, { title: 'Desktop (Browser)', desc: 'Pop-up alerts in the bottom-right while Peekd is open', on: notif.desktop, onToggle: () => toggleChannel('desktop') }),
         React.createElement(ToggleRow, { title: 'Notification sound', desc: 'Subtle chime on new alert', on: notif.sound, onToggle: () => toggleChannel('sound') }),
-        React.createElement(ToggleRow, { title: 'Email', desc: 'Send an email when someone opens, clicks, or replies', on: notif.email, onToggle: () => setNotif({ ...notif, email: !notif.email }) }),
+        React.createElement(ToggleRow, { title: 'Email', desc: 'Instant alert email when someone opens, clicks, or replies — not the digest', on: notif.email, onToggle: () => setNotif({ ...notif, email: !notif.email }) }),
         React.createElement(SetSection, { label: 'Mobile app' }),
         React.createElement('p', { className: 'mobile-note' }, 'Get Peekd on your phone for instant alerts.'),
         React.createElement('div', { className: 'store-row' },
@@ -290,7 +290,24 @@
           React.createElement(StoreBtn, { icon: React.createElement(AndroidMark, null), top: 'GET IT ON', bottom: 'Google Play (coming soon)', disabled: true })),
         React.createElement(ToggleRow, { title: 'Mobile push', desc: 'Push notifications to your phone', on: notif.mobile, disabled: !appInstalled, tip: 'Install the app first', onToggle: () => setNotif({ ...notif, mobile: !notif.mobile }) }),
         React.createElement(SetSection, { label: 'Digest' }),
-        React.createElement(ToggleRow, { title: 'Daily digest', desc: "Yesterday's activity, emailed around 8am in your timezone", on: notif.digest, onToggle: () => setNotif({ ...notif, digest: !notif.digest }) }),
+        React.createElement(ToggleRow, {
+          title: 'Digest',
+          desc: notif.digest
+            ? (notif.digestFrequency === 'weekly'
+              ? "Last week's activity, emailed Monday around 8am — sent even if Email alerts above are off"
+              : "Yesterday's activity, emailed around 8am — sent even if Email alerts above are off")
+            : null,
+          on: notif.digest,
+          onToggle: () => setNotif({ ...notif, digest: !notif.digest }),
+        }),
+        notif.digest && React.createElement('div', { className: 'digest-freq' },
+          React.createElement('div', { className: 'tabs' },
+            [['daily', 'Daily'], ['weekly', 'Weekly']].map(([id, label]) =>
+              React.createElement('button', {
+                key: id,
+                className: 'tab' + ((notif.digestFrequency === 'weekly' ? 'weekly' : 'daily') === id ? ' active' : ''),
+                onClick: () => setNotif({ ...notif, digestFrequency: id }),
+              }, label)))),
         dirty && React.createElement('button', {
           className: 'btn btn-primary',
           style: { marginTop: 4, paddingRight: 15, marginRight: 15 },
@@ -453,7 +470,7 @@
     const [tab, setTab] = useState(() => {
       const params = new URLSearchParams(window.location.search);
       const settingsTab = params.get('settings');
-      if (settingsTab === 'integrations' || settingsTab === 'notifications') return settingsTab;
+      if (settingsTab === 'integrations' || settingsTab === 'notifications' || settingsTab === 'digest') return settingsTab === 'digest' ? 'notifications' : settingsTab;
       return 'account';
     });
     const [profileStatus, setProfileStatus] = useState('loading');
