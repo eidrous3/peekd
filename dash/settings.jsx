@@ -296,7 +296,7 @@
             ? (notif.digestFrequency === 'weekly'
               ? 'Weekly digest, sent on 8 am Mondays'
               : 'Daily digest, sent on 8 am')
-            : null,
+            : 'Receive daily or weekly digest',
           on: notif.digest,
           onToggle: () => setNotif({ ...notif, digest: !notif.digest }),
         }),
