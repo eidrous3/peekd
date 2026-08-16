@@ -3,18 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="google-site-verification" content="f5sOX03dnJAbIi2I22v9fth1XOah04wWnFVvR3fXM6M" />
 <title>Peekd — Know the moment your email is read</title>
-<link rel="stylesheet" href="landing-styles.css">
+<link rel="stylesheet" href="landing-styles.css?v=15">
 </head>
 <body>
 
 <!-- ─────────────────────────── NAV ─────────────────────────── -->
 <nav class="nav" id="nav">
   <div class="wrap nav-inner">
-    <a class="row" href="#top" style="gap:10px">
+    <a class="row" href="#top" style="gap:9px">
       <span class="logo-mark">
-        <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+        <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
           <path d="M2 9s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
           <circle cx="9" cy="9" r="2.2" fill="#fff"/>
         </svg>
@@ -23,12 +22,13 @@
     </a>
     <div class="nav-links">
       <a href="#features">Features</a>
+      <a href="#how">How it works</a>
       <a href="#pricing">Pricing</a>
       <a href="#blog">Blog</a>
     </div>
     <div class="nav-right">
       <a class="btn btn-ghost btn-sm" href="Peekd Login.html">Sign in</a>
-      <a class="btn btn-primary btn-sm" href="Peekd Login.html">Start free →</a>
+      <a class="btn btn-primary btn-sm" href="Peekd Login.html?mode=signup">Start free</a>
     </div>
   </div>
 </nav>
@@ -37,110 +37,120 @@
 
 <!-- ─────────────────────────── HERO ────────────────────────── -->
 <section class="hero" id="hero">
-  <div class="wrap hero-grid">
+  <div class="wrap">
     <div class="hero-copy">
       <span class="pill"><span class="spark">✦</span> Now with AI follow-up suggestions</span>
-      <h1>Know the moment<br>your email<br><span class="accent">is read.</span></h1>
+      <h1>Know the moment<br>your email <span class="accent">is read.</span></h1>
       <p class="sub">Peekd tracks every open, click, and reply — so you always know who's interested and when to follow up.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary btn-lg" href="Peekd Login.html">Start for free →</a>
-        <a class="btn btn-lg hero-ghost" href="#how">See how it works ↓</a>
+        <a class="btn btn-primary btn-lg" href="Peekd Login.html?mode=signup">Start for free →</a>
+        <a class="btn btn-lg hero-ghost" href="#how">See how it works</a>
       </div>
       <div class="hero-fineprint">
         No credit card<span class="dotsep">·</span>Free forever<span class="dotsep">·</span>Works with Gmail &amp; Outlook
       </div>
     </div>
 
-    <!-- Hero — iPhone notification center -->
-    <div class="hero-visual">
-      <div class="iphone" aria-hidden="true">
-        <span class="dyn-island"></span>
-        <div class="ios-screen">
-          <div class="ios-head">
-            <span class="ios-back">‹</span>
-            <span class="ios-head-title">Notifications</span>
-            <span class="ios-more">···</span>
+    <!-- Hero product shot — real dashboard widgets at scale -->
+    <div class="hero-shot-wrap">
+      <div class="hero-shot">
+        <div class="mock-window">
+          <div class="mock-bar">
+            <span class="tl"></span><span class="tl"></span><span class="tl"></span>
+            <span class="mock-url">app.getpeekd.com/inbox</span>
           </div>
-          <div class="ios-notifs">
-
-            <div class="ios-banner" style="animation-delay:.2s">
-              <span class="ios-app"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12a2 2 0 1 0 4 0 2 2 0 0 0-4 0"/><path d="M21 12c-2.4 4-5.4 6-9 6s-6.6-2-9-6c2.4-4 5.4-6 9-6s6.6 2 9 6"/></svg></span>
-              <div class="ios-banner-body">
-                <div class="ios-banner-top"><span class="ios-app-name">Peekd</span><span class="ios-banner-time">2s ago</span></div>
-                <div class="ios-banner-title">Sarah Mitchell opened</div>
-                <div class="ios-banner-text">"Q2 Proposal — Final Terms"</div>
-              </div>
-            </div>
-
-            <div class="ios-banner" style="animation-delay:.5s">
-              <span class="ios-app"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12a2 2 0 1 0 4 0 2 2 0 0 0-4 0"/><path d="M21 12c-2.4 4-5.4 6-9 6s-6.6-2-9-6c2.4-4 5.4-6 9-6s6.6 2 9 6"/></svg></span>
-              <div class="ios-banner-body">
-                <div class="ios-banner-top"><span class="ios-app-name">Peekd</span><span class="ios-banner-time">just now</span></div>
-                <div class="ios-banner-title">James Okafor clicked a link</div>
-                <div class="ios-banner-text mono">getpeekd.com/demo · 3 times</div>
-              </div>
-            </div>
-
-            <div class="ios-banner" style="animation-delay:.8s">
-              <span class="ios-app"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12a2 2 0 1 0 4 0 2 2 0 0 0-4 0"/><path d="M21 12c-2.4 4-5.4 6-9 6s-6.6-2-9-6c2.4-4 5.4-6 9-6s6.6 2 9 6"/></svg></span>
-              <div class="ios-banner-body">
-                <div class="ios-banner-top"><span class="ios-app-name">Peekd</span><span class="ios-banner-time">1m ago</span></div>
-                <div class="ios-banner-title">Follow-up suggestion ready</div>
-                <div class="ios-banner-text">Amelia opened 4× · no reply</div>
-              </div>
-            </div>
-
-            <div class="ios-banner" style="animation-delay:1.1s">
-              <span class="ios-app"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12a2 2 0 1 0 4 0 2 2 0 0 0-4 0"/><path d="M21 12c-2.4 4-5.4 6-9 6s-6.6-2-9-6c2.4-4 5.4-6 9-6s6.6 2 9 6"/></svg></span>
-              <div class="ios-banner-body">
-                <div class="ios-banner-top"><span class="ios-app-name">Peekd</span><span class="ios-banner-time">5m ago</span></div>
-                <div class="ios-banner-title">Carlos Rivera read your reply</div>
-                <div class="ios-banner-text">Re: Partnership Discussion</div>
-              </div>
-            </div>
-
-            <div class="ios-banner" style="animation-delay:1.4s">
-              <span class="ios-app"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12a2 2 0 1 0 4 0 2 2 0 0 0-4 0"/><path d="M21 12c-2.4 4-5.4 6-9 6s-6.6-2-9-6c2.4-4 5.4-6 9-6s6.6 2 9 6"/></svg></span>
-              <div class="ios-banner-body">
-                <div class="ios-banner-top"><span class="ios-app-name">Peekd</span><span class="ios-banner-time">just now</span></div>
-                <div class="ios-banner-title">Priya Nair opened again</div>
-                <div class="ios-banner-text">Onboarding Deck v3 · 7th time</div>
-              </div>
-            </div>
-
+          <div class="mk-stats">
+            <div class="mk-stat"><div class="lbl">Tracked today</div><div class="val" data-count="38">0</div></div>
+            <div class="mk-stat"><div class="lbl">Opens</div><div class="val accent" data-count="24">0</div></div>
+            <div class="mk-stat"><div class="lbl">Replies</div><div class="val" data-count="6">0</div></div>
+            <div class="mk-stat"><div class="lbl">Open rate</div><div class="val" data-count="71" data-suffix="%">0%</div></div>
           </div>
-          <span class="ios-home"></span>
+          <div class="mk-inbox">
+            <div class="mk-list">
+              <div class="mk-list-head"><span>Inbox</span><span class="mono" style="font-weight:400;color:var(--fg-mute);font-size:11px">8 tracked</span></div>
+              <div class="mk-erow active">
+                <div class="body">
+                  <div class="subj">Sarah Mitchell</div>
+                  <div class="meta">Re: Q2 Proposal — Final Terms</div>
+                </div>
+                <div class="right"><span class="time">2s ago</span><span class="badge badge-opened">Opened ×3</span></div>
+              </div>
+              <div class="mk-erow">
+                <div class="body">
+                  <div class="subj">James Okafor</div>
+                  <div class="meta">Partnership Discussion</div>
+                </div>
+                <div class="right"><span class="time">1m ago</span><span class="badge badge-replied">Replied</span></div>
+              </div>
+              <div class="mk-erow">
+                <div class="body">
+                  <div class="subj">Priya Nair</div>
+                  <div class="meta">Onboarding Deck v3</div>
+                </div>
+                <div class="right"><span class="time">5m ago</span><span class="badge badge-hot">Opened ×7</span></div>
+              </div>
+              <div class="mk-erow">
+                <div class="body">
+                  <div class="subj">Carlos Rivera</div>
+                  <div class="meta">Demo follow-up</div>
+                </div>
+                <div class="right"><span class="time">1h ago</span><span class="badge badge-unopened">Unopened</span></div>
+              </div>
+            </div>
+            <div class="mk-detail">
+              <div class="mk-sub-lg">Re: Q2 Proposal — Final Terms</div>
+              <div class="mk-rcpt">To: Sarah Mitchell · sarah@acmecorp.com</div>
+              <div class="mk-ai">
+                <div class="mk-ai-title">💡 AI Suggestion</div>
+                <div class="mk-ai-reason">Sarah opened your email 3 times but hasn't replied yet.</div>
+                <div class="mk-ai-box">Hi Sarah, just wanted to follow up on my earlier note about the Q2 proposal. Happy to jump on a quick call if that helps!</div>
+                <div class="mk-ai-actions">
+                  <span class="mk-chip pri">✏ Edit &amp; Send</span>
+                  <span class="mk-chip">↻ Regenerate</span>
+                </div>
+              </div>
+              <div class="mk-section-lbl">Timeline</div>
+              <div class="mk-tl">
+                <div class="mk-tl-row">
+                  <span class="tl-ico grey"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 7 9M14 2 9 14l-2-5-5-2 12-5Z"/></svg></span>
+                  <div class="who"><b>Sent</b></div><span class="t">14:32</span>
+                </div>
+                <div class="mk-tl-row">
+                  <span class="tl-ico blue"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.5-5 6-5 6 5 6 5-2.5 5-6 5-6-5-6-5Z"/><circle cx="8" cy="8" r="2"/></svg></span>
+                  <div><div class="who"><b>Sarah Mitchell</b> <span class="act">opened</span></div><div class="det">iPhone · Austin, TX</div></div><span class="t">14:34</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
+  <div class="hero-shot-fade"></div>
 </section>
 
-<!-- ─────────────────────── SOCIAL PROOF ────────────────────── -->
-<section class="proof">
-  <div class="wrap">
-    <div class="proof-label">Trusted by 2,000+ professionals at</div>
-    <div class="logos">
-      <span class="lg">◆ Notion</span>
-      <span class="lg">▰ Linear</span>
-      <span class="lg">◈ Figma</span>
-      <span class="lg">▲ Vercel</span>
-      <span class="lg">⬡ Stripe</span>
-    </div>
+<!-- ───────────────────────── PLATFORM ──────────────────────── -->
+<section class="platform" id="features">
+  <div class="platform-head">
+    <span class="eyebrow-pill">Platform</span>
+    <h2>Everything you need to close faster.</h2>
+    <p>From the moment you hit send to the moment they reply — Peekd shows you exactly what's happening in between.</p>
   </div>
-</section>
 
-<!-- ───────────────────────── FEATURES ──────────────────────── -->
-<section class="features" id="features">
-  <div class="wrap">
-    <div class="sec-head">
-      <div class="eyebrow-label">Features</div>
-      <h2>Everything you need to close faster</h2>
+  <div class="platform-body">
+    <div class="platform-nav">
+      <div class="platform-nav-list" id="platform-nav-list">
+        <button class="pnav-item active" data-target="pf-1">Real-time tracking</button>
+        <button class="pnav-item" data-target="pf-2">Link click tracking</button>
+        <button class="pnav-item" data-target="pf-3">Follow-ups</button>
+        <button class="pnav-item" data-target="pf-4">AI follow-up</button>
+      </div>
     </div>
 
-    <!-- Block 1 -->
-    <div class="feature">
-      <div class="ftext">
+    <div class="platform-rows">
+
+      <!-- Row 1 -->
+      <div class="prow" id="pf-1">
         <div class="ftag"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.5-5 6-5 6 5 6 5-2.5 5-6 5-6-5-6-5Z"/><circle cx="8" cy="8" r="2"/></svg> Real-time tracking</div>
         <h3>Know the moment they open.</h3>
         <p class="fdesc">Get notified instantly when a recipient opens your email, how many times, on what device, and from where.</p>
@@ -149,45 +159,43 @@
           <div class="ci"><span class="ck">✓</span> Device + location detection</div>
           <div class="ci"><span class="ck">✓</span> Works from any device you send from</div>
         </div>
-      </div>
-      <div class="fvisual">
-        <div class="fcard">
-          <div class="fcard-head"><span>Engagement</span><span style="color:var(--accent-2)">9 opens</span></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-            <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:9px;padding:12px">
-              <div class="mono" style="font-size:9px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.06em">Opens</div>
-              <div style="font-size:22px;font-weight:600;color:var(--accent-2);margin-top:4px">9</div>
+        <div class="fvisual reveal">
+          <div class="fcard">
+            <div class="fcard-head"><span>Engagement</span><span style="color:var(--accent-2)">9 opens</span></div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+              <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:9px;padding:12px">
+                <div class="mono" style="font-size:9px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.06em">Opens</div>
+                <div style="font-size:22px;font-weight:600;color:var(--accent-2);margin-top:4px">9</div>
+              </div>
+              <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:9px;padding:12px">
+                <div class="mono" style="font-size:9px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.06em">Last opened</div>
+                <div style="font-size:15px;font-weight:500;margin-top:8px">2m ago</div>
+              </div>
+              <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:9px;padding:12px">
+                <div class="mono" style="font-size:9px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.06em">Device</div>
+                <div style="font-size:15px;font-weight:500;margin-top:8px">iPhone</div>
+              </div>
+              <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:9px;padding:12px">
+                <div class="mono" style="font-size:9px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.06em">Location</div>
+                <div style="font-size:15px;font-weight:500;margin-top:8px">Austin, TX</div>
+              </div>
             </div>
-            <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:9px;padding:12px">
-              <div class="mono" style="font-size:9px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.06em">Last opened</div>
-              <div style="font-size:15px;font-weight:500;margin-top:8px">2m ago</div>
-            </div>
-            <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:9px;padding:12px">
-              <div class="mono" style="font-size:9px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.06em">Device</div>
-              <div style="font-size:15px;font-weight:500;margin-top:8px">iPhone</div>
-            </div>
-            <div style="background:var(--bg-1);border:1px solid var(--line);border-radius:9px;padding:12px">
-              <div class="mono" style="font-size:9px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.06em">Location</div>
-              <div style="font-size:15px;font-weight:500;margin-top:8px">Austin, TX</div>
-            </div>
-          </div>
-          <div class="mk-tl">
-            <div class="mk-tl-row">
-              <span class="tl-ico grey"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 7 9M14 2 9 14l-2-5-5-2 12-5Z"/></svg></span>
-              <div class="who"><b>Sent</b></div><span class="t">14:32</span>
-            </div>
-            <div class="mk-tl-row">
-              <span class="tl-ico blue"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.5-5 6-5 6 5 6 5-2.5 5-6 5-6-5-6-5Z"/><circle cx="8" cy="8" r="2"/></svg></span>
-              <div><div class="who"><b>Emily Carter</b> <span class="act">opened</span></div><div class="det">iPhone · Austin, TX</div></div><span class="t">14:34</span>
+            <div class="mk-tl">
+              <div class="mk-tl-row">
+                <span class="tl-ico grey"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 7 9M14 2 9 14l-2-5-5-2 12-5Z"/></svg></span>
+                <div class="who"><b>Sent</b></div><span class="t">14:32</span>
+              </div>
+              <div class="mk-tl-row">
+                <span class="tl-ico blue"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.5-5 6-5 6 5 6 5-2.5 5-6 5-6-5-6-5Z"/><circle cx="8" cy="8" r="2"/></svg></span>
+                <div><div class="who"><b>Emily Carter</b> <span class="act">opened</span></div><div class="det">iPhone · Austin, TX</div></div><span class="t">14:34</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Block 2 -->
-    <div class="feature flip">
-      <div class="ftext">
+      <!-- Row 2 -->
+      <div class="prow" id="pf-2">
         <div class="ftag"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5 9.5 6.5M6 4.5 7 3.5a2.5 2.5 0 0 1 3.5 3.5l-1 1M10 11.5 9 12.5a2.5 2.5 0 0 1-3.5-3.5l1-1"/></svg> Link click tracking</div>
         <h3>See what they clicked.</h3>
         <p class="fdesc">Know exactly which links your recipients clicked — and how many times. Perfect for proposals, decks, and demos.</p>
@@ -196,37 +204,35 @@
           <div class="ci"><span class="ck">✓</span> Per-recipient breakdown</div>
           <div class="ci"><span class="ck">✓</span> Shown in your activity timeline</div>
         </div>
-      </div>
-      <div class="fvisual">
-        <div class="fcard">
-          <div class="fcard-head"><span>Link activity</span></div>
-          <div class="mk-link-row">
-            <span style="font-size:12px">🔗</span>
-            <span class="mk-link-url">getpeekd.com/changelog</span>
-            <span class="mk-bar"><i style="width:100%"></i></span>
-            <span class="mk-link-ct">4 clicks</span>
+        <div class="fvisual reveal">
+          <div class="fcard">
+            <div class="fcard-head"><span>Link activity</span></div>
+            <div class="mk-link-row">
+              <span style="font-size:12px">🔗</span>
+              <span class="mk-link-url">getpeekd.com/changelog</span>
+              <span class="mk-bar"><i style="--w:100%"></i></span>
+              <span class="mk-link-ct">4 clicks</span>
+            </div>
+            <div class="mk-link-row">
+              <span style="font-size:12px">🔗</span>
+              <span class="mk-link-url">loom.com/share/design-review</span>
+              <span class="mk-bar"><i style="--w:50%"></i></span>
+              <span class="mk-link-ct">2 clicks</span>
+            </div>
+            <div class="mk-link-row">
+              <span style="font-size:12px;opacity:.4">🔗</span>
+              <span class="mk-link-url dead">calendly.com/sarah/30min</span>
+              <span class="mk-bar"></span>
+              <span class="mk-link-ct" style="color:var(--fg-mute);font-weight:400">0 clicks</span>
+            </div>
+            <div style="font-size:11px;color:var(--fg-mute);padding-top:12px">└─ Marcus Chen × 3 · designteam@figmacore.com × 1</div>
           </div>
-          <div class="mk-link-row">
-            <span style="font-size:12px">🔗</span>
-            <span class="mk-link-url">loom.com/share/design-review</span>
-            <span class="mk-bar"><i style="width:50%"></i></span>
-            <span class="mk-link-ct">2 clicks</span>
-          </div>
-          <div class="mk-link-row">
-            <span style="font-size:12px;opacity:.4">🔗</span>
-            <span class="mk-link-url dead">calendly.com/sarah/30min</span>
-            <span class="mk-bar"></span>
-            <span class="mk-link-ct" style="color:var(--fg-mute);font-weight:400">0 clicks</span>
-          </div>
-          <div style="font-size:11px;color:var(--fg-mute);padding-top:12px">└─ Marcus Chen × 3 · designteam@figmacore.com × 1</div>
         </div>
       </div>
-    </div>
 
-    <!-- Block 3 -->
-    <div class="feature">
-      <div class="ftext">
-        <div class="ftag"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 7 9M14 2 9 14l-2-5-5-2 12-5Z"/></svg> Campaigns</div>
+      <!-- Row 3 -->
+      <div class="prow" id="pf-3">
+        <div class="ftag"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 7 9M14 2 9 14l-2-5-5-2 12-5Z"/></svg> Follow-ups</div>
         <h3>Never let a reply slip through.</h3>
         <p class="fdesc">Set reminder steps for people you're already talking to — they pause automatically the moment someone replies.</p>
         <div class="fcheck">
@@ -234,33 +240,31 @@
           <div class="ci"><span class="ck">✓</span> Auto-pause on reply</div>
           <div class="ci"><span class="ck">✓</span> Only your saved contacts</div>
         </div>
-      </div>
-      <div class="fvisual">
-        <div class="fcard">
-          <div class="fcard-head"><span>Q2 Outreach — Enterprise</span><span class="badge badge-replied" style="height:18px">Active</span></div>
-          <div class="mk-camp">
-            <div class="mk-step">
-              <span class="num done">✓</span>
-              <div><div class="st-sub">Introducing Peekd to your team</div><div class="st-delay">Send immediately</div></div>
-              <span class="rate-pill">72%</span>
-            </div>
-            <div class="mk-step cur">
-              <span class="num cur">2</span>
-              <div><div class="st-sub">Quick gut-check?</div><div class="st-delay">Wait 3 days</div></div>
-              <span class="rate-pill">64%</span>
-            </div>
-            <div class="mk-step">
-              <span class="num idle">3</span>
-              <div><div class="st-sub">One more idea for you</div><div class="st-delay">Wait 5 days</div></div>
+        <div class="fvisual reveal">
+          <div class="fcard">
+            <div class="fcard-head"><span>Q2 Renewal — Acme Corp</span><span class="badge badge-replied" style="height:18px">Active</span></div>
+            <div class="mk-camp">
+              <div class="mk-step">
+                <span class="num done">✓</span>
+                <div><div class="st-sub">Introducing Peekd to your team</div><div class="st-delay">Send immediately</div></div>
+                <span class="rate-pill">72%</span>
+              </div>
+              <div class="mk-step cur">
+                <span class="num cur">2</span>
+                <div><div class="st-sub">Quick gut-check?</div><div class="st-delay">Wait 3 days</div></div>
+                <span class="rate-pill">64%</span>
+              </div>
+              <div class="mk-step">
+                <span class="num idle">3</span>
+                <div><div class="st-sub">One more idea for you</div><div class="st-delay">Wait 5 days</div></div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Block 4 -->
-    <div class="feature flip">
-      <div class="ftext">
+      <!-- Row 4 -->
+      <div class="prow" id="pf-4">
         <div class="ftag">💡 AI follow-up</div>
         <h3>Let AI write your follow-ups.</h3>
         <p class="fdesc">When someone opens your email but doesn't reply, Peekd suggests the perfect follow-up — ready to send in one click.</p>
@@ -269,51 +273,57 @@
           <div class="ci"><span class="ck">✓</span> Edit before sending</div>
           <div class="ci"><span class="ck">✓</span> Regenerate until it's right</div>
         </div>
-      </div>
-      <div class="fvisual">
-        <div class="fcard">
-          <div class="mk-ai" style="margin-bottom:0">
-            <div class="mk-ai-title">💡 AI Suggestion</div>
-            <div class="mk-ai-reason">Sarah opened your email 3 times but hasn't replied yet.</div>
-            <div class="mk-ai-box">Hi Sarah, just wanted to follow up on my earlier note about the Q2 proposal. Happy to jump on a quick call if that helps!</div>
-            <div class="mk-ai-actions">
-              <span class="mk-chip pri">✏ Edit &amp; Send</span>
-              <span class="mk-chip">↻ Regenerate</span>
-              <span class="mk-chip">Dismiss</span>
+        <div class="fvisual reveal">
+          <div class="fcard">
+            <div class="mk-ai reveal-pop" style="margin-bottom:0">
+              <div class="mk-ai-title">💡 AI Suggestion</div>
+              <div class="mk-ai-reason">Sarah opened your email 3 times but hasn't replied yet.</div>
+              <div class="mk-ai-box">Hi Sarah, just wanted to follow up on my earlier note about the Q2 proposal. Happy to jump on a quick call if that helps!</div>
+              <div class="mk-ai-actions">
+                <span class="mk-chip pri">✏ Edit &amp; Send</span>
+                <span class="mk-chip">↻ Regenerate</span>
+                <span class="mk-chip">Dismiss</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
     </div>
   </div>
 </section>
 
 <!-- ─────────────────────── HOW IT WORKS ────────────────────── -->
 <section class="how" id="how">
-  <div class="wrap">
-    <div class="sec-head" style="margin-bottom:50px">
-      <div class="eyebrow-label">How it works</div>
-      <h2>How Peekd works</h2>
-    </div>
-    <div class="steps">
-      <div class="step">
-        <div class="ico"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="m2.5 4.5 5.5 4 5.5-4"/></svg></div>
+  <div class="how-head">
+    <div class="eyebrow-label how-eyebrow">The only tracker that</div>
+    <h2>Knows the moment<br>it happens.</h2>
+  </div>
+
+  <div class="steps">
+    <div class="step reveal">
+      <div class="step-top">
+        <div class="ico"><svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="m2.5 4.5 5.5 4 5.5-4"/></svg></div>
         <div class="num">01</div>
-        <h4>Connect Gmail or Outlook</h4>
-        <p>Link your inbox in one click — no setup, no plugins to configure.</p>
       </div>
-      <div class="step">
-        <div class="ico"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 7 9M14 2 9 14l-2-5-5-2 12-5Z"/></svg></div>
+      <h4>Connect Gmail or Outlook</h4>
+      <p>Link your inbox in one click — no setup, no plugins to configure.</p>
+    </div>
+    <div class="step reveal">
+      <div class="step-top">
+        <div class="ico"><svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 7 9M14 2 9 14l-2-5-5-2 12-5Z"/></svg></div>
         <div class="num">02</div>
-        <h4>Send email normally</h4>
-        <p>Write and send like you always do. Peekd works silently in the background.</p>
       </div>
-      <div class="step">
-        <div class="ico"><svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8L4 11Z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg></div>
+      <h4>Send email normally</h4>
+      <p>Write and send like you always do. Peekd works silently in the background.</p>
+    </div>
+    <div class="step reveal">
+      <div class="step-top">
+        <div class="ico"><svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8L4 11Z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg></div>
         <div class="num">03</div>
-        <h4>Get notified</h4>
-        <p>The moment they open, click, or reply — you'll know, with full context.</p>
       </div>
+      <h4>Get notified</h4>
+      <p>The moment they open, click, or reply — you'll know, with full context.</p>
     </div>
   </div>
 </section>
@@ -337,7 +347,7 @@
 
     <div class="price-grid">
       <!-- Free -->
-      <div class="pcard">
+      <div class="pcard reveal">
         <div class="pname">Free</div>
         <div class="ptag">Perfect to get started</div>
         <div class="pprice"><span class="amt">$0</span><span class="per">forever</span></div>
@@ -352,21 +362,21 @@
           <div class="pi note"><span class="spark">✦</span> "Tracked by Peekd" footer on emails</div>
         </div>
         <div class="pcta">
-          <a class="btn btn-ghost btn-lg" href="Peekd Login.html">Get started free →</a>
+          <a class="btn btn-ghost btn-lg" href="Peekd Login.html?mode=signup">Get started free →</a>
         </div>
       </div>
 
       <!-- Pro -->
-      <div class="pcard pro">
-        <div class="pname"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1 3 9h4l-1 6 6-8H8l1-6Z"/></svg> Pro</div>
+      <div class="pcard pro reveal">
+        <div class="pname"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="var(--ink)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1 3 9h4l-1 6 6-8H8l1-6Z"/></svg> Pro</div>
         <div class="ptag">For serious senders</div>
         <div class="pprice"><span class="amt" id="pro-amt">$7</span><span class="per">/month</span></div>
         <div class="pbilled" id="pro-billed">Billed monthly</div>
         <div class="pdiv"></div>
         <div class="plist">
-          <div class="pi" style="color:var(--fg-mute);font-size:12.5px;margin-bottom:2px">Everything in Free, plus:</div>
+          <div class="pi" style="color:var(--fg-mute);font-size:12.5px;margin-bottom:2px;grid-column:1/-1">Everything in Free, plus:</div>
           <div class="pi"><span class="ck b">✓</span> Remove Peekd branding</div>
-          <div class="pi"><span class="ck b">✓</span> Campaigns &amp; sequences</div>
+          <div class="pi"><span class="ck b">✓</span> Personal follow-up reminders</div>
           <div class="pi"><span class="ck b">✓</span> People &amp; Lists</div>
           <div class="pi"><span class="ck b">✓</span> Link click tracking</div>
           <div class="pi"><span class="ck b">✓</span> AI follow-up suggestions</div>
@@ -374,8 +384,8 @@
           <div class="pi"><span class="ck b">✓</span> Priority support</div>
         </div>
         <div class="pcta">
-          <a class="btn btn-primary btn-lg" href="Peekd Login.html">Start Pro free — 7 days</a>
-          <div class="sub" id="pro-sub">then $7/mo</div>
+          <a class="btn btn-primary btn-lg" href="Peekd Login.html?mode=signup">Upgrade to Pro →</a>
+          <div class="sub" id="pro-sub">Cancel anytime</div>
         </div>
       </div>
     </div>
@@ -392,7 +402,7 @@
   <div class="wrap">
     <div class="sec-head"><h2>What people are saying</h2></div>
     <div class="tgrid">
-      <div class="tcard">
+      <div class="tcard reveal">
         <div class="stars">★★★★★</div>
         <div class="tquote">"I knew exactly when to follow up on my biggest proposal. Closed it the same day."</div>
         <div class="tauthor">
@@ -400,7 +410,7 @@
           <div><div class="nm">James O.</div><div class="rl">Founder</div></div>
         </div>
       </div>
-      <div class="tcard">
+      <div class="tcard reveal">
         <div class="stars">★★★★★</div>
         <div class="tquote">"The AI follow-up saved me a deal. Opened 4 times, no reply — Peekd wrote the perfect follow-up."</div>
         <div class="tauthor">
@@ -408,7 +418,7 @@
           <div><div class="nm">Carlos R.</div><div class="rl">Sales Lead</div></div>
         </div>
       </div>
-      <div class="tcard">
+      <div class="tcard reveal">
         <div class="stars">★★★★★</div>
         <div class="tquote">"Finally an email tracker that works from my phone too. Clean, fast, and out of the way."</div>
         <div class="tauthor">
@@ -416,28 +426,102 @@
           <div><div class="nm">Lena H.</div><div class="rl">Designer</div></div>
         </div>
       </div>
+      <div class="tcard reveal">
+        <div class="stars">★★★★★</div>
+        <div class="tquote">"Link tracking told me exactly which slide they cared about before the call even started."</div>
+        <div class="tauthor">
+          <span class="avatar sm" style="background:#16a34a26;color:#15803d;border:1px solid #16a34a40">PN</span>
+          <div><div class="nm">Priya N.</div><div class="rl">Account Executive</div></div>
+        </div>
+      </div>
+      <div class="tcard reveal">
+        <div class="stars">★★★★★</div>
+        <div class="tquote">"The free plan alone replaced the paid tool I was using. No brainer."</div>
+        <div class="tauthor">
+          <span class="avatar sm" style="background:#f59e0b26;color:#b45309;border:1px solid #f59e0b40">MT</span>
+          <div><div class="nm">Marcus T.</div><div class="rl">Freelance Consultant</div></div>
+        </div>
+      </div>
+      <div class="tcard reveal">
+        <div class="stars">★★★★★</div>
+        <div class="tquote">"I can see who's actually reading my emails now instead of guessing and hoping."</div>
+        <div class="tauthor">
+          <span class="avatar sm" style="background:#2563eb26;color:#1d4ed8;border:1px solid #2563eb40">EK</span>
+          <div><div class="nm">Elena K.</div><div class="rl">Recruiter</div></div>
+        </div>
+      </div>
+      <div class="tcard reveal">
+        <div class="stars">★★★★★</div>
+        <div class="tquote">"My reminders auto-pause the moment someone replies — no more awkward follow-ups after the fact."</div>
+        <div class="tauthor">
+          <span class="avatar sm" style="background:#db277726;color:#9d174d;border:1px solid #db277740">DO</span>
+          <div><div class="nm">David O.</div><div class="rl">Founder</div></div>
+        </div>
+      </div>
+      <div class="tcard reveal">
+        <div class="stars">★★★★★</div>
+        <div class="tquote">"Setup took two minutes and it just quietly works in the background ever since."</div>
+        <div class="tauthor">
+          <span class="avatar sm" style="background:#0891b226;color:#0e7490;border:1px solid #0891b240">SM</span>
+          <div><div class="nm">Sophie M.</div><div class="rl">Customer Success Lead</div></div>
+        </div>
+      </div>
+      <div class="tcard reveal">
+        <div class="stars">★★★★★</div>
+        <div class="tquote">"My whole team switched after I showed them the open notifications live in a demo."</div>
+        <div class="tauthor">
+          <span class="avatar sm" style="background:#7c3aed26;color:#6d28d9;border:1px solid #7c3aed40">AR</span>
+          <div><div class="nm">Ahmed R.</div><div class="rl">Agency Owner</div></div>
+        </div>
+      </div>
+      <div class="tcard reveal">
+        <div class="stars">★★★★★</div>
+        <div class="tquote">"Device and location detection is a small touch that actually changes how I time follow-ups."</div>
+        <div class="tauthor">
+          <span class="avatar sm" style="background:#e1120626;color:#b91c1c;border:1px solid #e1120640">RP</span>
+          <div><div class="nm">Rachel P.</div><div class="rl">VP Sales</div></div>
+        </div>
+      </div>
+      <div class="tcard reveal">
+        <div class="stars">★★★★★</div>
+        <div class="tquote">"Works flawlessly with Gmail. Zero friction, exactly what I needed and nothing I didn't."</div>
+        <div class="tauthor">
+          <span class="avatar sm" style="background:#65a30d26;color:#4d7c0f;border:1px solid #65a30d40">TW</span>
+          <div><div class="nm">Tom W.</div><div class="rl">Product Manager</div></div>
+        </div>
+      </div>
+      <div class="tcard reveal">
+        <div class="stars">★★★★★</div>
+        <div class="tquote">"The AI suggestions actually sound like me, not some generic template dropped into my inbox."</div>
+        <div class="tauthor">
+          <span class="avatar sm" style="background:#be185d26;color:#9d174d;border:1px solid #be185d40">NF</span>
+          <div><div class="nm">Nadia F.</div><div class="rl">Marketing Lead</div></div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
 <!-- ───────────────────────── FINAL CTA ─────────────────────── -->
-<section class="cta">
-  <div class="wrap">
-    <h2>Start tracking today.</h2>
-    <p>Know who reads your emails — for free, forever.</p>
-    <a class="btn btn-primary btn-lg" href="Peekd Login.html">Start for free →</a>
-    <div class="sub">No credit card · Takes 30 seconds</div>
-  </div>
-</section>
+<div class="cta-wrap">
+  <section class="cta reveal">
+    <div class="wrap" style="padding:0">
+      <h2>Start tracking today.</h2>
+      <p>Know who reads your emails — for free, forever.</p>
+      <a class="btn btn-primary btn-lg" href="Peekd Login.html?mode=signup">Start for free →</a>
+      <div class="sub">No credit card · Takes 30 seconds</div>
+    </div>
+  </section>
+</div>
 
 <!-- ────────────────────────── FOOTER ───────────────────────── -->
 <footer class="footer" id="blog">
   <div class="wrap">
     <div class="footer-grid">
       <div class="fcol fbrand">
-        <a class="row" href="#top" style="gap:10px">
+        <a class="row" href="#top" style="gap:9px">
           <span class="logo-mark">
-            <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+            <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
               <path d="M2 9s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
               <circle cx="9" cy="9" r="2.2" fill="#fff"/>
             </svg>
@@ -450,7 +534,7 @@
         <h5>Product</h5>
         <a href="#features">Inbox</a>
         <a href="#features">Analytics</a>
-        <a href="#features">Campaigns</a>
+        <a href="#features">Follow-ups</a>
         <a href="#features">People</a>
       </div>
       <div class="fcol">
@@ -467,7 +551,7 @@
         <a href="#">Cookie Policy</a>
       </div>
     </div>
-    <div class="footer-base">© 2025 Peekd · Built for people who mean business</div>
+    <div class="footer-base">© 2026 Peekd · Built for people who mean business</div>
   </div>
 </footer>
 
@@ -491,27 +575,68 @@
     if (mode === 'yearly'){
       amt.textContent = '$5.60';
       billed.textContent = '$67 billed yearly';
-      proSub.textContent = 'then $67/yr';
+      proSub.textContent = 'Cancel anytime';
     } else {
       amt.textContent = '$7';
       billed.textContent = 'Billed monthly';
-      proSub.textContent = 'then $7/mo';
+      proSub.textContent = 'Cancel anytime';
     }
   }
   btns.forEach(b => b.addEventListener('click', () => setBilling(b.dataset.bill)));
   window.addEventListener('resize', sizeKnob);
   sizeKnob();
-</script>
 
-<template id="__bundler_thumbnail">
-  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-    <rect width="100" height="100" rx="20" fill="#2563eb"/>
-    <g transform="translate(30 34)" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round">
-      <path d="M0 16s7-14 20-14 20 14 20 14-7 14-20 14S0 16 0 16Z"/>
-      <circle cx="20" cy="16" r="6" fill="#fff" stroke="none"/>
-    </g>
-  </svg>
-</template>
+  // Platform nav — scroll-spy + click-to-jump
+  const pnavItems = [...document.querySelectorAll('.pnav-item')];
+  const prows = pnavItems.map(b => document.getElementById(b.dataset.target));
+
+  pnavItems.forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+      prows[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+
+  const spy = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const idx = prows.indexOf(entry.target);
+        pnavItems.forEach(b => b.classList.remove('active'));
+        pnavItems[idx].classList.add('active');
+      }
+    });
+  }, { rootMargin: '-40% 0px -50% 0px', threshold: 0 });
+
+  prows.forEach(row => row && spy.observe(row));
+
+  // Scroll-triggered reveal animations
+  const revealEls = document.querySelectorAll('.reveal, .reveal-pop');
+  const revealObs = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('in-view');
+        revealObs.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -8% 0px' });
+  revealEls.forEach(el => revealObs.observe(el));
+
+  // Hero stat tiles — count up on load
+  function animateCount(el, target, suffix, duration) {
+    const start = performance.now();
+    function tick(now) {
+      const p = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(eased * target) + suffix;
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+  setTimeout(() => {
+    document.querySelectorAll('.hero-shot .val[data-count]').forEach(el => {
+      animateCount(el, parseInt(el.dataset.count, 10), el.dataset.suffix || '', 900);
+    });
+  }, 560);
+</script>
 
 </body>
 </html>
