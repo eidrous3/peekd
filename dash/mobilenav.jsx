@@ -6,7 +6,7 @@
   const { Avatar, Switch } = window;
 
   const NAV = [
-    { id: 'inbox', label: 'Inbox', icon: 'inbox', badge: '8' },
+    { id: 'inbox', label: 'Inbox', icon: 'inbox', badge: '0' },
     { id: 'analytics', label: 'Analytics', icon: 'chart' },
     { id: 'campaigns', label: 'Camp.', icon: 'send' },
     { id: 'people', label: 'People', icon: 'users' },

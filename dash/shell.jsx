@@ -20,9 +20,9 @@
 
   const NAV = [
     { group: 'WORKSPACE', items: [
-      { id: 'inbox', label: 'Inbox', icon: 'inbox', badge: '8' },
+      { id: 'inbox', label: 'Inbox', icon: 'inbox', badge: '0' },
       { id: 'analytics', label: 'Analytics', icon: 'chart' },
-      { id: 'campaigns', label: 'Campaigns', icon: 'send', badge: '3' },
+      { id: 'campaigns', label: 'Campaigns', icon: 'send', badge: '0' },
       { id: 'people', label: 'People', icon: 'users' },
     ]},
     { group: 'ACCOUNT', items: [
