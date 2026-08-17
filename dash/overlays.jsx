@@ -300,7 +300,7 @@
         React.createElement('div', { className: 'modal-foot', style: { flexDirection: 'column', gap: 8 } },
           !hasAny && React.createElement('p', { className: 'muted', style: { fontSize: 13, textAlign: 'center', margin: '0 0 4px' } }, 'Purchases are paused right now. Contact support if you need Pro.'),
           methods.paddle && React.createElement('button', { className: 'btn btn-upgrade', onClick: handleUpgrade, disabled: locked }, React.createElement(Icon, { name: 'bolt', size: 15, fill: 'currentColor', stroke: 0 }), busy ? 'Opening checkout…' : 'Upgrade with Paddle — $7/mo'),
-          methods.stripe && React.createElement('button', { className: 'btn btn-primary', onClick: handleStripe, disabled: locked }, stripeBusy ? 'Opening Stripe…' : 'Upgrade with Stripe — $7/mo'),
+          methods.stripe && React.createElement('button', { className: 'btn btn-primary btn-block', onClick: handleStripe, disabled: locked }, stripeBusy ? 'Opening Stripe…' : 'Upgrade with Stripe — $7/mo'),
           methods.coupons && (couponOpen
             ? React.createElement('form', { onSubmit: handleRedeem, style: { display: 'flex', gap: 8, width: '100%' } },
                 React.createElement('input', {
