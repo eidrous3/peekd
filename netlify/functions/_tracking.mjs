@@ -16,10 +16,6 @@ const trackingModuleDir = path.dirname(fileURLToPath(import.meta.url));
 const PIXEL_IMG_STYLE = 'display:block;width:1px;height:1px;border:0;';
 const OPEN_DEDUPE_WINDOW_MS = 45_000;
 
-function isReplySubject(subject) {
-  return /^\s*re\s*:/i.test(String(subject || ''));
-}
-
 export function generatePixelToken() {
   return crypto.randomBytes(16).toString('base64url');
 }
@@ -1359,7 +1355,7 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
   if (classification === 'human' && recipient.tracked_emails?.user_id) {
     const inserted = Array.isArray(insert.data) ? insert.data[0] : insert.data;
     // Quoted original + follow-up pixels fire together. Wait, then email
-    // only the last open in that conversation (the reply, if there is one).
+    // only the last open in that conversation. Pixel loads are always opens.
     await sleep(4_000);
     const since = new Date(openedAt.getTime() - OPEN_DEDUPE_WINDOW_MS).toISOString();
     const opens = await listConversationHumanOpens({
@@ -1376,7 +1372,7 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
       try {
         await notifyTrackingAlert({
           userId: recipient.tracked_emails.user_id,
-          type: isReplySubject(lastSubject) ? 'reply' : 'open',
+          type: 'open',
           who: recipient.email,
           subject: lastSubject,
         });
