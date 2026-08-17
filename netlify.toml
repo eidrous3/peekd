@@ -40,5 +40,11 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/webhooks/stripe"
+  to = "/.netlify/functions/stripe-webhook"
+  status = 200
+  force = true
+
 [build.environment]
   NODE_VERSION = "20"

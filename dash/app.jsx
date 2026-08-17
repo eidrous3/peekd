@@ -131,6 +131,32 @@
     }, []);
 
     useEffect(() => {
+      if (!authReady) return undefined;
+      const params = new URLSearchParams(window.location.search);
+      const billingResult = params.get('billing');
+      if (billingResult !== 'success' && billingResult !== 'cancel') return undefined;
+      params.delete('billing');
+      const qs = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''));
+      if (billingResult !== 'success') return undefined;
+
+      let cancelled = false;
+      (async () => {
+        toast('Payment received — unlocking Pro…');
+        const next = await window.PeekdStripe?.waitForPremium?.(window.PeekdProfile.fetchProfile);
+        if (cancelled) return;
+        if (next) {
+          applyPlan('premium');
+          setProfile(next);
+          toast('Welcome to Pro 🎉 All features unlocked');
+          return;
+        }
+        toast('Payment received. Refresh in a moment if Pro is not unlocked yet.');
+      })();
+      return () => { cancelled = true; };
+    }, [authReady]);
+
+    useEffect(() => {
       let cancelled = false;
       (async () => {
         if (!window.PeekdProfile?.restoreProfile) return;
@@ -312,6 +338,20 @@
     }
 
     async function manageBilling() {
+      if (profile?.stripeCustomerId && window.PeekdStripe?.openPortal) {
+        const res = await window.PeekdStripe.openPortal();
+        if (res.ok) return;
+        if (res.error === 'no_stripe_customer') {
+          toast('No Stripe billing profile yet — upgrade to create one');
+          return;
+        }
+        if (res.error === 'stripe_not_configured') {
+          toast('Stripe billing portal is not set up yet');
+          return;
+        }
+        toast('Could not open billing. Try again in a moment.');
+        return;
+      }
       const Billing = window.PeekdPaddle;
       if (!Billing?.openPortal) {
         toast('Could not open billing');
@@ -320,7 +360,7 @@
       const res = await Billing.openPortal();
       if (res.ok) return;
       if (res.error === 'no_paddle_customer') {
-        toast('No Paddle billing profile yet — upgrade to create one');
+        toast('No billing profile yet — upgrade to create one');
         return;
       }
       if (res.error === 'paddle_not_configured') {
@@ -331,7 +371,25 @@
     }
 
     async function startStripeCheckout() {
-      toast('Stripe checkout is not available yet');
+      if (!billing.stripe) {
+        toast('Stripe checkout is turned off');
+        return;
+      }
+      const Billing = window.PeekdStripe;
+      if (!Billing?.configured()) {
+        toast('Stripe is not set up yet');
+        return;
+      }
+      if (!profile?.id) {
+        toast('Sign in to upgrade');
+        return;
+      }
+      setUpgrade(false);
+      const res = await Billing.openCheckout();
+      if (res.status === 'redirect') return;
+      if (res.status === 'error') {
+        toast(res.error || 'Could not open Stripe checkout');
+      }
     }
 
     async function redeemCoupon(code) {

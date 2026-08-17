@@ -366,7 +366,7 @@
     const rows = [
       { key: 'coupons', title: 'Coupons', desc: 'Let users redeem a lifetime code on the Upgrade screen' },
       { key: 'paddle', title: 'Paddle', desc: 'Card checkout through Paddle ($7/month)' },
-      { key: 'stripe', title: 'Stripe', desc: 'Show Stripe as a checkout option. Checkout is not connected yet' },
+      { key: 'stripe', title: 'Stripe', desc: 'Card checkout through Stripe ($7/month)' },
     ];
 
     return React.createElement('div', { className: 'card admin-billing' },

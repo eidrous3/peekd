@@ -1,6 +1,6 @@
 (function () {
   const PLANS = ['free', 'premium', 'lifetime'];
-  const COLUMNS = 'id, name, timezone, plan, paddle_customer_id, is_deleted';
+  const COLUMNS = 'id, name, timezone, plan, paddle_customer_id, stripe_customer_id, is_deleted';
 
   function normalizePlan(value) {
     const plan = String(value || '').trim().toLowerCase();
@@ -15,6 +15,15 @@
   // profile read would fail, so fall back to a free plan and say so once.
   let warnedMissingPlan = false;
   let warnedMissingPaddle = false;
+  let warnedMissingStripe = false;
+  function missingStripeColumn(error) {
+    const missing = error && /column .*stripe_customer_id.* does not exist/i.test(error.message || '');
+    if (missing && !warnedMissingStripe) {
+      warnedMissingStripe = true;
+      console.warn('[Peekd] profiles.stripe_customer_id is missing. Run supabase/migrations/20260817210000_stripe_billing.sql');
+    }
+    return missing;
+  }
   function missingPaddleColumn(error) {
     const missing = error && /column .*paddle_customer_id.* does not exist/i.test(error.message || '');
     if (missing && !warnedMissingPaddle) {
@@ -93,6 +102,13 @@
       .eq('id', session.user.id)
       .maybeSingle();
 
+    if (missingStripeColumn(error)) {
+      ({ data, error } = await sb
+        .from('profiles')
+        .select('id, name, timezone, plan, paddle_customer_id, is_deleted')
+        .eq('id', session.user.id)
+        .maybeSingle());
+    }
     if (missingPaddleColumn(error)) {
       ({ data, error } = await sb
         .from('profiles')
@@ -122,6 +138,7 @@
         timezone,
         plan: normalizePlan(data?.plan),
         paddleCustomerId: data?.paddle_customer_id || '',
+        stripeCustomerId: data?.stripe_customer_id || '',
         initials: initials(name, email),
         isDeleted: !!data?.is_deleted,
       },
@@ -157,6 +174,13 @@
       .select(COLUMNS)
       .single();
 
+    if (missingStripeColumn(error)) {
+      ({ data, error } = await sb
+        .from('profiles')
+        .upsert(payload, { onConflict: 'id' })
+        .select('id, name, timezone, plan, paddle_customer_id, is_deleted')
+        .single());
+    }
     if (missingPaddleColumn(error)) {
       ({ data, error } = await sb
         .from('profiles')
@@ -186,6 +210,7 @@
         timezone: savedTimezone,
         plan: normalizePlan(data?.plan),
         paddleCustomerId: data?.paddle_customer_id || '',
+        stripeCustomerId: data?.stripe_customer_id || '',
         initials: initials(savedName, email),
         isDeleted: !!data?.is_deleted,
       },
