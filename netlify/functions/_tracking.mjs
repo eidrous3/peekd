@@ -997,6 +997,100 @@ async function deleteOpenEvents(events) {
   await dbRequest(`email_open_events?id=in.${postgrestInFilter(ids)}`, { method: 'DELETE' });
 }
 
+function lastEntry(list) {
+  return Array.isArray(list) && list.length ? list[list.length - 1] : null;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function conversationSubjectKey(subject) {
+  return String(subject || '')
+    .replace(/^\s*(?:(?:re|fw|fwd)\s*:\s*)+/i, '')
+    .trim()
+    .toLowerCase();
+}
+
+async function conversationTrackedEmails({ userId, threadId, subject }) {
+  const byId = new Map();
+
+  if (threadId) {
+    const res = await dbRequest(
+      `tracked_emails?user_id=eq.${encodeURIComponent(userId)}`
+        + `&gmail_thread_id=eq.${encodeURIComponent(threadId)}`
+        + '&select=id,subject,sent_at',
+    );
+    for (const row of (res.ok && Array.isArray(res.data) ? res.data : [])) {
+      if (row?.id) byId.set(row.id, row);
+    }
+  }
+
+  const key = conversationSubjectKey(subject);
+  if (key) {
+    const res = await dbRequest(
+      `tracked_emails?user_id=eq.${encodeURIComponent(userId)}`
+        + '&select=id,subject,sent_at&order=sent_at.desc&limit=40',
+    );
+    for (const row of (res.ok && Array.isArray(res.data) ? res.data : [])) {
+      if (row?.id && conversationSubjectKey(row.subject) === key) byId.set(row.id, row);
+    }
+  }
+
+  return [...byId.values()];
+}
+
+async function listConversationHumanOpens({
+  userId,
+  threadId,
+  subject,
+  recipientEmail,
+  recipientId,
+  sinceIso,
+}) {
+  const tracked = await conversationTrackedEmails({ userId, threadId, subject });
+  const emailById = new Map((tracked || []).map((row) => [row.id, row]));
+  let recipientRows = [];
+
+  if (tracked.length && recipientEmail) {
+    const recips = await dbRequest(
+      `tracked_recipients?tracked_email_id=in.${postgrestInFilter(tracked.map((row) => row.id))}`
+        + `&email=eq.${encodeURIComponent(recipientEmail)}`
+        + '&select=id,tracked_email_id',
+    );
+    recipientRows = recips.ok && Array.isArray(recips.data) ? recips.data : [];
+  }
+
+  if (!recipientRows.some((row) => row.id === recipientId)) {
+    recipientRows.push({ id: recipientId, tracked_email_id: null });
+  }
+
+  const emailByRecipientId = new Map();
+  for (const row of recipientRows) {
+    emailByRecipientId.set(row.id, emailById.get(row.tracked_email_id) || null);
+  }
+
+  const opensRes = await dbRequest(
+    `email_open_events?tracked_recipient_id=in.${postgrestInFilter(recipientRows.map((row) => row.id))}`
+      + '&classification=eq.human'
+      + `&opened_at=gte.${encodeURIComponent(sinceIso)}`
+      + '&select=id,opened_at,tracked_recipient_id&order=opened_at.asc',
+  );
+  const opens = opensRes.ok && Array.isArray(opensRes.data) ? opensRes.data : [];
+
+  return opens
+    .map((open) => ({
+      ...open,
+      tracked: emailByRecipientId.get(open.tracked_recipient_id) || null,
+    }))
+    .sort((a, b) => {
+      const sentA = new Date(a.tracked?.sent_at || a.opened_at).getTime();
+      const sentB = new Date(b.tracked?.sent_at || b.opened_at).getTime();
+      if (sentA !== sentB) return sentA - sentB;
+      return new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime();
+    });
+}
+
 export function classifyOpen({ ip, userAgent, sentAt, openedAt = new Date(), senderIp }) {
   // Open from the sender's own IP (e.g. viewing the Sent copy in a non-proxied client).
   if (ipsMatch(ip, senderIp)) return 'self';
@@ -1209,7 +1303,8 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
   if (!token) return { ok: true, recorded: false };
 
   const lookup = await dbRequest(
-    `tracked_recipients?pixel_token=eq.${encodeURIComponent(token)}&select=id,email,tracked_emails(sent_at,sender_ip,user_id,subject)`,
+    `tracked_recipients?pixel_token=eq.${encodeURIComponent(token)}`
+      + '&select=id,email,tracked_emails(id,sent_at,sender_ip,user_id,subject,gmail_thread_id)',
   );
 
   if (!lookup.ok || !lookup.data?.[0]) {
@@ -1254,7 +1349,7 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
       location_label: locationLabel,
       opened_at: openedAt.toISOString(),
     },
-    prefer: 'return=minimal',
+    prefer: 'return=representation',
   });
 
   if (!insert.ok) {
@@ -1262,15 +1357,32 @@ export async function recordPixelOpen({ pixelToken, ip, userAgent }) {
   }
 
   if (classification === 'human' && recipient.tracked_emails?.user_id) {
-    try {
-      await notifyTrackingAlert({
-        userId: recipient.tracked_emails.user_id,
-        type: isReplySubject(recipient.tracked_emails.subject) ? 'reply' : 'open',
-        who: recipient.email,
-        subject: recipient.tracked_emails.subject,
-      });
-    } catch (err) {
-      console.error('[alert-email] open failed', err);
+    const inserted = Array.isArray(insert.data) ? insert.data[0] : insert.data;
+    // Quoted original + follow-up pixels fire together. Wait, then email
+    // only the last open in that conversation (the reply, if there is one).
+    await sleep(4_000);
+    const since = new Date(openedAt.getTime() - OPEN_DEDUPE_WINDOW_MS).toISOString();
+    const opens = await listConversationHumanOpens({
+      userId: recipient.tracked_emails.user_id,
+      threadId: recipient.tracked_emails.gmail_thread_id,
+      subject: recipient.tracked_emails.subject,
+      recipientEmail: recipient.email,
+      recipientId: recipient.id,
+      sinceIso: since,
+    });
+    const last = lastEntry(opens);
+    if (last && inserted?.id && last.id === inserted.id) {
+      const lastSubject = last.tracked?.subject || recipient.tracked_emails.subject;
+      try {
+        await notifyTrackingAlert({
+          userId: recipient.tracked_emails.user_id,
+          type: isReplySubject(lastSubject) ? 'reply' : 'open',
+          who: recipient.email,
+          subject: lastSubject,
+        });
+      } catch (err) {
+        console.error('[alert-email] open failed', err);
+      }
     }
   }
 
