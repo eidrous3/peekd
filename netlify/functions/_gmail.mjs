@@ -235,6 +235,21 @@ export async function fetchGmailInbox(accessToken, { maxResults = 25, labelIds =
   return { ok: true, messages: messages.filter(Boolean) };
 }
 
+export async function fetchGmailMailboxCount(accessToken) {
+  if (!accessToken) return { ok: false, error: 'missing_token' };
+  const res = await fetch(
+    'https://gmail.googleapis.com/gmail/v1/users/me/labels/INBOX',
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false, error: data.error?.message || 'gmail_label_failed' };
+  }
+  const threads = Number(data.threadsTotal) || 0;
+  const messages = Number(data.messagesTotal) || 0;
+  return { ok: true, count: threads || messages };
+}
+
 export async function fetchGmailThread(accessToken, threadId) {
   if (!accessToken || !threadId) return null;
 

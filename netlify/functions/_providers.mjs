@@ -2,6 +2,7 @@ import { getConnectedAccounts } from './_accounts.mjs';
 import {
   enrichInboxWithReplies,
   fetchGmailInbox,
+  fetchGmailMailboxCount,
   fetchGmailMessageBody,
   getValidAccessToken,
   sendGmailMessage,
@@ -10,6 +11,7 @@ import {
 import {
   enrichOutlookInboxWithReplies,
   fetchOutlookInbox,
+  fetchOutlookMailboxCount,
   fetchOutlookMessageBody,
   getValidOutlookAccessToken,
   outlookFolderForLabel,
@@ -70,6 +72,12 @@ export async function fetchProviderInbox(provider, accessToken, { maxResults, la
     return fetchOutlookInbox(accessToken, { maxResults, folder });
   }
   return fetchGmailInbox(accessToken, { maxResults, labelIds: label });
+}
+
+export async function fetchProviderMailboxCount(provider, accessToken) {
+  return provider === 'outlook'
+    ? fetchOutlookMailboxCount(accessToken)
+    : fetchGmailMailboxCount(accessToken);
 }
 
 /** Badge sent messages that already got a reply, per provider. */

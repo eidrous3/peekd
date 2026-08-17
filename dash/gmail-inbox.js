@@ -35,6 +35,21 @@
     };
   }
 
+  async function fetchMailboxCount() {
+    const s = await session();
+    if (!s?.access_token) return { ok: false, error: 'no_session', inbox: 0 };
+
+    const res = await fetch('/.netlify/functions/mailbox-counts', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${s.access_token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      return { ok: false, error: data.error || 'fetch_failed', inbox: 0 };
+    }
+    return { ok: true, inbox: Number(data.inbox) || 0 };
+  }
+
   async function fetchMessageBody({ messageId, accountEmail } = {}) {
     const s = await session();
     if (!s?.access_token) return { ok: false, error: 'no_session' };
@@ -99,5 +114,5 @@
     return { ok: true, messageId: data.messageId, threadId: data.threadId };
   }
 
-  window.PeekdGmail = { fetchInbox, fetchMessageBody, sendEmail };
+  window.PeekdGmail = { fetchInbox, fetchMailboxCount, fetchMessageBody, sendEmail };
 })();

@@ -31,6 +31,10 @@
     return Auth.ensureSession();
   }
 
+  function bumpNavCounts() {
+    window.dispatchEvent(new Event('peekd:nav-counts'));
+  }
+
   function isEmail(s) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim());
   }
@@ -491,6 +495,19 @@
     };
   }
 
+  async function countCampaigns() {
+    const s = await session();
+    if (!s?.user) return { ok: false, count: 0 };
+    const sb = window.PeekdAuth.client();
+    if (!sb) return { ok: false, count: 0 };
+    const { count, error } = await sb
+      .from('campaigns')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', s.user.id);
+    if (error) return { ok: false, count: 0, error: error.message };
+    return { ok: true, count: count || 0 };
+  }
+
   async function createCampaign(input) {
     const name = String(input?.name || '').trim() || 'Untitled campaign';
     const fromEmail = normalizeEmail(input?.fromEmail || input?.from_email || '');
@@ -628,10 +645,12 @@
       .single();
 
     if (fetchErr) {
+      bumpNavCounts();
       return { ok: true, campaign: toUiCampaign({ ...campaign, campaign_steps: stepRows, campaign_recipients: recipientRows }) };
     }
     const tracked = await fetchTrackedForCampaigns(sb, s.user.id, [full]);
     const openByCampaign = openStatsFromTracked([full], tracked);
+    bumpNavCounts();
     return { ok: true, campaign: toUiCampaign(full, openByCampaign.get(full.id)) };
   }
 
@@ -721,6 +740,7 @@
       .eq('user_id', s.user.id);
 
     if (error) return { ok: false, error: error.message };
+    bumpNavCounts();
     return { ok: true };
   }
 
@@ -898,6 +918,7 @@
 
   window.PeekdCampaigns = {
     fetchCampaigns,
+    countCampaigns,
     createCampaign,
     updateCampaignStatus,
     renameCampaign,

@@ -6,15 +6,17 @@
   const { Avatar, Switch } = window;
 
   const NAV = [
-    { id: 'inbox', label: 'Inbox', icon: 'inbox', badge: '0' },
+    { id: 'inbox', label: 'Inbox', icon: 'inbox' },
     { id: 'analytics', label: 'Analytics', icon: 'chart' },
     { id: 'campaigns', label: 'Camp.', icon: 'send' },
     { id: 'people', label: 'People', icon: 'users' },
   ];
 
-  function MobileBottomNav({ page, setPage, moreOpen, setMoreOpen }) {
+  function MobileBottomNav({ page, setPage, moreOpen, setMoreOpen, navCounts }) {
     const go = (p) => { setMoreOpen(false); setPage(p); };
     const moreActive = moreOpen || page === 'settings' || page === 'help';
+    const inboxBadge = Math.max(0, Math.floor(Number(navCounts?.inbox) || 0));
+    const inboxLabel = inboxBadge > 99 ? '99+' : String(inboxBadge);
     return React.createElement('nav', { className: 'mobile-bottom-nav' },
       NAV.map((it) => React.createElement('button', {
         key: it.id,
@@ -23,7 +25,7 @@
       },
         React.createElement('span', { className: 'm-nav-ico' },
           React.createElement(Icon, { name: it.icon, size: 21 }),
-          it.badge && React.createElement('span', { className: 'm-nav-badge' }, it.badge),
+          it.id === 'inbox' && React.createElement('span', { className: 'm-nav-badge' }, inboxLabel),
         ),
         React.createElement('span', { className: 'm-nav-label' }, it.label),
       )),

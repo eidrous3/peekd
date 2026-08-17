@@ -20,9 +20,9 @@
 
   const NAV = [
     { group: 'WORKSPACE', items: [
-      { id: 'inbox', label: 'Inbox', icon: 'inbox', badge: '0' },
+      { id: 'inbox', label: 'Inbox', icon: 'inbox' },
       { id: 'analytics', label: 'Analytics', icon: 'chart' },
-      { id: 'campaigns', label: 'Campaigns', icon: 'send', badge: '0' },
+      { id: 'campaigns', label: 'Campaigns', icon: 'send' },
       { id: 'people', label: 'People', icon: 'users' },
     ]},
     { group: 'ACCOUNT', items: [
@@ -31,7 +31,12 @@
     ]},
   ];
 
-  function Sidebar({ page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade, pro, onManageBilling, profile }) {
+  function formatNavBadge(n) {
+    const v = Math.max(0, Math.floor(Number(n) || 0));
+    return v > 99 ? '99+' : String(v);
+  }
+
+  function Sidebar({ page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade, pro, onManageBilling, profile, navCounts }) {
     const [menuOpen, setMenuOpen] = useState(false);
     const [logoutConfirm, setLogoutConfirm] = useState(false);
     const footRef = useRef(null);
@@ -68,7 +73,7 @@
           },
             React.createElement('span', { className: 'ni-ico' }, React.createElement(Icon, { name: it.icon, size: 18 })),
             React.createElement('span', { className: 'ni-label' }, it.label),
-            it.badge && React.createElement('span', { className: 'nav-badge' }, it.badge),
+            (it.id === 'inbox' || it.id === 'campaigns') && React.createElement('span', { className: 'nav-badge' }, formatNavBadge(navCounts?.[it.id])),
           )),
         )),
         React.createElement('button', { className: 'nav-item nav-theme', onClick: () => setDark(!dark), title: 'Dark mode' },

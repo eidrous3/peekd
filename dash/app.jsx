@@ -42,6 +42,7 @@
     const [headerCTA, setHeaderCTA] = useState(null);
     const [campaignSeed, setCampaignSeed] = useState(null);
     const [profile, setProfile] = useState(null);
+    const [navCounts, setNavCounts] = useState({ inbox: 0, campaigns: 0 });
 
     useEffect(() => {
       let cancelled = false;
@@ -67,6 +68,30 @@
 
     useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem('peekd_dark', dark ? '1' : '0'); }, [dark]);
     useEffect(() => { localStorage.setItem('peekd_page', page); }, [page]);
+
+    useEffect(() => {
+      if (!authReady) return undefined;
+      let cancelled = false;
+      const load = async () => {
+        const [mail, camps] = await Promise.all([
+          window.PeekdGmail?.fetchMailboxCount?.() || { inbox: 0 },
+          window.PeekdCampaigns?.countCampaigns?.() || { count: 0 },
+        ]);
+        if (cancelled) return;
+        setNavCounts({
+          inbox: Number(mail.inbox) || 0,
+          campaigns: Number(camps.count) || 0,
+        });
+      };
+      load();
+      const timer = setInterval(load, 60_000);
+      window.addEventListener('peekd:nav-counts', load);
+      return () => {
+        cancelled = true;
+        clearInterval(timer);
+        window.removeEventListener('peekd:nav-counts', load);
+      };
+    }, [authReady, inboxRefreshKey]);
 
     useEffect(() => {
       let cancelled = false;
@@ -346,7 +371,7 @@
       return React.createElement('div', { className: 'app app-loading', style: { display: 'grid', placeItems: 'center', minHeight: '100vh', color: 'var(--fg-mute)' } }, 'Loading…');
     }
     return React.createElement('div', { className: 'app' + (collapsed ? ' collapsed' : '') },
-      React.createElement(Sidebar, { page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade: openUpgrade, pro, onManageBilling: manageBilling, profile }),
+      React.createElement(Sidebar, { page, setPage, collapsed, setCollapsed, dark, setDark, onUpgrade: openUpgrade, pro, onManageBilling: manageBilling, profile, navCounts }),
       React.createElement('div', { className: 'main' },
         React.createElement(Header, { title: TITLES[page] || 'Peekd', unread, onBell: () => { setBell(true); loadNotifs(); }, extra: headerExtra, cta: headerCTA }),
         React.createElement('div', { className: 'page', style: isInbox ? { overflow: 'hidden' } : {} }, body),
@@ -354,7 +379,7 @@
       compose && React.createElement(Compose, { free, initialBody: composeBody, reply: composeReply, onClose: () => setCompose(false), onUpgrade: () => { setCompose(false); openUpgrade(); }, toast, onSent: () => setInboxRefreshKey((k) => k + 1) }),
       upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, onRedeemCoupon: redeemCoupon, toast }),
       bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, loading: notifsLoading, onMarkAllRead: markAllNotifsRead, onSelect: openNotif }),
-      React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen }),
+      React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen, navCounts }),
       moreOpen && React.createElement(MoreSheet, { page, setPage, dark, setDark, onClose: () => setMoreOpen(false), profile }),
       React.createElement(AlertStack, {
         alerts,

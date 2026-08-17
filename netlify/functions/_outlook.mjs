@@ -404,6 +404,19 @@ export async function fetchOutlookInbox(accessToken, { maxResults = 25, folder =
   return { ok: true, messages };
 }
 
+export async function fetchOutlookMailboxCount(accessToken) {
+  if (!accessToken) return { ok: false, error: 'missing_token' };
+  const res = await fetch(
+    `${GRAPH}/me/mailFolders/inbox?$select=totalItemCount,unreadItemCount`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false, error: data.error?.code || 'outlook_folder_failed' };
+  }
+  return { ok: true, count: Number(data.totalItemCount) || 0 };
+}
+
 /**
  * Tag sent Outlook messages that already have a reply, mirroring the Gmail
  * enrichment: badge them REPLIED, add a timeline entry and persist the reply.
