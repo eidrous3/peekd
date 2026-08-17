@@ -95,7 +95,7 @@ export async function sendTrackedEmail({
   }
 
   if (addBranding) {
-    finalHtml += '<p style="margin-top:24px;font-size:11px;color:#94a3b8;">Tracked by Peekd</p>';
+    finalHtml += '<p style="margin-top:24px;font-size:11px;color:#94a3b8;"><a href="https://www.getpeekd.com" style="color:#94a3b8;text-decoration:underline;">Tracked by Peekd</a></p>';
   }
 
   const sent = await sendProviderMessage(provider, accessToken, {
