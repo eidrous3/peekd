@@ -73,8 +73,8 @@
 
     return React.createElement('div', { className: 'admin-login-wrap' },
       React.createElement('form', { className: 'card admin-login', onSubmit: submit },
-        React.createElement('h1', null, 'Peekd Support Admin'),
-        React.createElement('p', { className: 'dim', style: { marginBottom: 18 } }, 'Sign in to view and reply to support tickets.'),
+        React.createElement('h1', null, 'Peekd Admin'),
+        React.createElement('p', { className: 'dim', style: { marginBottom: 18 } }, 'Sign in to manage support tickets and users.'),
         React.createElement('div', { className: 'field', style: { marginBottom: 14 } },
           React.createElement('label', { className: 'field-label' }, 'EMAIL'),
           React.createElement('input', { className: 'input', type: 'email', value: email, onChange: (e) => setEmail(e.target.value), disabled: loading })),
@@ -188,12 +188,138 @@
     );
   }
 
+  function UsersTab({ token, onAuthLost }) {
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [query, setQuery] = useState('');
+    const [confirmId, setConfirmId] = useState(null);
+    const [deleting, setDeleting] = useState(false);
+    const [error, setError] = useState('');
+
+    async function loadUsers() {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await adminFetch('/.netlify/functions/admin-users', { token });
+        setUsers(data.users || []);
+      } catch (err) {
+        setUsers([]);
+        if (err.message === 'Unauthorized') {
+          onAuthLost();
+          return;
+        }
+        setError('Could not load users.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    useEffect(() => {
+      loadUsers();
+    }, [token]);
+
+    async function softDelete(id) {
+      if (deleting) return;
+      setDeleting(true);
+      try {
+        await adminFetch('/.netlify/functions/admin-users', { method: 'POST', token, body: { id } });
+        setConfirmId(null);
+        await loadUsers();
+      } catch {
+        alert('Could not delete user.');
+      } finally {
+        setDeleting(false);
+      }
+    }
+
+    const q = query.trim().toLowerCase();
+    const filtered = users.filter((user) => {
+      if (!q) return true;
+      return [user.email, user.name, user.plan].some((value) => String(value || '').toLowerCase().includes(q));
+    });
+
+    return React.createElement('div', { className: 'card admin-users' },
+      React.createElement('div', { className: 'admin-users-toolbar' },
+        React.createElement('input', {
+          className: 'input',
+          type: 'search',
+          placeholder: 'Search users…',
+          value: query,
+          onChange: (e) => setQuery(e.target.value),
+        }),
+        React.createElement('p', { className: 'dim', style: { margin: 0 } },
+          filtered.length + (filtered.length === 1 ? ' user' : ' users')),
+      ),
+      loading
+        ? React.createElement('p', { className: 'dim', style: { padding: 20 } }, 'Loading…')
+        : error
+          ? React.createElement('p', { className: 'dim', style: { padding: 20, color: 'var(--danger)' } }, error)
+          : filtered.length === 0
+            ? React.createElement('p', { className: 'dim', style: { padding: 20 } }, users.length ? 'No matching users.' : 'No users yet.')
+            : React.createElement('table', { className: 'ptable' },
+              React.createElement('thead', null,
+                React.createElement('tr', null,
+                  React.createElement('th', null, 'USER'),
+                  React.createElement('th', null, 'PLAN'),
+                  React.createElement('th', null, 'CREATED'),
+                  React.createElement('th', null, 'STATUS'),
+                  React.createElement('th', null, ''),
+                )),
+              React.createElement('tbody', null,
+                filtered.flatMap((user) => {
+                  const rows = [
+                    React.createElement('tr', { key: user.id, className: user.deleted ? 'deleted' : '' },
+                      React.createElement('td', null,
+                        React.createElement('div', { className: 'pcell-name' },
+                          React.createElement('div', null,
+                            React.createElement('div', { className: 'pn-main' }, user.name || user.email || 'Account'),
+                            React.createElement('div', { className: 'pn-email' }, user.email || user.id)))),
+                      React.createElement('td', null, user.plan || 'free'),
+                      React.createElement('td', null, user.created),
+                      React.createElement('td', null,
+                        React.createElement('span', { className: 'admin-user-status ' + (user.deleted ? 'deleted' : 'active') },
+                          user.deleted ? 'Deleted' : 'Active')),
+                      React.createElement('td', { className: 'pcell-actions' },
+                        user.deleted
+                          ? null
+                          : React.createElement('div', { className: 'row-actions' },
+                            React.createElement('button', {
+                              className: 'btn btn-ghost btn-sm',
+                              style: { color: 'var(--danger)' },
+                              onClick: () => setConfirmId(user.id),
+                            }, 'Delete')))),
+                  ];
+                  if (confirmId === user.id) {
+                    rows.push(React.createElement('tr', { key: user.id + '-confirm', className: 'list-confirm-row' },
+                      React.createElement('td', { colSpan: 5 },
+                        React.createElement('div', { className: 'list-confirm' },
+                          React.createElement('span', null, 'Soft-delete ' + (user.email || 'this user') + '? They will be hidden from Peekd.'),
+                          React.createElement('div', { style: { display: 'flex', gap: 8 } },
+                            React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: () => setConfirmId(null), disabled: deleting }, 'Cancel'),
+                            React.createElement('button', { className: 'btn btn-danger btn-sm', onClick: () => softDelete(user.id), disabled: deleting }, deleting ? 'Deleting…' : 'Delete'))))));
+                  }
+                  return rows;
+                }),
+              ),
+            ),
+    );
+  }
+
   function AdminApp() {
     const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_KEY) || '');
+    const [tab, setTab] = useState('support');
     const [tickets, setTickets] = useState([]);
     const [selectedId, setSelectedId] = useState(null);
     const [selected, setSelected] = useState(null);
     const [loading, setLoading] = useState(false);
+
+    function clearSession() {
+      sessionStorage.removeItem(TOKEN_KEY);
+      setToken('');
+      setTickets([]);
+      setSelected(null);
+      setSelectedId(null);
+    }
 
     async function loadTickets(activeToken = token) {
       setLoading(true);
@@ -202,8 +328,7 @@
         setTickets(data.tickets || []);
       } catch {
         setTickets([]);
-        sessionStorage.removeItem(TOKEN_KEY);
-        setToken('');
+        clearSession();
       } finally {
         setLoading(false);
       }
@@ -219,39 +344,42 @@
       if (token) loadTickets(token);
     }, [token]);
 
-    function logout() {
-      sessionStorage.removeItem(TOKEN_KEY);
-      setToken('');
-      setTickets([]);
-      setSelected(null);
-      setSelectedId(null);
-    }
-
     if (!token) return React.createElement(Login, { onLogin: (t) => { setToken(t); loadTickets(t); } });
 
     return React.createElement('div', { className: 'admin-shell' },
       React.createElement('header', { className: 'admin-head' },
-        React.createElement('div', null,
-          React.createElement('h1', null, 'Support Admin'),
-          React.createElement('p', { className: 'dim' }, tickets.length + ' tickets')),
-        React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: logout }, 'Log out'),
+        React.createElement('div', { className: 'admin-head-left' },
+          React.createElement('h1', null, 'Admin'),
+          React.createElement('div', { className: 'tabs' },
+            React.createElement('button', {
+              className: 'tab' + (tab === 'support' ? ' active' : ''),
+              onClick: () => setTab('support'),
+            }, 'Support', React.createElement('span', { className: 'tab-count' }, tickets.length)),
+            React.createElement('button', {
+              className: 'tab' + (tab === 'users' ? ' active' : ''),
+              onClick: () => setTab('users'),
+            }, 'Users'),
+          )),
+        React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: clearSession }, 'Log out'),
       ),
-      React.createElement('div', { className: 'admin-grid' },
-        React.createElement('div', { className: 'admin-side card' },
-          loading
-            ? React.createElement('p', { className: 'dim', style: { padding: 16 } }, 'Loading…')
-            : tickets.length === 0
-              ? React.createElement('p', { className: 'dim', style: { padding: 16 } }, 'No tickets yet.')
-              : React.createElement(TicketList, { tickets, selectedId, onSelect: (id) => loadTicket(id) }),
-        ),
-        React.createElement('div', { className: 'admin-main card' },
-          React.createElement(TicketPanel, {
-            ticket: selected,
-            token,
-            onUpdated: async (id) => { await loadTickets(); await loadTicket(id); },
-          }),
-        ),
-      ),
+      tab === 'support'
+        ? React.createElement('div', { className: 'admin-grid' },
+          React.createElement('div', { className: 'admin-side card' },
+            loading
+              ? React.createElement('p', { className: 'dim', style: { padding: 16 } }, 'Loading…')
+              : tickets.length === 0
+                ? React.createElement('p', { className: 'dim', style: { padding: 16 } }, 'No tickets yet.')
+                : React.createElement(TicketList, { tickets, selectedId, onSelect: (id) => loadTicket(id) }),
+          ),
+          React.createElement('div', { className: 'admin-main card' },
+            React.createElement(TicketPanel, {
+              ticket: selected,
+              token,
+              onUpdated: async (id) => { await loadTickets(); await loadTicket(id); },
+            }),
+          ),
+        )
+        : React.createElement(UsersTab, { token, onAuthLost: clearSession }),
     );
   }
 

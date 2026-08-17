@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Peekd — Support Admin</title>
+<title>Peekd — Admin</title>
 <link rel="stylesheet" href="dash/dashboard.css">
 <link rel="stylesheet" href="dash/pages.css">
 <style>
@@ -12,9 +12,19 @@
   .admin-login { width: min(420px, 100%); padding: 28px; }
   .admin-login h1 { margin: 0 0 8px; font-size: 22px; }
   .admin-shell { max-width: 1200px; margin: 0 auto; padding: 24px; }
-  .admin-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .admin-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; gap: 16px; }
   .admin-head h1 { margin: 0; font-size: 24px; }
+  .admin-head-left { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .admin-grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+  .admin-users { overflow: hidden; }
+  .admin-users-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .admin-users-toolbar .input { max-width: 280px; }
+  .admin-users .ptable { width: 100%; }
+  .admin-users .ptable .row-actions { opacity: 1; }
+  .admin-users tr.deleted td { color: var(--fg-mute); }
+  .admin-user-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; }
+  .admin-user-status.active { background: var(--good-soft); color: var(--good); }
+  .admin-user-status.deleted { background: var(--bg-2); color: var(--fg-mute); }
   .admin-side { overflow: hidden; max-height: calc(100vh - 120px); overflow-y: auto; padding: 10px; }
   .admin-main { min-height: calc(100vh - 120px); padding: 20px; }
   .admin-ticket-list { display: flex; flex-direction: column; gap: 8px; }
