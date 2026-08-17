@@ -25,7 +25,6 @@
     ['clicked', 'Clicked a link'],
     ['sent', 'Sent (not opened)'],
     ['hot', 'Hot (3+ opens)'],
-    ['tracked', 'Tracked by Peekd'],
   ];
   const TIME_FILTERS = [
     ['any', 'Any time'],
@@ -50,7 +49,6 @@
     if (key === 'clicked') return clickCount(e) > 0;
     if (key === 'sent') return isSentFolder(e) && (e.opens || 0) === 0 && e.badge !== 'REPLIED';
     if (key === 'hot') return !!(e.hot || (e.opens || 0) > 2);
-    if (key === 'tracked') return !!e.trackedEmailId;
     return false;
   }
 
