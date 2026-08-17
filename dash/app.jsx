@@ -43,6 +43,7 @@
     const [campaignSeed, setCampaignSeed] = useState(null);
     const [profile, setProfile] = useState(null);
     const [navCounts, setNavCounts] = useState({ inbox: 0, campaigns: 0 });
+    const [billing, setBilling] = useState({ coupons: true, paddle: true, stripe: false });
 
     useEffect(() => {
       let cancelled = false;
@@ -68,6 +69,17 @@
 
     useEffect(() => { document.documentElement.classList.toggle('dark', dark); localStorage.setItem('peekd_dark', dark ? '1' : '0'); }, [dark]);
     useEffect(() => { localStorage.setItem('peekd_page', page); }, [page]);
+
+    useEffect(() => {
+      let cancelled = false;
+      fetch('/.netlify/functions/billing-methods')
+        .then((res) => res.json())
+        .then((data) => {
+          if (!cancelled && data?.ok && data.methods) setBilling(data.methods);
+        })
+        .catch(() => {});
+      return () => { cancelled = true; };
+    }, []);
 
     useEffect(() => {
       if (!authReady) return undefined;
@@ -263,6 +275,10 @@
     }
 
     async function startCheckout() {
+      if (!billing.paddle) {
+        toast('Paddle checkout is turned off');
+        return;
+      }
       const Billing = window.PeekdPaddle;
       if (!Billing?.configured()) {
         toast('Payments are not set up yet');
@@ -314,6 +330,10 @@
       toast('Could not open billing. Try again in a moment.');
     }
 
+    async function startStripeCheckout() {
+      toast('Stripe checkout is not available yet');
+    }
+
     async function redeemCoupon(code) {
       const session = await window.PeekdAuth?.ensureSession?.();
       const token = session?.access_token;
@@ -343,6 +363,7 @@
             : err === 'already_used' ? 'invalid coupon'
               : err === 'already_lifetime' ? 'You already have lifetime access'
                 : err === 'coupons_missing' ? 'Coupons are not set up in the database yet'
+                  : err === 'coupons_disabled' ? 'Coupon redemption is turned off'
                   : 'Could not redeem that coupon',
         );
         return false;
@@ -377,7 +398,7 @@
         React.createElement('div', { className: 'page', style: isInbox ? { overflow: 'hidden' } : {} }, body),
       ),
       compose && React.createElement(Compose, { free, initialBody: composeBody, reply: composeReply, onClose: () => setCompose(false), onUpgrade: () => { setCompose(false); openUpgrade(); }, toast, onSent: () => setInboxRefreshKey((k) => k + 1) }),
-      upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, onRedeemCoupon: redeemCoupon, toast }),
+      upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, onStripe: startStripeCheckout, onRedeemCoupon: redeemCoupon, toast, billing }),
       bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, loading: notifsLoading, onMarkAllRead: markAllNotifsRead, onSelect: openNotif }),
       React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen, navCounts }),
       moreOpen && React.createElement(MoreSheet, { page, setPage, dark, setDark, onClose: () => setMoreOpen(false), profile }),

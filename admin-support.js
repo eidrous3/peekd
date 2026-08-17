@@ -305,6 +305,89 @@
     );
   }
 
+  function Switch({ on, onClick, locked }) {
+    return React.createElement('span', {
+      className: 'switch' + (on ? ' on' : '') + (locked ? ' locked' : ''),
+      onClick: locked ? undefined : onClick,
+    });
+  }
+
+  function BillingTab({ token, onAuthLost }) {
+    const [methods, setMethods] = useState({ coupons: true, paddle: true, stripe: false });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState('');
+    const [error, setError] = useState('');
+
+    async function loadBilling() {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await adminFetch('/.netlify/functions/admin-billing', { token });
+        if (data.methods) setMethods(data.methods);
+        if (data.missing) setError('Run the billing_settings migration to save these toggles.');
+      } catch (err) {
+        if (err.message === 'Unauthorized') {
+          onAuthLost();
+          return;
+        }
+        setError('Could not load billing settings.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    useEffect(() => {
+      loadBilling();
+    }, [token]);
+
+    async function toggle(key) {
+      if (saving) return;
+      const next = { ...methods, [key]: !methods[key] };
+      setMethods(next);
+      setSaving(key);
+      setError('');
+      try {
+        const data = await adminFetch('/.netlify/functions/admin-billing', {
+          method: 'PATCH',
+          token,
+          body: { methods: next },
+        });
+        if (data.methods) setMethods(data.methods);
+      } catch (err) {
+        setMethods(methods);
+        setError(err.message === 'billing_settings_missing'
+          ? 'Run the billing_settings migration to save these toggles.'
+          : 'Could not save billing settings.');
+      } finally {
+        setSaving('');
+      }
+    }
+
+    const rows = [
+      { key: 'coupons', title: 'Coupons', desc: 'Let users redeem a lifetime code on the Upgrade screen' },
+      { key: 'paddle', title: 'Paddle', desc: 'Card checkout through Paddle ($7/month)' },
+      { key: 'stripe', title: 'Stripe', desc: 'Show Stripe as a checkout option. Checkout is not connected yet' },
+    ];
+
+    return React.createElement('div', { className: 'card admin-billing' },
+      React.createElement('h2', null, 'Billing methods'),
+      React.createElement('p', { className: 'dim', style: { margin: '0 0 8px' } },
+        'Choose what end users can use to get Pro.'),
+      loading
+        ? React.createElement('p', { className: 'dim', style: { padding: '12px 0' } }, 'Loading…')
+        : rows.map((row) => React.createElement('div', { key: row.key, className: 'toggle-row' },
+          React.createElement('div', null,
+            React.createElement('div', { className: 'tr-title' }, row.title),
+            React.createElement('div', { className: 'tr-desc' }, row.desc)),
+          React.createElement(Switch, {
+            on: !!methods[row.key],
+            locked: !!saving,
+            onClick: () => toggle(row.key),
+          }))),
+      error && React.createElement('p', { className: 'dim', style: { marginTop: 12, color: 'var(--danger)' } }, error),
+    );
+  }
+
   function AdminApp() {
     const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_KEY) || '');
     const [tab, setTab] = useState('support');
@@ -359,6 +442,10 @@
               className: 'tab' + (tab === 'users' ? ' active' : ''),
               onClick: () => setTab('users'),
             }, 'Users'),
+            React.createElement('button', {
+              className: 'tab' + (tab === 'billing' ? ' active' : ''),
+              onClick: () => setTab('billing'),
+            }, 'Billing'),
           )),
         React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: clearSession }, 'Log out'),
       ),
@@ -379,7 +466,9 @@
             }),
           ),
         )
-        : React.createElement(UsersTab, { token, onAuthLost: clearSession }),
+        : tab === 'users'
+          ? React.createElement(UsersTab, { token, onAuthLost: clearSession })
+          : React.createElement(BillingTab, { token, onAuthLost: clearSession }),
     );
   }
 

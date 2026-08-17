@@ -1,4 +1,5 @@
 import { cors, json, bearerToken, getUserFromToken } from './_support.mjs';
+import { getBillingMethods } from './_billing-settings.mjs';
 import { redeemCoupon } from './_coupons.mjs';
 
 export default async (req) => {
@@ -16,6 +17,11 @@ export default async (req) => {
     body = await req.json();
   } catch {
     return json({ error: 'invalid_json' }, 400);
+  }
+
+  const billing = await getBillingMethods();
+  if (billing.ok && billing.methods.coupons === false) {
+    return json({ error: 'coupons_disabled' }, 403);
   }
 
   const result = await redeemCoupon(user.id, body?.code);

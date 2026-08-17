@@ -239,22 +239,36 @@
     );
   }
 
-  function Upgrade({ onClose, onConfirm, onRedeemCoupon, toast }) {
+  function Upgrade({ onClose, onConfirm, onRedeemCoupon, onStripe, toast, billing }) {
+    const methods = billing || { coupons: true, paddle: true, stripe: false };
     const [busy, setBusy] = React.useState(false);
+    const [stripeBusy, setStripeBusy] = React.useState(false);
     const [couponOpen, setCouponOpen] = React.useState(false);
     const [coupon, setCoupon] = React.useState('');
     const [couponBusy, setCouponBusy] = React.useState(false);
-    const locked = busy || couponBusy;
+    const locked = busy || couponBusy || stripeBusy;
+    const hasCheckout = !!(methods.paddle || methods.stripe);
+    const hasAny = hasCheckout || !!methods.coupons;
     React.useEffect(() => { const k = e => e.key === 'Escape' && !locked && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [locked]);
     const feats = ['Campaigns & sequences', 'People Lists', 'Link click tracking', 'AI follow-up suggestions', 'Remove branding', 'Advanced analytics', 'Priority support'];
     async function handleUpgrade() {
-      if (locked) return;
+      if (locked || !methods.paddle) return;
       setBusy(true);
       try {
         if (onConfirm) await onConfirm();
         else { onClose(); toast('Welcome to Pro! 🎉'); }
       } finally {
         setBusy(false);
+      }
+    }
+    async function handleStripe() {
+      if (locked || !methods.stripe) return;
+      setStripeBusy(true);
+      try {
+        if (onStripe) await onStripe();
+        else toast('Stripe checkout is not available yet');
+      } finally {
+        setStripeBusy(false);
       }
     }
     async function handleRedeem(e) {
@@ -284,8 +298,10 @@
           feats.map((f, i) => React.createElement('div', { key: i, className: 'upgrade-feature' }, React.createElement(Icon, { name: 'check', size: 16 }), f)),
         ),
         React.createElement('div', { className: 'modal-foot', style: { flexDirection: 'column', gap: 8 } },
-          React.createElement('button', { className: 'btn btn-upgrade', onClick: handleUpgrade, disabled: locked }, React.createElement(Icon, { name: 'bolt', size: 15, fill: 'currentColor', stroke: 0 }), busy ? 'Opening checkout…' : 'Upgrade now — $7/mo'),
-          couponOpen
+          !hasAny && React.createElement('p', { className: 'muted', style: { fontSize: 13, textAlign: 'center', margin: '0 0 4px' } }, 'Purchases are paused right now. Contact support if you need Pro.'),
+          methods.paddle && React.createElement('button', { className: 'btn btn-upgrade', onClick: handleUpgrade, disabled: locked }, React.createElement(Icon, { name: 'bolt', size: 15, fill: 'currentColor', stroke: 0 }), busy ? 'Opening checkout…' : 'Upgrade with Paddle — $7/mo'),
+          methods.stripe && React.createElement('button', { className: 'btn btn-primary', onClick: handleStripe, disabled: locked }, stripeBusy ? 'Opening Stripe…' : 'Upgrade with Stripe — $7/mo'),
+          methods.coupons && (couponOpen
             ? React.createElement('form', { onSubmit: handleRedeem, style: { display: 'flex', gap: 8, width: '100%' } },
                 React.createElement('input', {
                   className: 'input',
@@ -306,9 +322,12 @@
               className: 'btn btn-ghost btn-block',
               onClick: () => setCouponOpen(true),
               disabled: locked,
-            }, 'Have a coupon?'),
+            }, 'Have a coupon?')),
           React.createElement('button', { className: 'btn btn-ghost btn-block', onClick: onClose, disabled: locked }, 'Maybe later'),
-          React.createElement('div', { className: 'muted', style: { fontSize: 11.5, textAlign: 'center' } }, 'Secure checkout by Paddle · cancel anytime'),
+          hasCheckout && React.createElement('div', { className: 'muted', style: { fontSize: 11.5, textAlign: 'center' } },
+            methods.paddle && methods.stripe ? 'Secure checkout by Paddle or Stripe · cancel anytime'
+              : methods.stripe ? 'Secure checkout by Stripe · cancel anytime'
+                : 'Secure checkout by Paddle · cancel anytime'),
         ),
       ),
     );
