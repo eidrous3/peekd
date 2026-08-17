@@ -509,13 +509,20 @@ tr.clickable{cursor:pointer}
 .filter-wrap{position:relative;flex:0 0 auto}
 .icon-btn.has-filter{border-color:var(--accent);color:var(--accent)}
 .filter-dot{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
-.filter-panel{position:absolute;top:44px;right:0;z-index:30;width:248px;background:var(--card);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow-lg);padding:13px}
+.filter-panel{position:absolute;top:44px;right:0;z-index:30;width:280px;background:var(--card);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow-lg);padding:13px}
 .fp-title{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--fg-mute);margin-bottom:10px}
 .fp-group{font-size:12px;font-weight:600;color:var(--fg);margin:10px 0 6px}
-.fp-opt{display:flex;align-items:center;gap:9px;padding:6px 4px;border-radius:7px;font-size:13px;color:var(--fg-dim);cursor:pointer}
-.fp-opt:hover{background:var(--bg-1)}
+.fp-opt{display:flex;align-items:center;gap:9px;width:100%;padding:6px 4px;border-radius:7px;font-size:13px;color:var(--fg-dim);cursor:pointer;text-align:left;background:none;border:none}
+.fp-opt:hover,.fp-opt.on{background:var(--bg-1);color:var(--fg)}
+.fp-opt-label{flex:1;min-width:0}
+.fp-opt-count{font-size:11px;font-weight:600;color:var(--fg-mute);font-variant-numeric:tabular-nums}
+.fp-opt.on .fp-opt-count{color:var(--accent)}
 .fp-foot{display:flex;gap:8px;justify-content:space-between;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 .fp-foot .btn{flex:1}
+.fp-foot .btn:disabled{opacity:.45;cursor:default}
+.fp-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.fp-chip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border-radius:99px;border:1px solid var(--line);background:var(--accent-soft);color:var(--accent);font-size:11.5px;font-weight:550}
+.fp-chip:hover{border-color:var(--accent)}
 .inbox-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:54px 24px;color:var(--fg-mute);gap:6px}
 .inbox-empty .ie-title{font-size:14px;font-weight:600;color:var(--fg);margin-top:6px}
 .inbox-empty .ie-sub{font-size:12.5px;color:var(--fg-mute)}

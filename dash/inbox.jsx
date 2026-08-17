@@ -19,6 +19,61 @@
 
   const badgeClass = { OPENED: 'b-opened', REPLIED: 'b-replied', SENT: 'b-sent' };
 
+  const STATUS_FILTERS = [
+    ['opened', 'Opened'],
+    ['replied', 'Replied'],
+    ['clicked', 'Clicked a link'],
+    ['sent', 'Sent (not opened)'],
+    ['hot', 'Hot (3+ opens)'],
+    ['tracked', 'Tracked by Peekd'],
+  ];
+  const TIME_FILTERS = [
+    ['any', 'Any time'],
+    ['today', 'Today'],
+    ['7days', 'Last 7 days'],
+    ['30days', 'Last 30 days'],
+  ];
+  const STATUS_LABEL = Object.fromEntries(STATUS_FILTERS);
+  const TIME_LABEL = Object.fromEntries(TIME_FILTERS);
+
+  function isSentFolder(e) {
+    return (e.gmailLabelIds || []).includes('SENT');
+  }
+
+  function clickCount(e) {
+    return (e.links || []).reduce((n, l) => n + (Number(l.clicks) || 0), 0);
+  }
+
+  function matchesStatus(e, key) {
+    if (key === 'opened') return (e.opens || 0) > 0 || e.badge === 'OPENED' || e.badge === 'REPLIED';
+    if (key === 'replied') return e.badge === 'REPLIED';
+    if (key === 'clicked') return clickCount(e) > 0;
+    if (key === 'sent') return isSentFolder(e) && (e.opens || 0) === 0 && e.badge !== 'REPLIED';
+    if (key === 'hot') return !!(e.hot || (e.opens || 0) > 2);
+    if (key === 'tracked') return !!e.trackedEmailId;
+    return false;
+  }
+
+  function messageMs(e) {
+    const n = Number(e.internalDate);
+    if (Number.isFinite(n) && n > 0) return n;
+    const parsed = Date.parse(e.sentAt || '');
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function inTimeWindow(e, windowKey) {
+    if (!windowKey || windowKey === 'any') return true;
+    const ms = messageMs(e);
+    if (!ms) return false;
+    if (windowKey === 'today') {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      return ms >= start.getTime();
+    }
+    const days = windowKey === '7days' ? 7 : 30;
+    return ms >= Date.now() - days * 86_400_000;
+  }
+
   function escapeHtml(s) {
     return String(s || '')
       .replace(/&/g, '&amp;')
@@ -374,8 +429,6 @@
     const [filterOpen, setFilterOpen] = useState(false);
     const [appStatus, setAppStatus] = useState([]);
     const [appTime, setAppTime] = useState('any');
-    const [drStatus, setDrStatus] = useState([]);
-    const [drTime, setDrTime] = useState('any');
     const searchRef = useRef(null);
     const filterRef = useRef(null);
 
@@ -453,52 +506,56 @@
       return () => document.removeEventListener('keydown', h);
     }, [modalOpen]);
 
-    // Close the filter dropdown on outside click (without applying)
+    // Close the filter dropdown on outside click or Escape
     useEffect(() => {
       if (!filterOpen) return;
-      const h = (e) => { if (filterRef.current && !filterRef.current.contains(e.target)) setFilterOpen(false); };
-      document.addEventListener('mousedown', h);
-      return () => document.removeEventListener('mousedown', h);
+      const onMouse = (e) => { if (filterRef.current && !filterRef.current.contains(e.target)) setFilterOpen(false); };
+      const onKey = (e) => { if (e.key === 'Escape') setFilterOpen(false); };
+      document.addEventListener('mousedown', onMouse);
+      document.addEventListener('keydown', onKey);
+      return () => {
+        document.removeEventListener('mousedown', onMouse);
+        document.removeEventListener('keydown', onKey);
+      };
     }, [filterOpen]);
 
-    const openFilter = () => { setDrStatus(appStatus); setDrTime(appTime); setFilterOpen(true); };
-    const applyFilter = () => { setAppStatus(drStatus); setAppTime(drTime); setFilterOpen(false); };
-    const clearFilter = () => { setDrStatus([]); setDrTime('any'); setAppStatus([]); setAppTime('any'); setFilterOpen(false); };
-    const toggleStatus = (s) => setDrStatus(drStatus.includes(s) ? drStatus.filter(x => x !== s) : [...drStatus, s]);
+    const toggleStatus = (s) => setAppStatus((cur) => cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]);
+    const clearFilter = () => { setAppStatus([]); setAppTime('any'); setFilterOpen(false); };
     const filtersActive = appStatus.length > 0 || appTime !== 'any';
 
-    const parseDays = (t) => {
-      if (/m ago|h ago|just now|now/i.test(t)) return 0;
-      if (/yesterday/i.test(t)) return 1;
-      const wk = t.match(/(\d+)\s*week/i); if (wk) return +wk[1] * 7;
-      const dd = t.match(/(\d+)\s*day/i); if (dd) return +dd[1];
-      return 0;
-    };
-
-    const isSentFolder = (e) => (e.gmailLabelIds || []).includes('SENT');
     const base = acct === 'all' ? emails : emails.filter(e => e.accountEmail === acct || e.from === acct);
-    const tabs = [['all', 'All', base.length], ['unread', 'Unread', base.filter(e => e.unread).length], ['read', 'Read', base.filter(e => !e.unread).length], ['sent', 'Sent', base.filter(isSentFolder).length], ['replied', 'Replied', base.filter(e => e.badge === 'REPLIED').length]];
-    let list = base;
-    if (tab === 'unread') list = base.filter(e => e.unread);
-    else if (tab === 'read') list = base.filter(e => !e.unread);
-    else if (tab === 'sent') list = base.filter(isSentFolder);
-    else if (tab === 'replied') list = base.filter(e => e.badge === 'REPLIED');
+    let filtered = base;
     if (query.trim()) {
       const q = query.trim().toLowerCase();
-      list = list.filter(e => e.subject.toLowerCase().includes(q) || e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q));
+      filtered = filtered.filter(e =>
+        String(e.subject || '').toLowerCase().includes(q)
+        || String(e.name || '').toLowerCase().includes(q)
+        || String(e.email || '').toLowerCase().includes(q)
+        || String(e.toEmail || '').toLowerCase().includes(q)
+        || String(e.to || '').toLowerCase().includes(q)
+      );
     }
     if (appStatus.length) {
-      list = list.filter(e => appStatus.some(s =>
-        s === 'opened' ? e.badge === 'OPENED' :
-        s === 'replied' ? e.badge === 'REPLIED' :
-        s === 'sent' ? e.badge === 'SENT' :
-        s === 'hot' ? e.opens > 2 : false));
+      filtered = filtered.filter((e) => appStatus.some((s) => matchesStatus(e, s)));
     }
     if (appTime !== 'any') {
-      const maxDays = appTime === 'today' ? 0 : appTime === '7days' ? 7 : 30;
-      list = list.filter(e => parseDays(e.time) <= maxDays);
+      filtered = filtered.filter((e) => inTimeWindow(e, appTime));
     }
-    const email = emails.find(e => e.id === sel);
+
+    const tabs = [
+      ['all', 'All', filtered.length],
+      ['unread', 'Unread', filtered.filter((e) => e.unread).length],
+      ['read', 'Read', filtered.filter((e) => !e.unread).length],
+      ['sent', 'Sent', filtered.filter(isSentFolder).length],
+      ['replied', 'Replied', filtered.filter((e) => e.badge === 'REPLIED').length],
+    ];
+    let list = filtered;
+    if (tab === 'unread') list = filtered.filter((e) => e.unread);
+    else if (tab === 'read') list = filtered.filter((e) => !e.unread);
+    else if (tab === 'sent') list = filtered.filter(isSentFolder);
+    else if (tab === 'replied') list = filtered.filter((e) => e.badge === 'REPLIED');
+
+    const email = list.find((e) => e.id === sel) || (list[0] || null);
 
     return React.createElement('div', { className: 'inbox-wrap' },
       free && banner && React.createElement('div', { className: 'free-banner' },
@@ -517,27 +574,62 @@
                 ? React.createElement('button', { className: 'search-clear', onClick: () => { setQuery(''); searchRef.current && searchRef.current.focus(); } }, React.createElement(Icon, { name: 'x', size: 13 }))
                 : React.createElement('span', { className: 'kbd' }, '⌘K')),
             React.createElement('div', { className: 'filter-wrap', ref: filterRef },
-              React.createElement('button', { className: 'icon-btn' + (filtersActive ? ' has-filter' : ''), style: { width: 38, height: 38 }, onClick: () => filterOpen ? setFilterOpen(false) : openFilter() },
+              React.createElement('button', {
+                className: 'icon-btn' + (filtersActive ? ' has-filter' : ''),
+                style: { width: 38, height: 38 },
+                title: filtersActive ? 'Filters on' : 'Filter',
+                onClick: () => setFilterOpen((open) => !open),
+              },
                 React.createElement(Icon, { name: 'filter', size: 16 }),
                 filtersActive && React.createElement('span', { className: 'filter-dot' })),
               filterOpen && React.createElement('div', { className: 'filter-panel' },
                 React.createElement('div', { className: 'fp-title' }, 'FILTER BY'),
                 React.createElement('div', { className: 'fp-group' }, 'Status'),
-                [['opened', 'Opened'], ['replied', 'Replied'], ['sent', 'Sent (not opened)'], ['hot', 'Hot (3+ opens)']].map(([k, lbl]) =>
-                  React.createElement('label', { key: k, className: 'fp-opt', onClick: () => toggleStatus(k) },
-                    React.createElement('span', { className: 'checkbox' + (drStatus.includes(k) ? ' on' : '') }, drStatus.includes(k) && React.createElement(Icon, { name: 'check', size: 12 })),
-                    lbl)),
+                STATUS_FILTERS.map(([k, lbl]) => {
+                  const n = base.filter((e) => matchesStatus(e, k)).length;
+                  return React.createElement('button', {
+                    key: k,
+                    type: 'button',
+                    className: 'fp-opt' + (appStatus.includes(k) ? ' on' : ''),
+                    onClick: () => toggleStatus(k),
+                  },
+                    React.createElement('span', { className: 'checkbox' + (appStatus.includes(k) ? ' on' : '') },
+                      appStatus.includes(k) && React.createElement(Icon, { name: 'check', size: 12 })),
+                    React.createElement('span', { className: 'fp-opt-label' }, lbl),
+                    React.createElement('span', { className: 'fp-opt-count' }, n));
+                }),
                 React.createElement('div', { className: 'fp-group' }, 'Time'),
-                [['any', 'Any time'], ['today', 'Today'], ['7days', 'Last 7 days'], ['30days', 'Last 30 days']].map(([k, lbl]) =>
-                  React.createElement('label', { key: k, className: 'fp-opt', onClick: () => setDrTime(k) },
-                    React.createElement('span', { className: 'radio-dot' + (drTime === k ? ' on' : '') }),
+                TIME_FILTERS.map(([k, lbl]) =>
+                  React.createElement('button', {
+                    key: k,
+                    type: 'button',
+                    className: 'fp-opt' + (appTime === k ? ' on' : ''),
+                    onClick: () => setAppTime(k),
+                  },
+                    React.createElement('span', { className: 'radio-dot' + (appTime === k ? ' on' : '') }),
                     lbl)),
                 React.createElement('div', { className: 'fp-foot' },
-                  React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: clearFilter }, 'Clear filters'),
-                  React.createElement('button', { className: 'btn btn-primary btn-sm', onClick: applyFilter }, 'Apply')),
+                  React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: clearFilter, disabled: !filtersActive }, 'Clear'),
+                  React.createElement('button', { className: 'btn btn-primary btn-sm', onClick: () => setFilterOpen(false) }, 'Done')),
               ),
             ),
-            layout === 'full' && React.createElement('button', { className: 'icon-btn has-filter', style: { width: 38, height: 38 }, title: 'Switch to split view', onClick: toggleLayout }, React.createElement(Icon, { name: 'inbox', size: 16 })),          ),
+            layout === 'full' && React.createElement('button', { className: 'icon-btn has-filter', style: { width: 38, height: 38 }, title: 'Switch to split view', onClick: toggleLayout }, React.createElement(Icon, { name: 'inbox', size: 16 })),
+          ),
+          filtersActive && React.createElement('div', { className: 'fp-chips' },
+            appStatus.map((k) => React.createElement('button', {
+              key: k,
+              type: 'button',
+              className: 'fp-chip',
+              onClick: () => toggleStatus(k),
+              title: 'Remove filter',
+            }, STATUS_LABEL[k] || k, React.createElement(Icon, { name: 'x', size: 11 }))),
+            appTime !== 'any' && React.createElement('button', {
+              type: 'button',
+              className: 'fp-chip',
+              onClick: () => setAppTime('any'),
+              title: 'Remove filter',
+            }, TIME_LABEL[appTime] || appTime, React.createElement(Icon, { name: 'x', size: 11 })),
+          ),
           React.createElement('div', { className: 'tabs', style: { marginTop: 10 } },
             tabs.map(([id, label, n]) => React.createElement('button', { key: id, className: 'tab' + (tab === id ? ' active' : ''), onClick: () => setTab(id) },
               label, React.createElement('span', { className: 'tab-count' }, n))),
@@ -561,8 +653,9 @@
             ? React.createElement('div', { className: 'inbox-empty' },
                 React.createElement(Icon, { name: 'search', size: 30 }),
                 React.createElement('div', { className: 'ie-title' }, query.trim() ? 'No results for "' + query.trim() + '"' : 'No matching emails'),
-                React.createElement('div', { className: 'ie-sub' }, query.trim() ? 'Try a different name or subject' : 'Try adjusting your filters'))
-            : list.map(e => React.createElement(EmailRow, { key: e.id, e, wide: effLayout === 'full', active: e.id === sel && effLayout === 'split' && !isMobile, onClick: () => { setSel(e.id); if (isMobile) setMobileDetail(true); else if (layout === 'full') setModalOpen(true); } })),
+                React.createElement('div', { className: 'ie-sub' }, query.trim() ? 'Try a different name or subject' : 'Nothing matches these filters in the loaded mailbox'),
+                filtersActive && React.createElement('button', { className: 'btn btn-ghost btn-sm', style: { marginTop: 12 }, onClick: clearFilter }, 'Clear filters'))
+            : list.map(e => React.createElement(EmailRow, { key: e.id, e, wide: effLayout === 'full', active: email && e.id === email.id && effLayout === 'split' && !isMobile, onClick: () => { setSel(e.id); if (isMobile) setMobileDetail(true); else if (layout === 'full') setModalOpen(true); } })),
         ),
       ),
         effLayout === 'split' && React.createElement(Detail, { e: email, free, onUpgrade, onCompose, toast, layout, onToggleLayout: toggleLayout, mobileDetail, onMobileBack: () => setMobileDetail(false) }),
