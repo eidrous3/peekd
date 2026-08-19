@@ -2,7 +2,7 @@ import { cors, json, bearerToken, getUserFromToken, dbRequest } from './_support
 
 export default async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  if (req.method !== 'GET' && req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
   const token = bearerToken(req);
   if (!token) return json({ error: 'Unauthorized' }, 401);
@@ -16,7 +16,13 @@ export default async (req) => {
   if (/schema cache|relation .*smtp_requestors/i.test(existing.error || '')) {
     return json({ error: 'smtp_requestors_missing' }, 503);
   }
-  if (existing.ok && Array.isArray(existing.data) && existing.data[0]) {
+  const already = existing.ok && Array.isArray(existing.data) && !!existing.data[0];
+
+  if (req.method === 'GET') {
+    return json({ ok: true, requested: already });
+  }
+
+  if (already) {
     return json({ ok: true, already: true });
   }
 

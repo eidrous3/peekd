@@ -327,6 +327,19 @@
     const [smtpBusy, setSmtpBusy] = useState(false);
     const [smtpRequested, setSmtpRequested] = useState(false);
 
+    async function loadSmtpRequested() {
+      try {
+        const session = await window.PeekdAuth?.ensureSession?.();
+        const token = session?.access_token;
+        if (!token) return;
+        const res = await fetch('/.netlify/functions/smtp-notify', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.requested) setSmtpRequested(true);
+      } catch { /* leave the button enabled */ }
+    }
+
     async function requestSmtpNotify() {
       if (smtpBusy || smtpRequested) return;
       setSmtpBusy(true);
@@ -375,6 +388,7 @@
 
     useEffect(() => {
       loadAccounts();
+      loadSmtpRequested();
       const params = new URLSearchParams(window.location.search);
       const gmail = params.get('gmail');
       const outlook = params.get('outlook');
@@ -493,7 +507,7 @@
             style: { marginTop: 10 },
             onClick: requestSmtpNotify,
             disabled: smtpBusy || smtpRequested,
-          }, React.createElement(Icon, { name: 'bell', size: 13 }), smtpRequested ? "We'll notify you" : smtpBusy ? 'Saving…' : "Notify me when it's ready"))),
+          }, React.createElement(Icon, { name: 'bell', size: 13 }), smtpRequested ? 'You will be notified once feature is available' : smtpBusy ? 'Saving…' : "Notify me when it's ready"))),
       connect && React.createElement(ConnectModal, {
         ig: connect,
         busy: connecting,
