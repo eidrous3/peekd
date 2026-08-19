@@ -324,6 +324,38 @@
     const [status, setStatus] = useState('loading');
     const [connect, setConnect] = useState(null);
     const [connecting, setConnecting] = useState(false);
+    const [smtpBusy, setSmtpBusy] = useState(false);
+    const [smtpRequested, setSmtpRequested] = useState(false);
+
+    async function requestSmtpNotify() {
+      if (smtpBusy || smtpRequested) return;
+      setSmtpBusy(true);
+      try {
+        const session = await window.PeekdAuth?.ensureSession?.();
+        const token = session?.access_token;
+        if (!token) {
+          toast('Sign in to get notified');
+          return;
+        }
+        const res = await fetch('/.netlify/functions/smtp-notify', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          toast(data.error === 'smtp_requestors_missing'
+            ? 'SMTP waitlist is not set up yet'
+            : 'Could not save your request. Try again.');
+          return;
+        }
+        setSmtpRequested(true);
+        toast(data.already ? "You're already on the list" : "We'll let you know!");
+      } catch {
+        toast('Could not save your request. Try again.');
+      } finally {
+        setSmtpBusy(false);
+      }
+    }
 
     async function loadAccounts() {
       if (!I) {
@@ -456,7 +488,12 @@
         React.createElement('div', { className: 'integ-body' },
           React.createElement('div', { className: 'integ-name' }, 'Custom Email (IMAP/SMTP)', React.createElement('span', { className: 'status-chip sc-soon' }, 'COMING SOON')),
           React.createElement('div', { className: 'integ-desc' }, 'Connect any email — cPanel, Zoho, Fastmail, Yahoo, any SMTP'),
-          React.createElement('button', { className: 'btn btn-ghost btn-sm', style: { marginTop: 10 }, onClick: () => toast("We'll let you know!") }, React.createElement(Icon, { name: 'bell', size: 13 }), "Notify me when it's ready"))),
+          React.createElement('button', {
+            className: 'btn btn-ghost btn-sm',
+            style: { marginTop: 10 },
+            onClick: requestSmtpNotify,
+            disabled: smtpBusy || smtpRequested,
+          }, React.createElement(Icon, { name: 'bell', size: 13 }), smtpRequested ? "We'll notify you" : smtpBusy ? 'Saving…' : "Notify me when it's ready"))),
       connect && React.createElement(ConnectModal, {
         ig: connect,
         busy: connecting,

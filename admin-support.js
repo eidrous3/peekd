@@ -388,6 +388,82 @@
     );
   }
 
+  function SmtpRequestorsTab({ token, onAuthLost }) {
+    const [requestors, setRequestors] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [query, setQuery] = useState('');
+    const [error, setError] = useState('');
+
+    async function loadRequestors() {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await adminFetch('/.netlify/functions/admin-smtp-requestors', { token });
+        setRequestors(data.requestors || []);
+        if (data.missing) setError('Run the smtp_requestors migration to collect requests.');
+      } catch (err) {
+        setRequestors([]);
+        if (err.message === 'Unauthorized') {
+          onAuthLost();
+          return;
+        }
+        setError('Could not load SMTP requestors.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    useEffect(() => {
+      loadRequestors();
+    }, [token]);
+
+    const q = query.trim().toLowerCase();
+    const filtered = requestors.filter((row) => {
+      if (!q) return true;
+      return [row.email, row.userId].some((value) => String(value || '').toLowerCase().includes(q));
+    });
+
+    return React.createElement('div', { className: 'card admin-users' },
+      React.createElement('div', { className: 'admin-users-toolbar' },
+        React.createElement('input', {
+          className: 'input',
+          type: 'search',
+          placeholder: 'Search requestors…',
+          value: query,
+          onChange: (e) => setQuery(e.target.value),
+        }),
+        React.createElement('p', { className: 'dim', style: { margin: 0 } },
+          filtered.length + (filtered.length === 1 ? ' requestor' : ' requestors')),
+      ),
+      loading
+        ? React.createElement('p', { className: 'dim', style: { padding: 20 } }, 'Loading…')
+        : error && !requestors.length
+          ? React.createElement('p', { className: 'dim', style: { padding: 20, color: 'var(--danger)' } }, error)
+          : filtered.length === 0
+            ? React.createElement('p', { className: 'dim', style: { padding: 20 } }, requestors.length ? 'No matching requestors.' : 'No SMTP requests yet.')
+            : React.createElement('table', { className: 'ptable' },
+              React.createElement('thead', null,
+                React.createElement('tr', null,
+                  React.createElement('th', null, 'USER'),
+                  React.createElement('th', null, 'USER ID'),
+                  React.createElement('th', null, 'REQUESTED'),
+                )),
+              React.createElement('tbody', null,
+                filtered.map((row) => React.createElement('tr', { key: row.id },
+                  React.createElement('td', null,
+                    React.createElement('div', { className: 'pcell-name' },
+                      React.createElement('div', null,
+                        React.createElement('div', { className: 'pn-main' }, row.email || 'Account'),
+                        !row.email && React.createElement('div', { className: 'pn-email' }, row.userId)))),
+                  React.createElement('td', { className: 'mono', style: { fontSize: 12 } }, row.userId),
+                  React.createElement('td', null, row.created),
+                )),
+              ),
+            ),
+      error && requestors.length ? React.createElement('p', { className: 'dim', style: { padding: '0 16px 16px', color: 'var(--danger)' } }, error) : null,
+    );
+  }
+
   function AdminApp() {
     const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_KEY) || '');
     const [tab, setTab] = useState('support');
@@ -446,6 +522,10 @@
               className: 'tab' + (tab === 'billing' ? ' active' : ''),
               onClick: () => setTab('billing'),
             }, 'Billing'),
+            React.createElement('button', {
+              className: 'tab' + (tab === 'smtp' ? ' active' : ''),
+              onClick: () => setTab('smtp'),
+            }, 'SMTP requestors'),
           )),
         React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: clearSession }, 'Log out'),
       ),
@@ -468,7 +548,9 @@
         )
         : tab === 'users'
           ? React.createElement(UsersTab, { token, onAuthLost: clearSession })
-          : React.createElement(BillingTab, { token, onAuthLost: clearSession }),
+          : tab === 'billing'
+            ? React.createElement(BillingTab, { token, onAuthLost: clearSession })
+            : React.createElement(SmtpRequestorsTab, { token, onAuthLost: clearSession }),
     );
   }
 
