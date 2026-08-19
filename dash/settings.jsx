@@ -502,12 +502,17 @@
         React.createElement('div', { className: 'integ-body' },
           React.createElement('div', { className: 'integ-name' }, 'Custom Email (IMAP/SMTP)', React.createElement('span', { className: 'status-chip sc-soon' }, 'COMING SOON')),
           React.createElement('div', { className: 'integ-desc' }, 'Connect any email — cPanel, Zoho, Fastmail, Yahoo, any SMTP'),
-          React.createElement('button', {
-            className: 'btn btn-ghost btn-sm',
-            style: { marginTop: 10 },
-            onClick: requestSmtpNotify,
-            disabled: smtpBusy || smtpRequested,
-          }, React.createElement(Icon, { name: 'bell', size: 13 }), smtpRequested ? 'You will be notified once feature is available' : smtpBusy ? 'Saving…' : "Notify me when it's ready"))),
+          smtpRequested
+            ? React.createElement('div', {
+                className: 'btn btn-ghost btn-sm smtp-notify-done',
+                'aria-disabled': 'true',
+              }, React.createElement(Icon, { name: 'bell', size: 13 }), 'You will be notified once feature is available')
+            : React.createElement('button', {
+                className: 'btn btn-ghost btn-sm',
+                style: { marginTop: 10 },
+                onClick: requestSmtpNotify,
+                disabled: smtpBusy,
+              }, React.createElement(Icon, { name: 'bell', size: 13 }), smtpBusy ? 'Saving…' : "Notify me when it's ready"))),
       connect && React.createElement(ConnectModal, {
         ig: connect,
         busy: connecting,
