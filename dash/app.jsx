@@ -443,7 +443,7 @@
     else if (page === 'campaigns') body = React.createElement(CampaignsPage, { free, onUpgrade: openUpgrade, toast, setHeaderExtra, setHeaderCTA, seed: campaignSeed, clearSeed: () => setCampaignSeed(null) });
     else if (page === 'people') body = React.createElement(PeoplePage, { free, onUpgrade: openUpgrade, toast, setHeaderExtra, setHeaderCTA, onUseInCampaign: (list) => { setCampaignSeed(list); setPage('campaigns'); } });
     else if (page === 'settings') body = React.createElement(SettingsPage, { onUpgrade: openUpgrade, onManageBilling: manageBilling, toast, pro, profile, onProfileChange: setProfile });
-    else body = React.createElement(HelpPage, { toast });
+    else body = React.createElement(HelpPage, { toast, pro });
 
     const isInbox = page === 'inbox';
     if (!authReady) {

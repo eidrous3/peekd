@@ -263,7 +263,7 @@
     );
   }
 
-  function SupportPanel({ toast }) {
+  function SupportPanel({ toast, pro }) {
     const [tickets, setTickets] = useState([]);
     const [selected, setSelected] = useState(null);
     const [loadingList, setLoadingList] = useState(true);
@@ -346,15 +346,16 @@
         mode === 'list' && React.createElement(TicketList, { tickets, loading: loadingList, onOpen: (id) => { setSelId(id); setMode('detail'); } }),
         mode === 'detail' && React.createElement(TicketDetail, { tk: selected, loading: loadingDetail, onBack: () => setMode('list'), onReply: addReply })),
       React.createElement('div', { className: 'support-foot' },
+        pro && React.createElement('div', { className: 'support-priority' }, 'Priority support'),
         React.createElement('div', null, 'Typical reply time: ', React.createElement('b', null, 'under 24 hours'))),
     );
   }
 
-  function HelpPage({ toast }) {
+  function HelpPage({ toast, pro }) {
     return React.createElement('div', { className: 'page-pad' },
       React.createElement('div', { className: 'help-wrap' },
         React.createElement(KnowledgeBase, { toast }),
-        React.createElement(SupportPanel, { toast }),
+        React.createElement(SupportPanel, { toast, pro }),
       ),
     );
   }

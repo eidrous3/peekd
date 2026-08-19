@@ -393,9 +393,10 @@ tr.clickable{cursor:pointer}
 .kb-vote{font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;color:var(--fg-dim);transition:background .12s,border-color .12s}
 .kb-vote:hover{background:var(--bg-1);border-color:var(--line-2)}
 .support-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px}
-.support-foot{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:14px;font-size:13px;color:var(--fg-mute)}
+.support-foot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;margin-top:14px;font-size:13px;color:var(--fg-mute)}
 .support-foot a{color:var(--accent);text-decoration:none}
 .support-foot a:hover{text-decoration:underline}
+.support-priority{font-weight:700;color:var(--good)}
 .help-drop{border:1.5px dashed var(--line-2);border-radius:10px;background:var(--bg-1);min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;transition:border-color .12s,background .12s}
 .help-drop:hover,.help-drop.drag{border-color:var(--accent);background:var(--accent-soft)}
 .help-drop .hd-main{font-size:13.5px;font-weight:500;color:var(--fg-dim)}
