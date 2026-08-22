@@ -417,7 +417,8 @@ export async function getTrackingByMessageIds(userId, gmailMessageIds) {
 export function parseDeviceFromUserAgent(userAgent) {
   const ua = String(userAgent || '');
   if (!ua) return '—';
-  if (isGmailImageProxy(ua)) return 'Gmail';
+  if (isGmailImageProxy(ua) || isGmailPrefetchUserAgent(ua)) return 'Gmail';
+  if (isAppleMailUserAgent(ua)) return 'Mac Mail';
   if (/iPhone/i.test(ua)) return 'iPhone';
   if (/iPad/i.test(ua)) return 'iPad';
   if (/Android/i.test(ua)) return 'Android';
@@ -859,6 +860,21 @@ export function isGmailImageProxy(userAgent) {
   return /GoogleImageProxy|ggpht\.com/i.test(userAgent || '');
 }
 
+/** Gmail's inbox prefetch bot — frozen Edge 12 / Chrome 42 sample UA, not a real client. */
+export function isGmailPrefetchUserAgent(userAgent) {
+  const ua = String(userAgent || '');
+  if (/Edge\/12\.246/i.test(ua) && /Chrome\/42\.0\.2311\.135/i.test(ua)) return true;
+  return /Windows NT 10\.0/i.test(ua) && /Chrome\/42\./i.test(ua) && /Mozilla\/5\.0[\s\S]*Mozilla\/5\.0/i.test(ua);
+}
+
+/** Mail.app on Mac: WebKit without a Chrome/Safari/Firefox brand token. */
+export function isAppleMailUserAgent(userAgent) {
+  const ua = String(userAgent || '');
+  if (!/Macintosh|Mac OS X/i.test(ua)) return false;
+  if (/Chrome\/|CriOS|Edg\/|Firefox\/|FxiOS|OPR\/|Version\/\d/i.test(ua)) return false;
+  return /AppleWebKit/i.test(ua);
+}
+
 export function isGoogleInfrastructureIp(ip) {
   const value = String(ip || '').trim();
   if (!value) return false;
@@ -868,7 +884,8 @@ export function isGoogleInfrastructureIp(ip) {
 export function isPrefetchBotUserAgent(userAgent) {
   const ua = String(userAgent || '');
   if (isGmailImageProxy(ua)) return false;
-  if (/Chrome\/([1-9]|[1-4][0-9])\./i.test(ua)) return true;
+  if (isAppleMailUserAgent(ua)) return false;
+  if (isGmailPrefetchUserAgent(ua)) return true;
   return /Googlebot|Google-HTTP|Feedfetcher|AdsBot/i.test(ua);
 }
 
