@@ -221,7 +221,7 @@
       setAiLoading(false);
       if (!draft?.ok) {
         if (draft?.error === 'pro_required') { onUpgrade(); return; }
-        const msg = window.PeekdAiKeys?.generateReplyErrorMessage?.(draft?.error)
+        const msg = window.PeekdAiKeys?.generateReplyErrorMessage?.(draft?.error, draft?.provider)
           || (draft?.error === 'no_session' ? 'Sign in to generate a reply' : 'Could not generate a reply. Try again.');
         toast(msg, 'error');
         return;

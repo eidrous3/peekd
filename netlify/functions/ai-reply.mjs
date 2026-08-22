@@ -69,7 +69,7 @@ async function handle(req) {
   }
 
   const drafted = await generateReplyText(key, messages);
-  if (!drafted.ok) return json({ error: drafted.error }, statusFor(drafted.error));
+  if (!drafted.ok) return json({ error: drafted.error, provider: key.provider }, statusFor(drafted.error));
 
   return json({
     ok: true,

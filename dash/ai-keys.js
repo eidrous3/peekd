@@ -79,7 +79,7 @@
       return { ok: false, error: 'unreachable' };
     }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) return { ok: false, error: data.error || 'generate_failed' };
+    if (!res.ok || !data.ok) return { ok: false, error: data.error || 'generate_failed', provider: data.provider };
     return { ok: true, html: data.html || '', text: data.text || '', provider: data.provider };
   }
 
@@ -93,14 +93,33 @@
     return 'Could not save the key. Try again.';
   }
 
-  function generateReplyErrorMessage(error) {
+  function generateReplyErrorMessage(error, provider) {
+    const names = {
+      grok: 'Grok',
+      gemini: 'Gemini',
+      anthropic: 'Anthropic',
+      openai: 'OpenAI',
+      mistral: 'Mistral',
+      openai_compatible: 'your AI provider',
+    };
+    const name = names[provider] || '';
     if (error === 'no_session' || error === 'Unauthorized' || error === 'Invalid session') return 'Sign in to generate a reply';
     if (error === 'pro_required') return 'Generate reply is a Pro feature';
     if (error === 'no_ai_key' || error === 'ai_keys_missing') return 'Add an AI provider key in Settings → Integrations';
-    if (error === 'invalid_ai_key') return 'Your AI key was rejected. Check it in Settings → Integrations';
-    if (error === 'llm_quota') return 'The AI provider hit a rate or quota limit. Try again shortly';
+    if (error === 'invalid_ai_key') {
+      return name
+        ? `The ${name} key was rejected. Check it in Settings → Integrations`
+        : 'Your AI key was rejected. Check it in Settings → Integrations';
+    }
+    if (error === 'llm_quota') {
+      return name
+        ? `${name} hit a rate or quota limit. Try again shortly`
+        : 'The AI provider hit a rate or quota limit. Try again shortly';
+    }
     if (error === 'llm_model' || error === 'llm_failed' || error === 'empty_reply') {
-      return 'The AI provider could not draft a reply. Try another key or model';
+      return name
+        ? `${name} could not draft a reply. Try another ${name} key or a different provider`
+        : 'The AI provider could not draft a reply. Try another key or model';
     }
     if (error === 'no_connected_account' || error === 'token_refresh_failed') {
       return 'Reconnect this mailbox in Settings → Integrations';
