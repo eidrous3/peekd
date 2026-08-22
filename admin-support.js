@@ -313,7 +313,7 @@
   }
 
   function BillingTab({ token, onAuthLost }) {
-    const [methods, setMethods] = useState({ coupons: true, paddle: true, stripe: false });
+    const [methods, setMethods] = useState({ coupons: true, paddle: true, stripe: false, paypal: false });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState('');
     const [error, setError] = useState('');
@@ -367,6 +367,7 @@
       { key: 'coupons', title: 'Coupons', desc: 'Let users redeem a lifetime code on the Upgrade screen' },
       { key: 'paddle', title: 'Paddle', desc: 'Card checkout through Paddle ($7/month)' },
       { key: 'stripe', title: 'Stripe', desc: 'Card checkout through Stripe ($7/month)' },
+      { key: 'paypal', title: 'PayPal', desc: 'Checkout through PayPal ($7/month)' },
     ];
 
     return React.createElement('div', { className: 'card admin-billing' },

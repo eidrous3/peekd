@@ -11,6 +11,7 @@ const paddleSandbox = paddleSandboxFlag === '1'
   || paddleSandboxFlag === 'sandbox'
   || paddleToken.startsWith('test_');
 const stripePriceId = process.env.STRIPE_PRICE_ID || '';
+const paypalPlanId = process.env.PAYPAL_PLAN_ID || '';
 
 const out = `// Auto-generated at build time — do not commit.
 // Netlify env vars:
@@ -23,6 +24,8 @@ const out = `// Auto-generated at build time — do not commit.
 //   PADDLE_API_KEY, PADDLE_WEBHOOK_SECRET — billing webhook + customer portal (secret)
 //   STRIPE_PRICE_ID — hosted Checkout (public flag)
 //   STRIPE_SECRET_KEY or STRIPE_RESTRICTED_KEY, STRIPE_WEBHOOK_SECRET — Checkout + webhook (secret)
+//   PAYPAL_PLAN_ID — PayPal subscription plan (public flag)
+//   PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_WEBHOOK_ID, PAYPAL_SANDBOX — PayPal checkout + webhook (secret)
 window.PeekdConfig = {
   supabaseUrl: ${JSON.stringify(url)},
   supabasePublishableKey: ${JSON.stringify(key)},
@@ -31,6 +34,7 @@ window.PeekdConfig = {
   paddlePriceId: ${JSON.stringify(paddlePriceId)},
   paddleSandbox: ${paddleSandbox},
   stripePriceId: ${JSON.stringify(stripePriceId)},
+  paypalPlanId: ${JSON.stringify(paypalPlanId)},
 };
 `;
 

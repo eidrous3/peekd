@@ -1,6 +1,6 @@
 (function () {
   const PLANS = ['free', 'premium', 'lifetime'];
-  const COLUMNS = 'id, name, timezone, plan, paddle_customer_id, stripe_customer_id, is_deleted';
+  const COLUMNS = 'id, name, timezone, plan, paddle_customer_id, stripe_customer_id, paypal_customer_id, paypal_subscription_id, is_deleted';
 
   function normalizePlan(value) {
     const plan = String(value || '').trim().toLowerCase();
@@ -16,6 +16,15 @@
   let warnedMissingPlan = false;
   let warnedMissingPaddle = false;
   let warnedMissingStripe = false;
+  let warnedMissingPayPal = false;
+  function missingPayPalColumn(error) {
+    const missing = error && /column .*paypal_(customer|subscription)_id.* does not exist/i.test(error.message || '');
+    if (missing && !warnedMissingPayPal) {
+      warnedMissingPayPal = true;
+      console.warn('[Peekd] profiles.paypal_customer_id is missing. Run supabase/migrations/20260820200000_paypal_billing.sql');
+    }
+    return missing;
+  }
   function missingStripeColumn(error) {
     const missing = error && /column .*stripe_customer_id.* does not exist/i.test(error.message || '');
     if (missing && !warnedMissingStripe) {
@@ -102,6 +111,13 @@
       .eq('id', session.user.id)
       .maybeSingle();
 
+    if (missingPayPalColumn(error)) {
+      ({ data, error } = await sb
+        .from('profiles')
+        .select('id, name, timezone, plan, paddle_customer_id, stripe_customer_id, is_deleted')
+        .eq('id', session.user.id)
+        .maybeSingle());
+    }
     if (missingStripeColumn(error)) {
       ({ data, error } = await sb
         .from('profiles')
@@ -139,6 +155,8 @@
         plan: normalizePlan(data?.plan),
         paddleCustomerId: data?.paddle_customer_id || '',
         stripeCustomerId: data?.stripe_customer_id || '',
+        paypalCustomerId: data?.paypal_customer_id || '',
+        paypalSubscriptionId: data?.paypal_subscription_id || '',
         initials: initials(name, email),
         isDeleted: !!data?.is_deleted,
       },
@@ -174,6 +192,13 @@
       .select(COLUMNS)
       .single();
 
+    if (missingPayPalColumn(error)) {
+      ({ data, error } = await sb
+        .from('profiles')
+        .upsert(payload, { onConflict: 'id' })
+        .select('id, name, timezone, plan, paddle_customer_id, stripe_customer_id, is_deleted')
+        .single());
+    }
     if (missingStripeColumn(error)) {
       ({ data, error } = await sb
         .from('profiles')
@@ -211,6 +236,8 @@
         plan: normalizePlan(data?.plan),
         paddleCustomerId: data?.paddle_customer_id || '',
         stripeCustomerId: data?.stripe_customer_id || '',
+        paypalCustomerId: data?.paypal_customer_id || '',
+        paypalSubscriptionId: data?.paypal_subscription_id || '',
         initials: initials(savedName, email),
         isDeleted: !!data?.is_deleted,
       },

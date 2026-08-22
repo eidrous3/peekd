@@ -46,5 +46,11 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/webhooks/paypal"
+  to = "/.netlify/functions/paypal-webhook"
+  status = 200
+  force = true
+
 [build.environment]
   NODE_VERSION = "20"

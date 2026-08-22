@@ -239,15 +239,27 @@
     );
   }
 
-  function Upgrade({ onClose, onConfirm, onRedeemCoupon, onStripe, toast, billing }) {
-    const methods = billing || { coupons: true, paddle: true, stripe: false };
+  function checkoutByline(methods) {
+    const names = [];
+    if (methods.paddle) names.push('Paddle');
+    if (methods.stripe) names.push('Stripe');
+    if (methods.paypal) names.push('PayPal');
+    if (!names.length) return '';
+    if (names.length === 1) return `Secure checkout by ${names[0]} · cancel anytime`;
+    if (names.length === 2) return `Secure checkout by ${names[0]} or ${names[1]} · cancel anytime`;
+    return `Secure checkout by ${names.slice(0, -1).join(', ')}, or ${names[names.length - 1]} · cancel anytime`;
+  }
+
+  function Upgrade({ onClose, onConfirm, onRedeemCoupon, onStripe, onPayPal, toast, billing }) {
+    const methods = billing || { coupons: true, paddle: true, stripe: false, paypal: false };
     const [busy, setBusy] = React.useState(false);
     const [stripeBusy, setStripeBusy] = React.useState(false);
+    const [paypalBusy, setPayPalBusy] = React.useState(false);
     const [couponOpen, setCouponOpen] = React.useState(false);
     const [coupon, setCoupon] = React.useState('');
     const [couponBusy, setCouponBusy] = React.useState(false);
-    const locked = busy || couponBusy || stripeBusy;
-    const hasCheckout = !!(methods.paddle || methods.stripe);
+    const locked = busy || couponBusy || stripeBusy || paypalBusy;
+    const hasCheckout = !!(methods.paddle || methods.stripe || methods.paypal);
     const hasAny = hasCheckout || !!methods.coupons;
     React.useEffect(() => { const k = e => e.key === 'Escape' && !locked && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [locked]);
     const feats = ['Campaigns & sequences', 'People Lists', 'Link click tracking', 'AI follow-up suggestions', 'Remove branding', 'Advanced analytics', 'Priority support'];
@@ -269,6 +281,16 @@
         else toast('Stripe checkout is not available yet');
       } finally {
         setStripeBusy(false);
+      }
+    }
+    async function handlePayPal() {
+      if (locked || !methods.paypal) return;
+      setPayPalBusy(true);
+      try {
+        if (onPayPal) await onPayPal();
+        else toast('PayPal checkout is not available yet');
+      } finally {
+        setPayPalBusy(false);
       }
     }
     async function handleRedeem(e) {
@@ -301,6 +323,7 @@
           !hasAny && React.createElement('p', { className: 'muted', style: { fontSize: 13, textAlign: 'center', margin: '0 0 4px' } }, 'Purchases are paused right now. Contact support if you need Pro.'),
           methods.paddle && React.createElement('button', { className: 'btn btn-upgrade', onClick: handleUpgrade, disabled: locked }, React.createElement(Icon, { name: 'bolt', size: 15, fill: 'currentColor', stroke: 0 }), busy ? 'Opening checkout…' : 'Upgrade with Paddle — $7/mo'),
           methods.stripe && React.createElement('button', { className: 'btn btn-primary btn-block', onClick: handleStripe, disabled: locked }, stripeBusy ? 'Opening Stripe…' : 'Upgrade with Stripe — $7/mo'),
+          methods.paypal && React.createElement('button', { className: 'btn btn-primary btn-block', onClick: handlePayPal, disabled: locked }, paypalBusy ? 'Opening PayPal…' : 'Upgrade with PayPal — $7/mo'),
           methods.coupons && (couponOpen
             ? React.createElement('form', { onSubmit: handleRedeem, style: { display: 'flex', gap: 8, width: '100%' } },
                 React.createElement('input', {
@@ -324,10 +347,7 @@
               disabled: locked,
             }, 'Have a coupon?')),
           React.createElement('button', { className: 'btn btn-ghost btn-block', onClick: onClose, disabled: locked }, 'Maybe later'),
-          hasCheckout && React.createElement('div', { className: 'muted', style: { fontSize: 11.5, textAlign: 'center' } },
-            methods.paddle && methods.stripe ? 'Secure checkout by Paddle or Stripe · cancel anytime'
-              : methods.stripe ? 'Secure checkout by Stripe · cancel anytime'
-                : 'Secure checkout by Paddle · cancel anytime'),
+          hasCheckout && React.createElement('div', { className: 'muted', style: { fontSize: 11.5, textAlign: 'center' } }, checkoutByline(methods)),
         ),
       ),
     );

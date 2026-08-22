@@ -4,6 +4,7 @@ export const DEFAULT_BILLING_METHODS = {
   coupons: true,
   paddle: true,
   stripe: false,
+  paypal: false,
 };
 
 function normalizeMethods(row) {
@@ -12,13 +13,19 @@ function normalizeMethods(row) {
     coupons: row.coupons_enabled !== false,
     paddle: row.paddle_enabled !== false,
     stripe: row.stripe_enabled === true,
+    paypal: row.paypal_enabled === true,
   };
 }
 
 export async function getBillingMethods() {
-  const res = await dbRequest(
-    'billing_settings?id=eq.1&select=coupons_enabled,paddle_enabled,stripe_enabled&limit=1',
+  let res = await dbRequest(
+    'billing_settings?id=eq.1&select=coupons_enabled,paddle_enabled,stripe_enabled,paypal_enabled&limit=1',
   );
+  if (!res.ok && /column .*paypal_enabled/i.test(res.error || '')) {
+    res = await dbRequest(
+      'billing_settings?id=eq.1&select=coupons_enabled,paddle_enabled,stripe_enabled&limit=1',
+    );
+  }
   if (!res.ok) {
     if (/schema cache|relation .*billing_settings/i.test(res.error || '')) {
       return { ok: true, methods: { ...DEFAULT_BILLING_METHODS }, missing: true };
@@ -48,11 +55,17 @@ export async function setBillingMethods(partial = {}) {
       coupons_enabled: !!next.coupons,
       paddle_enabled: !!next.paddle,
       stripe_enabled: !!next.stripe,
+      paypal_enabled: !!next.paypal,
     },
     prefer: 'resolution=merge-duplicates,return=representation',
   });
 
-  if (!upsert.ok) return { ok: false, error: upsert.error || 'update_failed' };
+  if (!upsert.ok) {
+    if (/column .*paypal_enabled/i.test(upsert.error || '')) {
+      return { ok: false, error: 'billing_settings_missing' };
+    }
+    return { ok: false, error: upsert.error || 'update_failed' };
+  }
   const row = Array.isArray(upsert.data) ? upsert.data[0] : upsert.data;
   return { ok: true, methods: normalizeMethods(row) };
 }

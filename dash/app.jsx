@@ -43,7 +43,7 @@
     const [campaignSeed, setCampaignSeed] = useState(null);
     const [profile, setProfile] = useState(null);
     const [navCounts, setNavCounts] = useState({ inbox: 0, campaigns: 0 });
-    const [billing, setBilling] = useState({ coupons: true, paddle: true, stripe: false });
+    const [billing, setBilling] = useState({ coupons: true, paddle: true, stripe: false, paypal: false });
 
     useEffect(() => {
       let cancelled = false;
@@ -352,6 +352,16 @@
         toast('Could not open billing. Try again in a moment.');
         return;
       }
+      if ((profile?.paypalCustomerId || profile?.paypalSubscriptionId) && window.PeekdPayPal?.openPortal) {
+        const res = await window.PeekdPayPal.openPortal();
+        if (res.ok) return;
+        if (res.error === 'no_paypal_customer') {
+          toast('No PayPal billing profile yet — upgrade to create one');
+          return;
+        }
+        toast('Could not open billing. Try again in a moment.');
+        return;
+      }
       const Billing = window.PeekdPaddle;
       if (!Billing?.openPortal) {
         toast('Could not open billing');
@@ -389,6 +399,28 @@
       if (res.status === 'redirect') return;
       if (res.status === 'error') {
         toast(res.error || 'Could not open Stripe checkout');
+      }
+    }
+
+    async function startPayPalCheckout() {
+      if (!billing.paypal) {
+        toast('PayPal checkout is turned off');
+        return;
+      }
+      const Billing = window.PeekdPayPal;
+      if (!Billing?.configured()) {
+        toast('PayPal is not set up yet');
+        return;
+      }
+      if (!profile?.id) {
+        toast('Sign in to upgrade');
+        return;
+      }
+      setUpgrade(false);
+      const res = await Billing.openCheckout();
+      if (res.status === 'redirect') return;
+      if (res.status === 'error') {
+        toast(res.error || 'Could not open PayPal checkout');
       }
     }
 
@@ -456,7 +488,7 @@
         React.createElement('div', { className: 'page', style: isInbox ? { overflow: 'hidden' } : {} }, body),
       ),
       compose && React.createElement(Compose, { free, initialBody: composeBody, reply: composeReply, onClose: () => setCompose(false), onUpgrade: () => { setCompose(false); openUpgrade(); }, toast, onSent: () => setInboxRefreshKey((k) => k + 1) }),
-      upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, onStripe: startStripeCheckout, onRedeemCoupon: redeemCoupon, toast, billing }),
+      upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, onStripe: startStripeCheckout, onPayPal: startPayPalCheckout, onRedeemCoupon: redeemCoupon, toast, billing }),
       bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, loading: notifsLoading, onMarkAllRead: markAllNotifsRead, onSelect: openNotif }),
       React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen, navCounts }),
       moreOpen && React.createElement(MoreSheet, { page, setPage, dark, setDark, onClose: () => setMoreOpen(false), profile }),
