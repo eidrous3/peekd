@@ -15,6 +15,7 @@ const trackingModuleDir = path.dirname(fileURLToPath(import.meta.url));
 
 const PIXEL_IMG_STYLE = 'display:block;width:1px;height:1px;border:0;';
 const OPEN_DEDUPE_WINDOW_MS = 45_000;
+const MIN_HUMAN_OPEN_SECONDS = 10;
 
 export function generatePixelToken() {
   return crypto.randomBytes(16).toString('base64url');
@@ -418,7 +419,7 @@ export function parseDeviceFromUserAgent(userAgent) {
   const ua = String(userAgent || '');
   if (!ua) return '—';
   if (isGmailImageProxy(ua) || isGmailPrefetchUserAgent(ua)) return 'Gmail';
-  if (isAppleMailUserAgent(ua)) return 'Mac Mail';
+  if (isBareMozillaUserAgent(ua) || isAppleMailUserAgent(ua)) return 'Mac Mail';
   if (/iPhone/i.test(ua)) return 'iPhone';
   if (/iPad/i.test(ua)) return 'iPad';
   if (/Android/i.test(ua)) return 'Android';
@@ -867,6 +868,11 @@ export function isGmailPrefetchUserAgent(userAgent) {
   return /Windows NT 10\.0/i.test(ua) && /Chrome\/42\./i.test(ua) && /Mozilla\/5\.0[\s\S]*Mozilla\/5\.0/i.test(ua);
 }
 
+/** Real Mail.app open in our data — just the product token, no OS/browser string. */
+export function isBareMozillaUserAgent(userAgent) {
+  return /^Mozilla\/5\.0$/i.test(String(userAgent || '').trim());
+}
+
 /** Mail.app on Mac: WebKit without a Chrome/Safari/Firefox brand token. */
 export function isAppleMailUserAgent(userAgent) {
   const ua = String(userAgent || '');
@@ -884,12 +890,13 @@ export function isGoogleInfrastructureIp(ip) {
 export function isPrefetchBotUserAgent(userAgent) {
   const ua = String(userAgent || '');
   if (isGmailImageProxy(ua)) return false;
-  if (isAppleMailUserAgent(ua)) return false;
+  if (isBareMozillaUserAgent(ua) || isAppleMailUserAgent(ua)) return false;
   if (isGmailPrefetchUserAgent(ua)) return true;
   return /Googlebot|Google-HTTP|Feedfetcher|AdsBot/i.test(ua);
 }
 
 export function looksLikeHumanBrowser(userAgent) {
+  if (isBareMozillaUserAgent(userAgent)) return true;
   const ua = String(userAgent || '').trim();
   if (!ua || ua.length < 20) return false;
   if (isPrefetchBotUserAgent(ua)) return false;
@@ -968,7 +975,21 @@ export function ipsMatch(a, b) {
   }
 }
 
+function secondsSinceSend(sentAt, openedAt) {
+  const sentMs = sentAt ? new Date(sentAt).getTime() : NaN;
+  const openedMs = openedAt instanceof Date ? openedAt.getTime() : new Date(openedAt).getTime();
+  if (Number.isNaN(sentMs) || Number.isNaN(openedMs)) return null;
+  return (openedMs - sentMs) / 1000;
+}
+
+function isTooSoonForHumanOpen(sentAt, openedAt) {
+  const seconds = secondsSinceSend(sentAt, openedAt);
+  return seconds != null && seconds >= 0 && seconds < MIN_HUMAN_OPEN_SECONDS;
+}
+
 export function isProxyPixelFetch({ ip, userAgent, sentAt, openedAt = new Date() }) {
+  if (isTooSoonForHumanOpen(sentAt, openedAt)) return true;
+  if (isBareMozillaUserAgent(userAgent)) return false;
   if (isGmailImageProxy(userAgent)) return true;
   if (isAppleProxyIp(ip)) return true;
   if (isPrefetchBotUserAgent(userAgent)) return true;
@@ -1108,8 +1129,18 @@ export function classifyOpen({ ip, userAgent, sentAt, openedAt = new Date(), sen
   // Open from the sender's own IP (e.g. viewing the Sent copy in a non-proxied client).
   if (ipsMatch(ip, senderIp)) return 'self';
 
+  // Inbox prefetch often fires immediately. Wait 10s so a misclassified
+  // auto-open is not counted as a real read.
+  if (isTooSoonForHumanOpen(sentAt, openedAt)) return 'likely_proxy';
+
   // Gmail wraps all remote images through GoogleImageProxy — that is the real open signal for Gmail.
   if (isGmailImageProxy(userAgent)) return 'human';
+
+  // Inbox prefetch uses the frozen Chrome 42 / Edge 12.246 string.
+  if (isGmailPrefetchUserAgent(userAgent)) return 'likely_proxy';
+
+  // Bare Mozilla/5.0 is the real Mail open — even when it still comes through Apple IPs.
+  if (isBareMozillaUserAgent(userAgent)) return 'human';
 
   if (isAppleProxyIp(ip)) return 'likely_proxy';
   if (isPrefetchBotUserAgent(userAgent)) return 'likely_proxy';
