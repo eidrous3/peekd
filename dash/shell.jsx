@@ -153,9 +153,12 @@
 
   function Toast({ msg }) {
     if (!msg) return null;
+    const text = typeof msg === 'string' ? msg : msg.text;
+    const error = typeof msg === 'object' && !!msg.error;
+    if (!text) return null;
     return React.createElement('div', { className: 'toast-wrap' },
       React.createElement('div', { className: 'toast' },
-        React.createElement(Icon, { name: 'checkCircle', size: 16 }), msg));
+        React.createElement(Icon, { name: error ? 'alertCircle' : 'checkCircle', size: 16 }), text));
   }
 
   // Live tracking alerts, bottom-right. Kept separate from the centered action

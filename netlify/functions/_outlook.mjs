@@ -516,41 +516,53 @@ export async function fetchOutlookConversation(accessToken, conversationId) {
 export async function fetchOutlookThreadForReply(accessToken, { threadId, messageId } = {}) {
   if (!accessToken) return { ok: false, error: 'missing_token' };
 
+  const ordered = [];
+  const indexById = new Map();
+
   if (threadId) {
-    const select = 'id,from,sender,receivedDateTime,sentDateTime,bodyPreview,body';
-    const query = `${GRAPH}/me/messages`
-      + `?$filter=conversationId eq '${encodeURIComponent(String(threadId).replace(/'/g, "''"))}'`
-      + `&$select=${select}`
-      + '&$top=20';
+    const select = 'id,from,sender,receivedDateTime,sentDateTime,bodyPreview';
+    const filter = `conversationId eq '${String(threadId).replace(/'/g, "''")}'`;
+    const query = `${GRAPH}/me/messages?$filter=${encodeURIComponent(filter)}&$select=${select}&$top=20`;
     const res = await fetch(query, { headers: { Authorization: `Bearer ${accessToken}` } });
     const data = await res.json().catch(() => ({}));
     if (res.ok && Array.isArray(data.value) && data.value.length) {
-      const messages = [...data.value]
+      const subset = [...data.value]
         .sort((a, b) => new Date(a.receivedDateTime || a.sentDateTime || 0) - new Date(b.receivedDateTime || b.sentDateTime || 0))
-        .slice(-8)
-        .map((msg) => {
-          const from = msg.from?.emailAddress || msg.sender?.emailAddress || {};
-          const html = msg.body?.contentType?.toLowerCase() === 'html' ? (msg.body.content || '') : '';
-          const plain = msg.body?.contentType?.toLowerCase() === 'text' ? (msg.body.content || '') : '';
-          const text = (plain || msg.bodyPreview || html.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '))
-            .replace(/\s+/g, ' ')
-            .trim();
-          return {
-            from: from.name ? `${from.name} <${from.address}>` : (from.address || ''),
-            date: msg.receivedDateTime || msg.sentDateTime || '',
-            text: text.slice(0, 2500),
-          };
-        })
-        .filter((msg) => msg.text);
-      if (messages.length) return { ok: true, messages };
+        .slice(-8);
+      for (const msg of subset) {
+        const from = msg.from?.emailAddress || msg.sender?.emailAddress || {};
+        const text = String(msg.bodyPreview || '').replace(/\s+/g, ' ').trim();
+        indexById.set(msg.id, ordered.length);
+        ordered.push({
+          from: from.name ? `${from.name} <${from.address}>` : (from.address || ''),
+          date: msg.receivedDateTime || msg.sentDateTime || '',
+          text: text.slice(0, 2500),
+        });
+      }
     }
   }
 
-  if (!messageId) return { ok: false, error: 'thread_unavailable' };
-  const one = await fetchOutlookMessageBody(accessToken, messageId);
-  if (!one.ok) return one;
-  const text = (one.text || one.html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  return { ok: true, messages: [{ from: '', date: '', text: text.slice(0, 2500) }] };
+  if (messageId) {
+    const one = await fetchOutlookMessageBody(accessToken, messageId);
+    if (one.ok) {
+      const text = (one.text || String(one.html || '').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '))
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 4000);
+      const prev = indexById.has(messageId) ? ordered[indexById.get(messageId)] : null;
+      const row = {
+        from: prev?.from || '',
+        date: prev?.date || '',
+        text: text || prev?.text || '',
+      };
+      if (prev) ordered[indexById.get(messageId)] = row;
+      else ordered.push(row);
+    }
+  }
+
+  const messages = ordered.filter((msg) => msg.text);
+  if (messages.length) return { ok: true, messages };
+  return { ok: false, error: 'thread_unavailable' };
 }
 
 /**

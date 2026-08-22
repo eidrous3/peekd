@@ -65,7 +65,7 @@
     return { ok: true };
   }
 
-  async function generateReply({ messageId, threadId, accountEmail } = {}) {
+  async function generateReply({ messageId, threadId, accountEmail, subject, preview, from, fromEmail } = {}) {
     const headers = await authHeader();
     if (!headers) return { ok: false, error: 'no_session' };
     let res;
@@ -73,7 +73,7 @@
       res = await fetch('/.netlify/functions/ai-reply', {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId, threadId, accountEmail }),
+        body: JSON.stringify({ messageId, threadId, accountEmail, subject, preview, from, fromEmail }),
       });
     } catch {
       return { ok: false, error: 'unreachable' };
@@ -93,5 +93,26 @@
     return 'Could not save the key. Try again.';
   }
 
-  window.PeekdAiKeys = { PROVIDERS, listKeys, saveKey, removeKey, generateReply, saveErrorMessage };
+  function generateReplyErrorMessage(error) {
+    if (error === 'no_session' || error === 'Unauthorized' || error === 'Invalid session') return 'Sign in to generate a reply';
+    if (error === 'pro_required') return 'Generate reply is a Pro feature';
+    if (error === 'no_ai_key' || error === 'ai_keys_missing') return 'Add an AI provider key in Settings → Integrations';
+    if (error === 'invalid_ai_key') return 'Your AI key was rejected. Check it in Settings → Integrations';
+    if (error === 'llm_quota') return 'The AI provider hit a rate or quota limit. Try again shortly';
+    if (error === 'llm_model' || error === 'llm_failed' || error === 'empty_reply') {
+      return 'The AI provider could not draft a reply. Try another key or model';
+    }
+    if (error === 'no_connected_account' || error === 'token_refresh_failed') {
+      return 'Reconnect this mailbox in Settings → Integrations';
+    }
+    if (error === 'thread_unavailable') return 'Could not read this email thread. Try again';
+    if (error === 'keys_not_configured') return 'AI replies are not set up on the server yet';
+    if (error === 'provider_url_missing') return 'OpenAI compatible keys need a base URL';
+    if (error === 'unreachable' || error === 'generate_failed') {
+      return 'Could not reach the reply service. Try again in a moment';
+    }
+    return 'Could not generate a reply. Try again.';
+  }
+
+  window.PeekdAiKeys = { PROVIDERS, listKeys, saveKey, removeKey, generateReply, saveErrorMessage, generateReplyErrorMessage };
 })();

@@ -166,7 +166,11 @@
       return () => { cancelled = true; };
     }, []);
 
-    const toast = (msg) => { setToastMsg(msg); clearTimeout(window.__toastT); window.__toastT = setTimeout(() => setToastMsg(''), 3000); };
+    const toast = (msg, kind) => {
+      setToastMsg(kind === 'error' ? { text: msg, error: true } : msg);
+      clearTimeout(window.__toastT);
+      window.__toastT = setTimeout(() => setToastMsg(''), kind === 'error' ? 4500 : 3000);
+    };
     function applyNotifFeed(res) {
       if (!res?.ok) return;
       // Rows read in this session may not be saved server-side yet.

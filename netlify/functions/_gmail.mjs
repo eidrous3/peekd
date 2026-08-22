@@ -511,51 +511,61 @@ export async function fetchGmailMessageBody(accessToken, messageId) {
   };
 }
 
-function gmailPayloadText(payload, snippet) {
-  const text = findPart(payload, 'text/plain') || '';
-  if (text.trim()) return text.trim();
-  const html = findPart(payload, 'text/html') || '';
-  if (html) {
-    return html
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-  return String(snippet || '').trim();
+function stripToText(html, text) {
+  if (text && String(text).trim()) return String(text).trim();
+  return String(html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export async function fetchGmailThreadForReply(accessToken, { threadId, messageId } = {}) {
   if (!accessToken) return { ok: false, error: 'missing_token' };
 
+  const ordered = [];
+  const indexById = new Map();
+
   if (threadId) {
     const res = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(threadId)}?format=full`,
+      `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=From&metadataHeaders=Date`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     const data = await res.json().catch(() => ({}));
     if (res.ok && Array.isArray(data.messages) && data.messages.length) {
-      const messages = [...data.messages]
+      const subset = [...data.messages]
         .sort((a, b) => Number(a.internalDate || 0) - Number(b.internalDate || 0))
-        .slice(-8)
-        .map((msg) => {
-          const from = parseEmailHeader(headerValue(msg.payload?.headers, 'From'));
-          return {
-            from: from.name ? `${from.name} <${from.email}>` : from.email,
-            date: headerValue(msg.payload?.headers, 'Date') || '',
-            text: gmailPayloadText(msg.payload, msg.snippet).slice(0, 2500),
-          };
-        })
-        .filter((msg) => msg.text);
-      if (messages.length) return { ok: true, messages };
+        .slice(-8);
+      for (const msg of subset) {
+        const from = parseEmailHeader(headerValue(msg.payload?.headers, 'From'));
+        indexById.set(msg.id, ordered.length);
+        ordered.push({
+          from: from.name ? `${from.name} <${from.email}>` : from.email,
+          date: headerValue(msg.payload?.headers, 'Date') || '',
+          text: String(msg.snippet || '').trim().slice(0, 2500),
+        });
+      }
     }
   }
 
-  if (!messageId) return { ok: false, error: 'thread_unavailable' };
-  const one = await fetchGmailMessageBody(accessToken, messageId);
-  if (!one.ok) return one;
-  const text = (one.text || one.html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  return { ok: true, messages: [{ from: '', date: '', text: text.slice(0, 2500) }] };
+  const focusId = messageId || null;
+  if (focusId) {
+    const one = await fetchGmailMessageBody(accessToken, focusId);
+    if (one.ok) {
+      const text = stripToText(one.html, one.text).slice(0, 4000);
+      const row = {
+        from: ordered[indexById.get(focusId)]?.from || '',
+        date: ordered[indexById.get(focusId)]?.date || '',
+        text: text || ordered[indexById.get(focusId)]?.text || '',
+      };
+      if (indexById.has(focusId)) ordered[indexById.get(focusId)] = row;
+      else ordered.push(row);
+    }
+  }
+
+  const messages = ordered.filter((msg) => msg.text);
+  if (messages.length) return { ok: true, messages };
+  return { ok: false, error: 'thread_unavailable' };
 }
 
 export function encodeRawEmail(raw) {

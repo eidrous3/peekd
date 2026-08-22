@@ -201,23 +201,29 @@
     async function handleGenerateReply() {
       if (free) { onUpgrade(); return; }
       if (replyLoading || aiLoading) return;
+      if (!window.PeekdAiKeys?.generateReply) {
+        toast('Refresh the page to load Generate reply', 'error');
+        return;
+      }
       setAiLoading(true);
       const [draft, fetched] = await Promise.all([
         window.PeekdAiKeys?.generateReply?.({
           messageId: e.id,
           threadId: e.threadId,
           accountEmail: e.accountEmail,
+          subject: e.subject,
+          preview: e.preview,
+          from: e.name,
+          fromEmail: e.from || e.email,
         }),
         window.PeekdGmail?.fetchMessageBody?.({ messageId: e.id, accountEmail: e.accountEmail }),
       ]);
       setAiLoading(false);
       if (!draft?.ok) {
         if (draft?.error === 'pro_required') { onUpgrade(); return; }
-        if (draft?.error === 'no_ai_key' || draft?.error === 'ai_keys_missing') {
-          toast('Add an AI provider key in Settings → Integrations');
-          return;
-        }
-        toast(draft?.error === 'no_session' ? 'Sign in to generate a reply' : 'Could not generate a reply. Try again.');
+        const msg = window.PeekdAiKeys?.generateReplyErrorMessage?.(draft?.error)
+          || (draft?.error === 'no_session' ? 'Sign in to generate a reply' : 'Could not generate a reply. Try again.');
+        toast(msg, 'error');
         return;
       }
       onCompose(buildReply(e, fetched?.ok ? fetched : null, draft.html));

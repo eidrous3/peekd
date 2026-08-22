@@ -6,13 +6,23 @@ import { generateReplyText, textToHtml } from './_ai-reply.mjs';
 
 function statusFor(error) {
   if (error === 'pro_required') return 403;
-  if (error === 'no_ai_key' || error === 'ai_keys_missing') return 409;
+  if (error === 'no_ai_key' || error === 'ai_keys_missing' || error === 'invalid_ai_key') return 409;
   if (error === 'no_connected_account') return 404;
   if (error === 'keys_not_configured') return 503;
+  if (error === 'message_id_required' || error === 'Invalid JSON') return 400;
   return 502;
 }
 
-export default async (req) => {
+function previewMessages(body) {
+  const preview = String(body.preview || '').trim();
+  const subject = String(body.subject || '').trim();
+  if (!preview && !subject) return [];
+  const from = String(body.fromEmail || body.from || '').trim();
+  const text = [subject && `Subject: ${subject}`, preview].filter(Boolean).join('\n\n');
+  return [{ from, date: '', text: text.slice(0, 4000) }];
+}
+
+async function handle(req) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
@@ -51,12 +61,15 @@ export default async (req) => {
     threadId,
     messageId,
   });
-  if (!thread.ok || !thread.messages?.length) {
+  const messages = (thread.ok && thread.messages?.length)
+    ? thread.messages
+    : previewMessages(body);
+  if (!messages.length) {
     return json({ error: thread.error || 'thread_unavailable' }, 502);
   }
 
-  const drafted = await generateReplyText(key, thread.messages);
-  if (!drafted.ok) return json({ error: drafted.error }, 502);
+  const drafted = await generateReplyText(key, messages);
+  if (!drafted.ok) return json({ error: drafted.error }, statusFor(drafted.error));
 
   return json({
     ok: true,
@@ -64,4 +77,12 @@ export default async (req) => {
     html: textToHtml(drafted.text),
     provider: key.provider,
   });
+}
+
+export default async (req) => {
+  try {
+    return await handle(req);
+  } catch {
+    return json({ error: 'generate_failed' }, 502);
+  }
 };
