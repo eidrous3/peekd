@@ -26,6 +26,44 @@
         React.createElement('ellipse', { key: 'e2', cx: 8, cy: 12, rx: 1, ry: 1.4, fill: '#1B7FD6' }),
       ]);
     }
+    if (name === 'Mistral') {
+      return wrap([
+        React.createElement('rect', { key: 'b', x: 3, y: 3, width: 18, height: 18, rx: 5, fill: '#FA520F' }),
+        React.createElement('path', { key: 'm', d: 'M7 16V8l5 5 5-5v8', stroke: '#fff', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+      ]);
+    }
+    if (name === 'Grok') {
+      return wrap([
+        React.createElement('rect', { key: 'b', x: 3, y: 3, width: 18, height: 18, rx: 5, fill: '#0a0a0a' }),
+        React.createElement('path', { key: 'x', d: 'M8 8l8 8M16 8l-8 8', stroke: '#fff', strokeWidth: 2, strokeLinecap: 'round' }),
+      ]);
+    }
+    if (name === 'Gemini') {
+      return wrap([
+        React.createElement('rect', { key: 'b', x: 3, y: 3, width: 18, height: 18, rx: 5, fill: '#1a73e8' }),
+        React.createElement('path', { key: 's', d: 'M12 5.5l1.6 4.4L18 11.5l-4.4 1.6L12 18.5l-1.6-5.4L6 11.5l4.4-1.6L12 5.5Z', fill: '#fff' }),
+      ]);
+    }
+    if (name === 'Anthropic') {
+      return wrap([
+        React.createElement('rect', { key: 'b', x: 3, y: 3, width: 18, height: 18, rx: 5, fill: '#d4a27f' }),
+        React.createElement('path', { key: 'a', d: 'M8 16.5 12 7.5l4 9M9.4 13.4h5.2', stroke: '#1a1a1a', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+      ]);
+    }
+    if (name === 'OpenAI') {
+      return wrap([
+        React.createElement('rect', { key: 'b', x: 3, y: 3, width: 18, height: 18, rx: 5, fill: '#10a37f' }),
+        React.createElement('circle', { key: 'c', cx: 12, cy: 12, r: 5.2, stroke: '#fff', strokeWidth: 1.7 }),
+        React.createElement('circle', { key: 'd', cx: 12, cy: 12, r: 2, fill: '#fff' }),
+      ]);
+    }
+    if (name === 'OpenAI compatible') {
+      return wrap([
+        React.createElement('rect', { key: 'b', x: 3, y: 3, width: 18, height: 18, rx: 5, fill: '#334155' }),
+        React.createElement('circle', { key: 'c', cx: 12, cy: 12, r: 5.2, stroke: '#fff', strokeWidth: 1.7 }),
+        React.createElement('path', { key: 'p', d: 'M12 9.2v5.6M9.2 12h5.6', stroke: '#fff', strokeWidth: 1.6, strokeLinecap: 'round' }),
+      ]);
+    }
     // Custom / generic mail
     return wrap([
       React.createElement('rect', { key: 'b', x: 3, y: 5.5, width: 18, height: 13, rx: 2.5, stroke: 'var(--fg-mute)', strokeWidth: 1.6 }),
@@ -326,6 +364,15 @@
     const [connecting, setConnecting] = useState(false);
     const [smtpBusy, setSmtpBusy] = useState(false);
     const [smtpRequested, setSmtpRequested] = useState(false);
+    const [aiKeys, setAiKeys] = useState({});
+    const [aiModal, setAiModal] = useState(null);
+
+    async function loadAiKeys() {
+      const K = window.PeekdAiKeys;
+      if (!K?.listKeys) return;
+      const res = await K.listKeys();
+      if (res.ok) setAiKeys(res.keys || {});
+    }
 
     async function loadSmtpRequested() {
       try {
@@ -389,6 +436,7 @@
     useEffect(() => {
       loadAccounts();
       loadSmtpRequested();
+      loadAiKeys();
       const params = new URLSearchParams(window.location.search);
       const gmail = params.get('gmail');
       const outlook = params.get('outlook');
@@ -476,7 +524,29 @@
       );
     }
 
+    function aiCard(provider, style) {
+      const saved = aiKeys[provider.id] || {};
+      const configured = !!saved.configured;
+      return React.createElement('div', { key: provider.id, className: 'integ-card', style },
+        React.createElement('span', { className: 'integ-ico' }, React.createElement(BrandLogo, { name: provider.name })),
+        React.createElement('div', { className: 'integ-body' },
+          React.createElement('div', { className: 'integ-name' }, provider.name,
+            configured && React.createElement('span', { className: 'status-chip sc-connected' }, 'CONNECTED')),
+          React.createElement('div', { className: 'integ-desc' }, provider.desc),
+          configured && React.createElement('div', { className: 'acct-line' },
+            React.createElement('span', { className: 'ac-dot' }),
+            'Key ending in ' + (saved.last4 || '••••'),
+            saved.baseUrl && React.createElement('span', { className: 'pill-tag' }, String(saved.baseUrl.replace(/^https?:\/\//, '')).slice(0, 32))),
+        React.createElement('div', { style: { flex: '0 0 auto', alignSelf: 'center' } },
+          React.createElement('button', {
+            className: 'btn btn-ghost btn-sm',
+            onClick: () => setAiModal(provider),
+          }, React.createElement(Icon, { name: 'plus', size: 13 }), configured ? 'Edit' : 'Add')),
+      );
+    }
+
     const outlookIg = D.integrations.find((ig) => ig.name === 'Outlook') || { name: 'Outlook', desc: 'Send and track from Outlook web' };
+    const aiProviders = window.PeekdAiKeys?.PROVIDERS || [];
 
     return React.createElement('div', null,
       React.createElement('h2', null, 'Integrations'),
@@ -495,6 +565,9 @@
         desc: outlookIg.desc || 'Send and track from Outlook web',
         style: { marginTop: 12 },
       }),
+      React.createElement('div', { className: 'divider', style: { margin: '20px 0 16px' } }),
+      React.createElement('div', { className: 'field-label', style: { marginBottom: 10 } }, 'AI PROVIDERS'),
+      aiProviders.map((provider, i) => aiCard(provider, i ? { marginTop: 12 } : undefined)),
       React.createElement('div', { className: 'divider', style: { margin: '20px 0 16px' } }),
       React.createElement('div', { className: 'field-label', style: { marginBottom: 10 } }, 'OTHER EMAIL PROVIDERS · COMING SOON'),
       React.createElement('div', { className: 'integ-card', style: { opacity: .8 } },
@@ -518,6 +591,16 @@
         busy: connecting,
         onClose: () => !connecting && setConnect(null),
         onDone: () => handleConnect(connect.provider),
+      }),
+      aiModal && React.createElement(AiKeyModal, {
+        provider: aiModal,
+        saved: aiKeys[aiModal.id] || {},
+        toast,
+        onClose: () => setAiModal(null),
+        onSaved: async () => {
+          await loadAiKeys();
+          setAiModal(null);
+        },
       }),
     );
   }
@@ -578,6 +661,127 @@
         ),
       ),
     );
+  }
+
+  function AiKeyModal({ provider, saved, toast, onClose, onSaved }) {
+    const compatible = provider.id === 'openai_compatible';
+    const configured = !!saved.configured;
+    const [apiKey, setApiKey] = useState('');
+    const [baseUrl, setBaseUrl] = useState(saved.baseUrl || '');
+    const [model, setModel] = useState(saved.model || '');
+    const [busy, setBusy] = useState(false);
+    const [removing, setRemoving] = useState(false);
+    const locked = busy || removing;
+
+    React.useEffect(() => {
+      const k = (e) => e.key === 'Escape' && !locked && onClose();
+      document.addEventListener('keydown', k);
+      return () => document.removeEventListener('keydown', k);
+    }, [locked, onClose]);
+
+    async function save() {
+      if (locked) return;
+      if (!configured && !apiKey.trim()) {
+        toast('Enter an API key');
+        return;
+      }
+      if (compatible && !baseUrl.trim()) {
+        toast('Enter a base URL');
+        return;
+      }
+      setBusy(true);
+      const res = await window.PeekdAiKeys.saveKey({
+        provider: provider.id,
+        apiKey,
+        baseUrl: compatible ? baseUrl : undefined,
+        model: compatible ? model : undefined,
+      });
+      setBusy(false);
+      if (!res.ok) {
+        toast(window.PeekdAiKeys.saveErrorMessage(res.error));
+        return;
+      }
+      toast(configured ? 'Key updated ✓' : 'Key saved ✓');
+      onSaved();
+    }
+
+    async function remove() {
+      if (locked || !configured) return;
+      setRemoving(true);
+      const res = await window.PeekdAiKeys.removeKey(provider.id);
+      setRemoving(false);
+      if (!res.ok) {
+        toast('Could not remove the key. Try again.');
+        return;
+      }
+      toast('Key removed');
+      onSaved();
+    }
+
+    return React.createElement('div', { className: 'backdrop', onMouseDown: locked ? undefined : onClose },
+      React.createElement('div', { className: 'modal', style: { width: 'min(440px, calc(100vw - 40px))' }, onMouseDown: (e) => e.stopPropagation() },
+        React.createElement('div', { className: 'modal-head' },
+          React.createElement('h3', null, (configured ? 'Edit ' : 'Add ') + provider.name),
+          React.createElement('button', { className: 'icon-btn', style: { width: 30, height: 30 }, onClick: onClose, disabled: locked }, React.createElement(Icon, { name: 'x', size: 16 }))),
+        React.createElement('div', { className: 'modal-body' },
+          React.createElement('span', { className: 'integ-ico', style: { margin: '0 auto 16px', width: 52, height: 52 } }, React.createElement(BrandLogo, { name: provider.name, size: 28 })),
+          configured && React.createElement('p', { className: 'muted', style: { fontSize: 13, textAlign: 'center', margin: '0 0 14px' } },
+            'Saved key ends in ', React.createElement('b', null, saved.last4 || '••••'), '. Enter a new key to replace it.'),
+          compatible && React.createElement('div', { className: 'field', style: { marginBottom: 12 } },
+            React.createElement('div', { className: 'field-label' }, 'BASE URL'),
+            React.createElement('input', {
+              className: 'input',
+              type: 'url',
+              value: baseUrl,
+              onChange: (e) => setBaseUrl(e.target.value),
+              placeholder: 'https://api.example.com/v1',
+              disabled: locked,
+              autoFocus: true,
+            })),
+          compatible && React.createElement('div', { className: 'field', style: { marginBottom: 12 } },
+            React.createElement('div', { className: 'field-label' }, 'MODEL (OPTIONAL)'),
+            React.createElement('input', {
+              className: 'input',
+              value: model,
+              onChange: (e) => setModel(e.target.value),
+              placeholder: 'llama-3.1-70b',
+              disabled: locked,
+            })),
+          React.createElement('div', { className: 'field' },
+            React.createElement('div', { className: 'field-label' }, 'API KEY'),
+            React.createElement('input', {
+              className: 'input',
+              type: 'password',
+              value: apiKey,
+              onChange: (e) => setApiKey(e.target.value),
+              placeholder: configured ? '••••••••••••' : 'sk-…',
+              disabled: locked,
+              autoFocus: !compatible,
+              autoComplete: 'off',
+            })),
+          provider.docs && React.createElement('a', {
+            href: provider.docs,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            className: 'muted',
+            style: { display: 'inline-block', marginTop: 10, fontSize: 12.5 },
+          }, 'Get an API key →'),
+          React.createElement('div', { className: 'locked-row', style: { marginTop: 14, justifyContent: 'center' } },
+            React.createElement(Icon, { name: 'lock', size: 14 }), 'Keys are encrypted and never shown again.')),
+        React.createElement('div', { className: 'modal-foot', style: configured ? { justifyContent: 'space-between' } : undefined },
+          configured && React.createElement('button', {
+            className: 'btn btn-ghost',
+            style: { color: 'var(--danger)' },
+            onClick: remove,
+            disabled: locked,
+          }, removing ? 'Removing…' : 'Remove key'),
+          React.createElement('div', { style: { display: 'flex', gap: 10, marginLeft: 'auto' } },
+            React.createElement('button', { className: 'btn btn-ghost', onClick: onClose, disabled: locked }, 'Cancel'),
+            React.createElement('button', {
+              className: 'btn btn-primary',
+              onClick: save,
+              disabled: locked || (!configured && !apiKey.trim()) || (compatible && !baseUrl.trim()),
+            }, busy ? 'Saving…' : configured ? 'Save changes' : 'Save key')))));
   }
 
   function ConnectModal({ ig, onClose, onDone, busy }) {

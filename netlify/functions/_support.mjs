@@ -7,7 +7,7 @@ const ALLOWED_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'applicat
 export const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Token',
-  'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
 };
 
 export function json(body, status = 200) {

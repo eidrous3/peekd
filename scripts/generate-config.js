@@ -26,6 +26,7 @@ const out = `// Auto-generated at build time — do not commit.
 //   STRIPE_SECRET_KEY or STRIPE_RESTRICTED_KEY, STRIPE_WEBHOOK_SECRET — Checkout + webhook (secret)
 //   PAYPAL_PLAN_ID — PayPal subscription plan (public flag)
 //   PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_WEBHOOK_ID, PAYPAL_SANDBOX — PayPal checkout + webhook (secret)
+//   AI_KEYS_SECRET — optional; encrypts customer AI API keys (falls back to the service role key)
 window.PeekdConfig = {
   supabaseUrl: ${JSON.stringify(url)},
   supabasePublishableKey: ${JSON.stringify(key)},
