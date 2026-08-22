@@ -536,7 +536,7 @@
           configured && React.createElement('div', { className: 'acct-line' },
             React.createElement('span', { className: 'ac-dot' }),
             'Key ending in ' + (saved.last4 || '••••'),
-            saved.baseUrl && React.createElement('span', { className: 'pill-tag' }, String(saved.baseUrl.replace(/^https?:\/\//, '')).slice(0, 32))),
+            saved.baseUrl && React.createElement('span', { className: 'pill-tag' }, String(saved.baseUrl.replace(/^https?:\/\//, '')).slice(0, 32)))),
         React.createElement('div', { style: { flex: '0 0 auto', alignSelf: 'center' } },
           React.createElement('button', {
             className: 'btn btn-ghost btn-sm',
