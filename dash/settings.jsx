@@ -356,7 +356,7 @@
     );
   }
 
-  function IntegrationsTab({ toast }) {
+  function IntegrationsTab({ toast, pro, onUpgrade }) {
     const I = window.PeekdIntegrations;
     const [accounts, setAccounts] = useState([]);
     const [status, setStatus] = useState('loading');
@@ -436,7 +436,6 @@
     useEffect(() => {
       loadAccounts();
       loadSmtpRequested();
-      loadAiKeys();
       const params = new URLSearchParams(window.location.search);
       const gmail = params.get('gmail');
       const outlook = params.get('outlook');
@@ -453,6 +452,10 @@
         window.history.replaceState({}, '', next);
       }
     }, []);
+
+    useEffect(() => {
+      if (pro) loadAiKeys();
+    }, [pro]);
 
     async function handleConnect(provider) {
       if (!I || connecting) return;
@@ -566,8 +569,15 @@
         style: { marginTop: 12 },
       }),
       React.createElement('div', { className: 'divider', style: { margin: '20px 0 16px' } }),
-      React.createElement('div', { className: 'field-label', style: { marginBottom: 10 } }, 'AI PROVIDERS'),
-      aiProviders.map((provider, i) => aiCard(provider, i ? { marginTop: 12 } : undefined)),
+      React.createElement('div', { className: 'field-label', style: { marginBottom: 10 } },
+        'AI PROVIDERS',
+        !pro && React.createElement('span', { className: 'pro-tag', style: { marginLeft: 8 } }, 'PRO')),
+      pro
+        ? aiProviders.map((provider, i) => aiCard(provider, i ? { marginTop: 12 } : undefined))
+        : React.createElement('div', { className: 'locked-row' },
+            React.createElement(Icon, { name: 'lock', size: 15 }),
+            React.createElement('span', null, 'Connect your own AI keys · Pro feature'),
+            React.createElement('button', { className: 'upgrade-inline', onClick: onUpgrade }, 'Upgrade →')),
       React.createElement('div', { className: 'divider', style: { margin: '20px 0 16px' } }),
       React.createElement('div', { className: 'field-label', style: { marginBottom: 10 } }, 'OTHER EMAIL PROVIDERS · COMING SOON'),
       React.createElement('div', { className: 'integ-card', style: { opacity: .8 } },
@@ -652,7 +662,7 @@
         React.createElement('div', { className: 'set-panel' },
           tab === 'account' && React.createElement(AccountTab, { onUpgrade, onManageBilling, toast, pro, profileStatus, profile, setProfile, onProfileChange }),
           tab === 'notifications' && React.createElement(NotificationsTab, { toast }),
-          tab === 'integrations' && React.createElement(IntegrationsTab, { toast }),
+          tab === 'integrations' && React.createElement(IntegrationsTab, { toast, pro, onUpgrade }),
           tab === 'privacy' && React.createElement('div', null,
             React.createElement('h2', null, 'Privacy'),
             React.createElement('div', { className: 'sp-sub' }, 'How your data is handled'),

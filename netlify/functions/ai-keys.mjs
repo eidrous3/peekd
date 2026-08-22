@@ -1,7 +1,8 @@
 import { cors, json, bearerToken, getUserFromToken } from './_support.mjs';
-import { deleteAiKey, listAiKeys, upsertAiKey } from './_ai-keys.mjs';
+import { deleteAiKey, listAiKeys, requireProPlan, upsertAiKey } from './_ai-keys.mjs';
 
 function statusFor(error) {
+  if (error === 'pro_required') return 403;
   if (error === 'ai_keys_missing' || error === 'keys_not_configured') return 503;
   if (error === 'invalid_provider' || error === 'key_required' || error === 'key_too_short'
     || error === 'base_url_required' || error === 'base_url_invalid') return 400;
@@ -16,6 +17,9 @@ export default async (req) => {
 
   const user = await getUserFromToken(token);
   if (!user?.id) return json({ error: 'Invalid session' }, 401);
+
+  const plan = await requireProPlan(user.id);
+  if (!plan.ok) return json({ error: plan.error }, statusFor(plan.error));
 
   if (req.method === 'GET') {
     const listed = await listAiKeys(user.id);

@@ -4,6 +4,7 @@ import {
   fetchGmailInbox,
   fetchGmailMailboxCount,
   fetchGmailMessageBody,
+  fetchGmailThreadForReply,
   getValidAccessToken,
   sendGmailMessage,
   syncRepliesForTrackedEmails,
@@ -13,6 +14,7 @@ import {
   fetchOutlookInbox,
   fetchOutlookMailboxCount,
   fetchOutlookMessageBody,
+  fetchOutlookThreadForReply,
   getValidOutlookAccessToken,
   outlookFolderForLabel,
   sendOutlookMessage,
@@ -59,6 +61,12 @@ export async function fetchProviderMessageBody(provider, accessToken, messageId)
   return provider === 'outlook'
     ? fetchOutlookMessageBody(accessToken, messageId)
     : fetchGmailMessageBody(accessToken, messageId);
+}
+
+export async function fetchProviderThreadForReply(provider, accessToken, ids) {
+  return provider === 'outlook'
+    ? fetchOutlookThreadForReply(accessToken, ids)
+    : fetchGmailThreadForReply(accessToken, ids);
 }
 
 /**

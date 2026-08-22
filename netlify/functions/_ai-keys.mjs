@@ -162,3 +162,44 @@ export async function deleteAiKey(userId, provider) {
   }
   return { ok: true };
 }
+
+export async function requireProPlan(userId) {
+  const res = await dbRequest(
+    `profiles?id=eq.${encodeURIComponent(userId)}&select=plan&limit=1`,
+  );
+  if (!res.ok) return { ok: false, error: res.error || 'profile_failed' };
+  const row = Array.isArray(res.data) ? res.data[0] : null;
+  const plan = String(row?.plan || '').toLowerCase();
+  if (plan === 'premium' || plan === 'lifetime') return { ok: true, plan };
+  return { ok: false, error: 'pro_required' };
+}
+
+const PREFER_PROVIDERS = ['openai', 'anthropic', 'gemini', 'grok', 'mistral', 'openai_compatible'];
+
+export async function loadActiveAiKey(userId) {
+  const res = await dbRequest(
+    `ai_provider_keys?user_id=eq.${encodeURIComponent(userId)}&select=provider,key_ciphertext,base_url,model`,
+  );
+  if (!res.ok) {
+    if (/schema cache|relation .*ai_provider_keys/i.test(res.error || '')) {
+      return { ok: false, error: 'ai_keys_missing' };
+    }
+    return { ok: false, error: res.error || 'lookup_failed' };
+  }
+  const byId = {};
+  for (const row of res.data || []) byId[row.provider] = row;
+  for (const id of PREFER_PROVIDERS) {
+    const row = byId[id];
+    if (!row) continue;
+    const dec = decryptSecret(row.key_ciphertext);
+    if (!dec.ok) continue;
+    return {
+      ok: true,
+      provider: id,
+      apiKey: dec.secret,
+      baseUrl: row.base_url || '',
+      model: row.model || '',
+    };
+  }
+  return { ok: false, error: 'no_ai_key' };
+}

@@ -65,8 +65,27 @@
     return { ok: true };
   }
 
+  async function generateReply({ messageId, threadId, accountEmail } = {}) {
+    const headers = await authHeader();
+    if (!headers) return { ok: false, error: 'no_session' };
+    let res;
+    try {
+      res = await fetch('/.netlify/functions/ai-reply', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId, threadId, accountEmail }),
+      });
+    } catch {
+      return { ok: false, error: 'unreachable' };
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) return { ok: false, error: data.error || 'generate_failed' };
+    return { ok: true, html: data.html || '', text: data.text || '', provider: data.provider };
+  }
+
   function saveErrorMessage(error) {
     if (error === 'no_session') return 'Sign in to save a key';
+    if (error === 'pro_required') return 'AI keys are a Pro feature';
     if (error === 'ai_keys_missing') return 'AI keys are not set up yet';
     if (error === 'key_required' || error === 'key_too_short') return 'Enter a valid API key';
     if (error === 'base_url_required' || error === 'base_url_invalid') return 'Enter a valid base URL';
@@ -74,5 +93,5 @@
     return 'Could not save the key. Try again.';
   }
 
-  window.PeekdAiKeys = { PROVIDERS, listKeys, saveKey, removeKey, saveErrorMessage };
+  window.PeekdAiKeys = { PROVIDERS, listKeys, saveKey, removeKey, generateReply, saveErrorMessage };
 })();

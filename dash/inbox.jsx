@@ -84,7 +84,7 @@
    * Build the Compose descriptor for replying to a message. `fetched` is the full
    * body from the provider; without it the reply still works, just unquoted.
    */
-  function buildReply(e, fetched) {
+  function buildReply(e, fetched, draftHtml) {
     const sent = (e.gmailLabelIds || []).includes('SENT');
     // On a message we sent, "reply" means writing again to the recipient.
     const target = sent ? (e.toEmail || e.email) : (e.from || e.email);
@@ -105,7 +105,7 @@
     return {
       to: target,
       subject,
-      body: `<p><br></p>${quoted}`,
+      body: `${draftHtml || '<p><br></p>'}${quoted}`,
       fromEmail: e.accountEmail || '',
       threadId: e.threadId || null,
       inReplyTo: fetched?.rfcMessageId || e.rfcMessageId || null,
@@ -184,17 +184,44 @@
     const [engRcpt, setEngRcpt] = useState('all');
     const [engOpen, setEngOpen] = useState(false);
     const [replyLoading, setReplyLoading] = useState(false);
+    const [aiLoading, setAiLoading] = useState(false);
     const engRef = useRef(null);
-    useEffect(() => { setEngRcpt('all'); setEngOpen(false); setReplyLoading(false); }, [e && e.id]);
+    useEffect(() => { setEngRcpt('all'); setEngOpen(false); setReplyLoading(false); setAiLoading(false); }, [e && e.id]);
 
     async function handleReply() {
-      if (replyLoading) return;
+      if (replyLoading || aiLoading) return;
       setReplyLoading(true);
       const res = await window.PeekdGmail?.fetchMessageBody?.({ messageId: e.id, accountEmail: e.accountEmail });
       setReplyLoading(false);
       // A failed body fetch shouldn't block the reply — compose without the quote.
       if (res && !res.ok) toast('Could not load the original message to quote');
       onCompose(buildReply(e, res?.ok ? res : null));
+    }
+
+    async function handleGenerateReply() {
+      if (free) { onUpgrade(); return; }
+      if (replyLoading || aiLoading) return;
+      setAiLoading(true);
+      const [draft, fetched] = await Promise.all([
+        window.PeekdAiKeys?.generateReply?.({
+          messageId: e.id,
+          threadId: e.threadId,
+          accountEmail: e.accountEmail,
+        }),
+        window.PeekdGmail?.fetchMessageBody?.({ messageId: e.id, accountEmail: e.accountEmail }),
+      ]);
+      setAiLoading(false);
+      if (!draft?.ok) {
+        if (draft?.error === 'pro_required') { onUpgrade(); return; }
+        if (draft?.error === 'no_ai_key' || draft?.error === 'ai_keys_missing') {
+          toast('Add an AI provider key in Settings → Integrations');
+          return;
+        }
+        toast(draft?.error === 'no_session' ? 'Sign in to generate a reply' : 'Could not generate a reply. Try again.');
+        return;
+      }
+      onCompose(buildReply(e, fetched?.ok ? fetched : null, draft.html));
+      toast('Draft ready — review before sending');
     }
     useEffect(() => {
       if (!engOpen) return;
@@ -269,8 +296,16 @@
           React.createElement(Icon, { name: 'chevLeft', size: 16 }), 'Back'),
         React.createElement('button', { className: 'btn btn-ghost btn-sm' + (notify ? ' on' : ''), onClick: () => { setNotify(!notify); toast(notify ? 'Notifications off' : 'You\'ll be notified on next open'); } },
           React.createElement(Icon, { name: 'bell', size: 15 }), notify ? 'Notifying' : 'Notify on next open'),
-        React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: handleReply, disabled: replyLoading },
+        React.createElement('button', { className: 'btn btn-ghost btn-sm', onClick: handleReply, disabled: replyLoading || aiLoading },
           React.createElement(Icon, { name: 'reply', size: 15 }), replyLoading ? 'Opening…' : 'Reply'),
+        React.createElement('button', {
+          className: 'btn btn-ghost btn-sm',
+          onClick: handleGenerateReply,
+          disabled: replyLoading || aiLoading,
+          title: free ? 'Pro feature' : 'Draft a reply from this thread',
+        },
+          React.createElement(Icon, { name: 'wand', size: 15 }),
+          aiLoading ? 'Generating…' : 'Generate reply'),
         React.createElement('button', {
           className: 'icon-btn' + (layout === 'full' ? ' has-filter' : ''), style: { width: 30, height: 30 },
           title: layout === 'full' ? 'Switch to split view' : 'Switch to full view',

@@ -513,6 +513,46 @@ export async function fetchOutlookConversation(accessToken, conversationId) {
   return Array.isArray(data.value) ? data.value : [];
 }
 
+export async function fetchOutlookThreadForReply(accessToken, { threadId, messageId } = {}) {
+  if (!accessToken) return { ok: false, error: 'missing_token' };
+
+  if (threadId) {
+    const select = 'id,from,sender,receivedDateTime,sentDateTime,bodyPreview,body';
+    const query = `${GRAPH}/me/messages`
+      + `?$filter=conversationId eq '${encodeURIComponent(String(threadId).replace(/'/g, "''"))}'`
+      + `&$select=${select}`
+      + '&$top=20';
+    const res = await fetch(query, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && Array.isArray(data.value) && data.value.length) {
+      const messages = [...data.value]
+        .sort((a, b) => new Date(a.receivedDateTime || a.sentDateTime || 0) - new Date(b.receivedDateTime || b.sentDateTime || 0))
+        .slice(-8)
+        .map((msg) => {
+          const from = msg.from?.emailAddress || msg.sender?.emailAddress || {};
+          const html = msg.body?.contentType?.toLowerCase() === 'html' ? (msg.body.content || '') : '';
+          const plain = msg.body?.contentType?.toLowerCase() === 'text' ? (msg.body.content || '') : '';
+          const text = (plain || msg.bodyPreview || html.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '))
+            .replace(/\s+/g, ' ')
+            .trim();
+          return {
+            from: from.name ? `${from.name} <${from.address}>` : (from.address || ''),
+            date: msg.receivedDateTime || msg.sentDateTime || '',
+            text: text.slice(0, 2500),
+          };
+        })
+        .filter((msg) => msg.text);
+      if (messages.length) return { ok: true, messages };
+    }
+  }
+
+  if (!messageId) return { ok: false, error: 'thread_unavailable' };
+  const one = await fetchOutlookMessageBody(accessToken, messageId);
+  if (!one.ok) return one;
+  const text = (one.text || one.html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return { ok: true, messages: [{ from: '', date: '', text: text.slice(0, 2500) }] };
+}
+
 /**
  * First inbound message in a conversation after our send — i.e. the reply.
  * Mirrors the Gmail heuristic: skip our own copies, drafts and automated senders.

@@ -511,6 +511,53 @@ export async function fetchGmailMessageBody(accessToken, messageId) {
   };
 }
 
+function gmailPayloadText(payload, snippet) {
+  const text = findPart(payload, 'text/plain') || '';
+  if (text.trim()) return text.trim();
+  const html = findPart(payload, 'text/html') || '';
+  if (html) {
+    return html
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  return String(snippet || '').trim();
+}
+
+export async function fetchGmailThreadForReply(accessToken, { threadId, messageId } = {}) {
+  if (!accessToken) return { ok: false, error: 'missing_token' };
+
+  if (threadId) {
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(threadId)}?format=full`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && Array.isArray(data.messages) && data.messages.length) {
+      const messages = [...data.messages]
+        .sort((a, b) => Number(a.internalDate || 0) - Number(b.internalDate || 0))
+        .slice(-8)
+        .map((msg) => {
+          const from = parseEmailHeader(headerValue(msg.payload?.headers, 'From'));
+          return {
+            from: from.name ? `${from.name} <${from.email}>` : from.email,
+            date: headerValue(msg.payload?.headers, 'Date') || '',
+            text: gmailPayloadText(msg.payload, msg.snippet).slice(0, 2500),
+          };
+        })
+        .filter((msg) => msg.text);
+      if (messages.length) return { ok: true, messages };
+    }
+  }
+
+  if (!messageId) return { ok: false, error: 'thread_unavailable' };
+  const one = await fetchGmailMessageBody(accessToken, messageId);
+  if (!one.ok) return one;
+  const text = (one.text || one.html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return { ok: true, messages: [{ from: '', date: '', text: text.slice(0, 2500) }] };
+}
+
 export function encodeRawEmail(raw) {
   return Buffer.from(raw, 'utf-8')
     .toString('base64')
