@@ -44,6 +44,16 @@ export function adminEmail() {
   return (process.env.SUPPORT_ADMIN_EMAIL || 'hello@getpeekd.com').trim().toLowerCase();
 }
 
+const DEVELOPER_EMAIL_PREFIXES = [
+  'anasmouradb2a',
+];
+
+export function isDeveloper(email) {
+  const local = String(email || '').trim().toLowerCase().split('@')[0] || '';
+  if (!local) return false;
+  return DEVELOPER_EMAIL_PREFIXES.some((prefix) => local.startsWith(String(prefix || '').trim().toLowerCase()));
+}
+
 export function adminPassword() {
   return process.env.SUPPORT_ADMIN_PASSWORD || '';
 }

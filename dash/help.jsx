@@ -48,7 +48,7 @@
         'Free covers core open tracking and a single connected inbox. Pro unlocks Lists, multi-step Campaigns, link-click tracking, the Top Links report, location data, and the morning Daily Digest.',
         'You can try everything on Pro and downgrade any time — your data stays intact, only the Pro-only features lock.' ] },
       { t: 'How to upgrade to Pro', body: [
-        'Click Upgrade anywhere you see it (or the banner in the sidebar). Peekd opens checkout so you can pay $7/month with Paddle, Stripe, or PayPal — whichever methods are enabled.',
+        'Click Upgrade anywhere you see it (or the banner in the sidebar). Peekd opens checkout so you can pay $7/month with Paddle, Stripe, or PayPal, or $70/year with PayPal — whichever methods are enabled.',
         'Have a coupon? Enter it on the same Upgrade screen. A valid unused code unlocks lifetime Pro — you are never billed.' ] },
       { t: 'Cancel or change your plan', body: [
         'Manage billing from Settings → Account or the Pro card in the sidebar. That opens the portal for the processor you paid with (Paddle, Stripe, or PayPal), where you can update the card or cancel. Access continues until the end of the period you\'ve paid for.',

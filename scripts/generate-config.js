@@ -12,6 +12,8 @@ const paddleSandbox = paddleSandboxFlag === '1'
   || paddleToken.startsWith('test_');
 const stripePriceId = process.env.STRIPE_PRICE_ID || '';
 const paypalPlanId = process.env.PAYPAL_PLAN_ID || '';
+const paypalAnnualPlanId = process.env.PAYPAL_ANNUAL_PLAN_ID || '';
+const paypalTestPlanId = process.env.PAYPAL_TEST_PLAN_ID || '';
 
 const out = `// Auto-generated at build time — do not commit.
 // Netlify env vars:
@@ -24,7 +26,9 @@ const out = `// Auto-generated at build time — do not commit.
 //   PADDLE_API_KEY, PADDLE_WEBHOOK_SECRET — billing webhook + customer portal (secret)
 //   STRIPE_PRICE_ID — hosted Checkout (public flag)
 //   STRIPE_SECRET_KEY or STRIPE_RESTRICTED_KEY, STRIPE_WEBHOOK_SECRET — Checkout + webhook (secret)
-//   PAYPAL_PLAN_ID — PayPal subscription plan (public flag)
+//   PAYPAL_PLAN_ID — monthly PayPal plan (public flag)
+//   PAYPAL_ANNUAL_PLAN_ID — annual PayPal plan (public flag)
+//   PAYPAL_TEST_PLAN_ID — $0.01 developer test plan (public flag; checkout still gated)
 //   PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_WEBHOOK_ID, PAYPAL_SANDBOX — PayPal checkout + webhook (secret)
 //   AI_KEYS_SECRET — optional; encrypts customer AI API keys (falls back to the service role key)
 window.PeekdConfig = {
@@ -36,6 +40,8 @@ window.PeekdConfig = {
   paddleSandbox: ${paddleSandbox},
   stripePriceId: ${JSON.stringify(stripePriceId)},
   paypalPlanId: ${JSON.stringify(paypalPlanId)},
+  paypalAnnualPlanId: ${JSON.stringify(paypalAnnualPlanId)},
+  paypalTestPlanId: ${JSON.stringify(paypalTestPlanId)},
 };
 `;
 

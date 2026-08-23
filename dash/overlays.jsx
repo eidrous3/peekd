@@ -250,15 +250,20 @@
     return `Secure checkout by ${names.slice(0, -1).join(', ')}, or ${names[names.length - 1]} · cancel anytime`;
   }
 
-  function Upgrade({ onClose, onConfirm, onRedeemCoupon, onStripe, onPayPal, toast, billing }) {
+  function Upgrade({ onClose, onConfirm, onRedeemCoupon, onStripe, onPayPal, toast, billing, email }) {
     const methods = billing || { coupons: true, paddle: true, stripe: false, paypal: false };
     const [busy, setBusy] = React.useState(false);
     const [stripeBusy, setStripeBusy] = React.useState(false);
-    const [paypalBusy, setPayPalBusy] = React.useState(false);
+    const [paypalBusy, setPayPalBusy] = React.useState('');
+    const paypalPlans = window.PeekdPayPal?.availablePlans?.(email) || {
+      monthly: !!String(window.PeekdConfig?.paypalPlanId || '').trim(),
+      annual: !!String(window.PeekdConfig?.paypalAnnualPlanId || '').trim(),
+      test: false,
+    };
     const [couponOpen, setCouponOpen] = React.useState(false);
     const [coupon, setCoupon] = React.useState('');
     const [couponBusy, setCouponBusy] = React.useState(false);
-    const locked = busy || couponBusy || stripeBusy || paypalBusy;
+    const locked = busy || couponBusy || stripeBusy || !!paypalBusy;
     const hasCheckout = !!(methods.paddle || methods.stripe || methods.paypal);
     const hasAny = hasCheckout || !!methods.coupons;
     React.useEffect(() => { const k = e => e.key === 'Escape' && !locked && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k); }, [locked]);
@@ -283,14 +288,14 @@
         setStripeBusy(false);
       }
     }
-    async function handlePayPal() {
+    async function handlePayPal(plan) {
       if (locked || !methods.paypal) return;
-      setPayPalBusy(true);
+      setPayPalBusy(plan || 'monthly');
       try {
-        if (onPayPal) await onPayPal();
+        if (onPayPal) await onPayPal(plan || 'monthly');
         else toast('PayPal checkout is not available yet');
       } finally {
-        setPayPalBusy(false);
+        setPayPalBusy('');
       }
     }
     async function handleRedeem(e) {
@@ -315,7 +320,7 @@
         React.createElement('div', { className: 'modal-body' },
           React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 } },
             React.createElement('span', { className: 'gate-ico', style: { width: 42, height: 42, margin: 0, borderRadius: 11, background: 'linear-gradient(135deg,#3b82f6,#6366f1)', color: '#fff' } }, React.createElement(Icon, { name: 'bolt', size: 20, stroke: 2 })),
-            React.createElement('div', null, React.createElement('div', { style: { fontWeight: 700, fontSize: 17 } }, 'Peekd Pro'), React.createElement('div', { className: 'muted', style: { fontSize: 13 } }, '$7 / month'))),
+            React.createElement('div', null, React.createElement('div', { style: { fontWeight: 700, fontSize: 17 } }, 'Peekd Pro'), React.createElement('div', { className: 'muted', style: { fontSize: 13 } }, methods.paypal && paypalPlans.annual ? '$7 / month or $70 / year' : '$7 / month'))),
           React.createElement('div', { className: 'muted', style: { fontSize: 13, margin: '12px 0 6px' } }, 'Everything in Free, plus:'),
           feats.map((f, i) => React.createElement('div', { key: i, className: 'upgrade-feature' }, React.createElement(Icon, { name: 'check', size: 16 }), f)),
         ),
@@ -323,7 +328,9 @@
           !hasAny && React.createElement('p', { className: 'muted', style: { fontSize: 13, textAlign: 'center', margin: '0 0 4px' } }, 'Purchases are paused right now. Contact support if you need Pro.'),
           methods.paddle && React.createElement('button', { className: 'btn btn-upgrade', onClick: handleUpgrade, disabled: locked }, React.createElement(Icon, { name: 'bolt', size: 15, fill: 'currentColor', stroke: 0 }), busy ? 'Opening checkout…' : 'Upgrade with Paddle — $7/mo'),
           methods.stripe && React.createElement('button', { className: 'btn btn-primary btn-block', onClick: handleStripe, disabled: locked }, stripeBusy ? 'Opening Stripe…' : 'Upgrade with Stripe — $7/mo'),
-          methods.paypal && React.createElement('button', { className: 'btn btn-primary btn-block', onClick: handlePayPal, disabled: locked }, paypalBusy ? 'Opening PayPal…' : 'Upgrade with PayPal — $7/mo'),
+          methods.paypal && paypalPlans.monthly && React.createElement('button', { className: 'btn btn-primary btn-block', onClick: () => handlePayPal('monthly'), disabled: locked }, paypalBusy === 'monthly' ? 'Opening PayPal…' : 'Upgrade with PayPal — $7/mo'),
+          methods.paypal && paypalPlans.annual && React.createElement('button', { className: 'btn btn-primary btn-block', onClick: () => handlePayPal('annual'), disabled: locked }, paypalBusy === 'annual' ? 'Opening PayPal…' : 'Upgrade with PayPal — $70/yr'),
+          methods.paypal && paypalPlans.test && React.createElement('button', { className: 'btn btn-ghost btn-block', onClick: () => handlePayPal('test'), disabled: locked }, paypalBusy === 'test' ? 'Opening PayPal…' : 'Developer test — $0.01'),
           methods.coupons && (couponOpen
             ? React.createElement('form', { onSubmit: handleRedeem, style: { display: 'flex', gap: 8, width: '100%' } },
                 React.createElement('input', {

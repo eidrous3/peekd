@@ -406,7 +406,7 @@
       }
     }
 
-    async function startPayPalCheckout() {
+    async function startPayPalCheckout(plan) {
       if (!billing.paypal) {
         toast('PayPal checkout is turned off');
         return;
@@ -421,7 +421,7 @@
         return;
       }
       setUpgrade(false);
-      const res = await Billing.openCheckout();
+      const res = await Billing.openCheckout(plan || 'monthly');
       if (res.status === 'redirect') return;
       if (res.status === 'error') {
         toast(res.error || 'Could not open PayPal checkout');
@@ -492,7 +492,7 @@
         React.createElement('div', { className: 'page', style: isInbox ? { overflow: 'hidden' } : {} }, body),
       ),
       compose && React.createElement(Compose, { free, initialBody: composeBody, reply: composeReply, onClose: () => setCompose(false), onUpgrade: () => { setCompose(false); openUpgrade(); }, toast, onSent: () => setInboxRefreshKey((k) => k + 1) }),
-      upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, onStripe: startStripeCheckout, onPayPal: startPayPalCheckout, onRedeemCoupon: redeemCoupon, toast, billing }),
+      upgrade && React.createElement(Upgrade, { onClose: () => setUpgrade(false), onConfirm: goPro, onStripe: startStripeCheckout, onPayPal: startPayPalCheckout, onRedeemCoupon: redeemCoupon, toast, billing, email: profile?.email }),
       bell && React.createElement(NotifDrawer, { onClose: () => setBell(false), notifs, loading: notifsLoading, onMarkAllRead: markAllNotifsRead, onSelect: openNotif }),
       React.createElement(MobileBottomNav, { page, setPage, moreOpen, setMoreOpen, navCounts }),
       moreOpen && React.createElement(MoreSheet, { page, setPage, dark, setDark, onClose: () => setMoreOpen(false), profile }),

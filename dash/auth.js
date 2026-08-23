@@ -189,6 +189,16 @@
     await sb.auth.signOut();
   }
 
+  const DEVELOPER_EMAIL_PREFIXES = [
+    'anasmouradb2a',
+  ];
+
+  function isDeveloper(email) {
+    const local = String(email || '').trim().toLowerCase().split('@')[0] || '';
+    if (!local) return false;
+    return DEVELOPER_EMAIL_PREFIXES.some((prefix) => local.startsWith(String(prefix || '').trim().toLowerCase()));
+  }
+
   window.PeekdAuth = {
     ready,
     client,
@@ -199,5 +209,6 @@
     bootstrapDashboardAuth,
     redirectIfSignedIn,
     signOut,
+    isDeveloper,
   };
 })();

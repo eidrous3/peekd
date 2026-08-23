@@ -1,4 +1,4 @@
-import { dbRequest, siteUrl } from './_support.mjs';
+import { dbRequest, isDeveloper, siteUrl } from './_support.mjs';
 
 const LIVE_API = 'https://api-m.paypal.com';
 const SANDBOX_API = 'https://api-m.sandbox.paypal.com';
@@ -17,6 +17,28 @@ export function paypalPlanId() {
   return String(process.env.PAYPAL_PLAN_ID || '').trim();
 }
 
+export function paypalAnnualPlanId() {
+  return String(process.env.PAYPAL_ANNUAL_PLAN_ID || '').trim();
+}
+
+export function paypalTestPlanId() {
+  return String(process.env.PAYPAL_TEST_PLAN_ID || '').trim();
+}
+
+const PAYPAL_PLAN_KEYS = new Set(['monthly', 'annual', 'test']);
+
+export function resolvePayPalPlanId(planKey) {
+  const key = String(planKey || 'monthly').trim().toLowerCase();
+  if (key === 'annual') return paypalAnnualPlanId();
+  if (key === 'test') return paypalTestPlanId();
+  if (key === 'monthly' || !key) return paypalPlanId();
+  return '';
+}
+
+export function isPayPalPlanKey(planKey) {
+  return PAYPAL_PLAN_KEYS.has(String(planKey || 'monthly').trim().toLowerCase());
+}
+
 export function paypalWebhookId() {
   return String(process.env.PAYPAL_WEBHOOK_ID || '').trim();
 }
@@ -31,7 +53,11 @@ export function paypalApi() {
 }
 
 export function paypalConfigured() {
-  return !!(paypalClientId() && paypalClientSecret() && paypalPlanId());
+  return !!(
+    paypalClientId()
+    && paypalClientSecret()
+    && (paypalPlanId() || paypalAnnualPlanId() || paypalTestPlanId())
+  );
 }
 
 export function paypalManageUrl() {
@@ -83,13 +109,21 @@ async function paypalJson(path, body, { method = 'POST', token, requestId } = {}
   return { ok: true, data };
 }
 
-export async function createSubscriptionCheckout({ userId, email } = {}) {
+export async function createSubscriptionCheckout({ userId, email, plan = 'monthly' } = {}) {
   if (!paypalConfigured()) return { ok: false, error: 'paypal_not_configured' };
   if (!userId) return { ok: false, error: 'user_required' };
+  if (!isPayPalPlanKey(plan)) return { ok: false, error: 'unknown_plan' };
+
+  const planId = resolvePayPalPlanId(plan);
+  if (!planId) return { ok: false, error: 'plan_not_configured' };
+
+  if (String(plan).trim().toLowerCase() === 'test' && !isDeveloper(email)) {
+    return { ok: false, error: 'test_plan_forbidden' };
+  }
 
   const dashboard = `${siteUrl()}/Peekd%20Dashboard.html`;
   const payload = {
-    plan_id: paypalPlanId(),
+    plan_id: planId,
     custom_id: String(userId).slice(0, 127),
     application_context: {
       brand_name: 'Peekd',

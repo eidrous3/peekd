@@ -17,12 +17,24 @@ export default async (req) => {
     return json({ error: 'paypal_disabled' }, 403);
   }
 
+  let body = {};
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
+
   const session = await createSubscriptionCheckout({
     userId: user.id,
     email: user.email,
+    plan: body.plan || body.planKey || 'monthly',
   });
   if (!session.ok) {
-    const status = session.error === 'paypal_not_configured' ? 503 : 502;
+    const status = session.error === 'paypal_not_configured' || session.error === 'plan_not_configured'
+      ? 503
+      : session.error === 'unknown_plan' || session.error === 'test_plan_forbidden'
+        ? 403
+        : 502;
     return json({ error: session.error }, status);
   }
   return json({ ok: true, url: session.url });
