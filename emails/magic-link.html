@@ -1,0 +1,45 @@
+<!--
+  Subject: Your Peekd sign-in link
+  Paste into Supabase → Authentication → Email Templates → Magic Link
+  Variables: {{ .ConfirmationURL }}  {{ .SiteURL }}  {{ .Email }}
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F9FAFB;margin:0;padding:0;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;">
+        <tr>
+          <td align="center" style="padding:32px 40px 0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="width:30px;height:30px;border-radius:8px;background:#2563eb;text-align:center;vertical-align:middle;color:#ffffff;font-size:16px;font-weight:700;line-height:30px;">P</td>
+                <td style="padding-left:9px;font-size:18px;font-weight:700;color:#111827;letter-spacing:-0.02em;">Peekd</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
+            <h1 style="font-size:24px;font-weight:700;color:#111827;letter-spacing:-0.02em;line-height:1.25;margin:0 0 16px;">Sign in to Peekd</h1>
+            <p style="font-size:16px;color:#374151;line-height:1.6;margin:0 0 20px;">Hi there,<br><br>Here's your magic link to sign in. It expires in <strong style="color:#111827;">15 minutes</strong> and can only be used once.</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <a href="{{ .ConfirmationURL }}" style="display:block;text-align:center;font-size:15px;font-weight:600;padding:14px 20px;border-radius:8px;background:#3B82F6;color:#ffffff;text-decoration:none;">Sign in to Peekd →</a>
+                </td>
+              </tr>
+            </table>
+            <p style="font-size:14px;color:#9CA3AF;line-height:1.6;margin:20px 0 0;">If you didn't request this, you can safely ignore this email — no account will be created.</p>
+            <hr style="border:0;border-top:1px solid #F3F4F6;margin:28px 0;">
+            <p style="font-size:13px;color:#9CA3AF;line-height:1.6;margin:0 0 10px;">Having trouble with the button? Copy this link:</p>
+            <p style="background:#F9FAFB;border:1px solid #F3F4F6;border-radius:8px;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#6B7280;word-break:break-all;line-height:1.5;margin:0;">{{ .ConfirmationURL }}</p>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:8px 40px 36px;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
+            <p style="font-size:12.5px;color:#9CA3AF;line-height:1.7;margin:0;">© 2026 Peekd · <a href="https://getpeekd.com" style="color:#9CA3AF;text-decoration:underline;">getpeekd.com</a></p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
