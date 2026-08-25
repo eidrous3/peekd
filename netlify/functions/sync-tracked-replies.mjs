@@ -83,21 +83,23 @@ export default async (req) => {
         + `&campaign_id=in.${postgrestInFilter(campaignIds)}`
         + `&gmail_thread_id=not.is.null`
         + `&select=${encodeURIComponent(selectWithCampaign)}`
-        + `&limit=200`,
+        + `&order=sent_at.desc`
+        + `&limit=80`,
     );
     if (!linked.ok && !/campaign_id/.test(linked.error || '')) {
       return json({ ok: false, error: linked.error || 'fetch_failed' }, 502);
     }
   }
 
-  if (subjects.length) {
+  // Subject / recent fallback only when we have no campaign-linked sends.
+  if (!byId.size && subjects.length) {
     await load(
       `tracked_emails?user_id=eq.${encodeURIComponent(user.id)}`
         + `&subject=in.${postgrestInFilter(subjects)}`
         + `&gmail_thread_id=not.is.null`
         + `&select=${encodeURIComponent(selectBase)}`
         + `&order=sent_at.desc`
-        + `&limit=200`,
+        + `&limit=80`,
     );
   }
 
@@ -107,7 +109,7 @@ export default async (req) => {
         + `&gmail_thread_id=not.is.null`
         + `&select=${encodeURIComponent(selectBase)}`
         + `&order=sent_at.desc`
-        + `&limit=100`,
+        + `&limit=40`,
     );
   }
 
@@ -116,7 +118,9 @@ export default async (req) => {
     return json({ ok: true, updated: 0, reason: 'no_connected_account' });
   }
 
-  const rows = [...byId.values()];
+  const rows = [...byId.values()].filter((row) => (
+    (row.tracked_recipients || []).some((recip) => !recip.is_replied)
+  ));
   const sync = await syncRepliesForProvider(user.id, rows);
 
   const ids = rows.map((row) => row.id).filter(Boolean);

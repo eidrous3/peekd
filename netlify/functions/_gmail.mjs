@@ -416,7 +416,8 @@ export async function enrichInboxWithReplies(accounts, messages) {
  */
 export async function syncRepliesForTrackedEmails(userId, trackedEmails) {
   const rows = (trackedEmails || []).filter((row) => row?.gmail_thread_id
-    && (row.provider || 'gmail') === 'gmail');
+    && (row.provider || 'gmail') === 'gmail'
+    && (row.tracked_recipients || []).some((recip) => !recip.is_replied));
   if (!userId || !rows.length) return { ok: true, updated: 0 };
 
   const accounts = (await getConnectedAccounts(userId)).filter(
@@ -437,10 +438,10 @@ export async function syncRepliesForTrackedEmails(userId, trackedEmails) {
     if (threadCache.has(cacheKey)) return threadCache.get(cacheKey);
 
     const preferred = normalizeEmail(row.from_email);
-    const order = [
-      ...[...tokenByEmail.entries()].filter(([email]) => email === preferred),
-      ...[...tokenByEmail.entries()].filter(([email]) => email !== preferred),
-    ];
+    const preferredToken = tokenByEmail.get(preferred);
+    const order = preferredToken
+      ? [[preferred, preferredToken], ...[...tokenByEmail.entries()].filter(([email]) => email !== preferred)]
+      : [...tokenByEmail.entries()];
 
     for (const [, { account, accessToken }] of order) {
       const thread = await fetchGmailThread(accessToken, row.gmail_thread_id);
@@ -449,17 +450,46 @@ export async function syncRepliesForTrackedEmails(userId, trackedEmails) {
         threadCache.set(cacheKey, found);
         return found;
       }
+      // Preferred mailbox 404/403 — don't fan out to every other account.
+      if (preferredToken && account === preferredToken.account) break;
     }
     threadCache.set(cacheKey, null);
     return null;
   }
 
+  const uniqueRows = [];
+  const seenThread = new Set();
+  for (const row of rows) {
+    const key = String(row.gmail_thread_id);
+    if (seenThread.has(key)) {
+      uniqueRows.push(row);
+      continue;
+    }
+    seenThread.add(key);
+    uniqueRows.push(row);
+  }
+
+  const foundByThread = new Map();
+  const pending = [...new Set(uniqueRows.map((row) => String(row.gmail_thread_id)))];
+  const concurrency = 5;
+  let cursor = 0;
+  async function worker() {
+    while (cursor < pending.length) {
+      const i = cursor++;
+      const sample = uniqueRows.find((row) => String(row.gmail_thread_id) === pending[i]);
+      if (!sample) continue;
+      foundByThread.set(pending[i], await threadFor(sample));
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, pending.length) }, () => worker()));
+
   let updated = 0;
   for (const row of rows) {
-    const found = await threadFor(row);
+    const found = foundByThread.get(String(row.gmail_thread_id)) || await threadFor(row);
     if (!found?.thread) continue;
     const recipients = Array.isArray(row.tracked_recipients) ? row.tracked_recipients : [];
     for (const recip of recipients) {
+      if (recip.is_replied) continue;
       const recipientEmail = normalizeEmail(recip.email);
       if (!recipientEmail) continue;
       const reply = findReplyInThread(found.thread, {
@@ -469,8 +499,6 @@ export async function syncRepliesForTrackedEmails(userId, trackedEmails) {
         recipientEmail,
       });
       if (!reply) continue;
-      const prev = recip.replied_at ? new Date(recip.replied_at).getTime() : 0;
-      if (recip.is_replied && prev && reply.internalDate <= prev + 1000) continue;
       const res = await markRecipientReplied({
         trackedEmailId: row.id,
         gmailMessageId: row.gmail_message_id,

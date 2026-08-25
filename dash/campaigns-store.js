@@ -346,7 +346,8 @@
       }
     }
 
-    if (uniqueSubjects.length) {
+    // Subject fallback only when campaign_id isn't on tracked sends yet.
+    if (!byId.size && uniqueSubjects.length) {
       const bySubject = await sb
         .from('tracked_emails')
         .select(baseSelect)
@@ -411,16 +412,13 @@
     return { ok: true, rows: [...map.values()] };
   }
 
+  let replySyncInFlight = null;
+
   async function syncCampaignReplies(campaignRows) {
     const s = await session();
     if (!s?.access_token) return;
     const campaignIds = (campaignRows || []).map((c) => c.id).filter(Boolean);
-    const subjects = [];
-    for (const c of campaignRows || []) {
-      for (const step of c.campaign_steps || []) {
-        if (step.status === 'sent' && step.subject) subjects.push(String(step.subject).trim());
-      }
-    }
+    if (!campaignIds.length) return;
     try {
       await fetch('/.netlify/functions/sync-tracked-replies', {
         method: 'POST',
@@ -428,22 +426,19 @@
           Authorization: `Bearer ${s.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          campaignIds,
-          subjects: [...new Set(subjects.filter(Boolean))],
-        }),
+        body: JSON.stringify({ campaignIds }),
       });
     } catch {
       /* campaigns still load if reply sync fails */
     }
   }
 
-  async function fetchCampaigns() {
+  async function loadCampaignRows() {
     const s = await session();
-    if (!s?.user) return { ok: false, error: 'no_session', campaigns: [] };
+    if (!s?.user) return { ok: false, error: 'no_session', rows: [], userId: null };
 
     const sb = window.PeekdAuth.client();
-    if (!sb) return { ok: false, error: 'not_configured', campaigns: [] };
+    if (!sb) return { ok: false, error: 'not_configured', rows: [], userId: null };
 
     const load = () => sb
       .from('campaigns')
@@ -457,23 +452,17 @@
       ({ data, error } = await load());
     }
 
-    if (error) return { ok: false, error: error.message, campaigns: [] };
+    if (error) return { ok: false, error: error.message, rows: [], userId: s.user.id };
+    return { ok: true, rows: data || [], userId: s.user.id, sb };
+  }
 
-    const rows = data || [];
-    await syncCampaignReplies(rows);
+  async function campaignsFromRows(sb, userId, rows) {
+    const tracked = await fetchTrackedForCampaigns(sb, userId, rows);
+    const openByCampaign = openStatsFromTracked(rows, tracked);
 
-    let fresh = rows;
-    const reload = await load();
-    if (!reload.error && Array.isArray(reload.data)) fresh = reload.data;
-
-    const tracked = await fetchTrackedForCampaigns(sb, s.user.id, fresh);
-    const openByCampaign = openStatsFromTracked(fresh, tracked);
-
-    // Persist reply flags onto campaign_recipients when tracked sends show is_replied.
-    await Promise.all(fresh.map(async (camp) => {
+    await Promise.all(rows.map(async (camp) => {
       const stats = openByCampaign.get(camp.id);
       if (!stats?.repliedEmails?.length) return;
-      // An unsubscribe is a stronger signal than a reply; don't overwrite it.
       const needUpdate = (camp.campaign_recipients || []).filter((r) => {
         const email = normalizeEmail(r.email);
         return stats.repliedEmails.includes(email) && !r.replied_at
@@ -494,10 +483,30 @@
       }
     }));
 
-    return {
-      ok: true,
-      campaigns: fresh.map((row) => toUiCampaign(row, openByCampaign.get(row.id))),
-    };
+    return rows.map((row) => toUiCampaign(row, openByCampaign.get(row.id)));
+  }
+
+  async function fetchCampaigns() {
+    const loaded = await loadCampaignRows();
+    if (!loaded.ok) return { ok: false, error: loaded.error, campaigns: [] };
+    const campaigns = await campaignsFromRows(loaded.sb, loaded.userId, loaded.rows);
+    return { ok: true, campaigns, rawRows: loaded.rows };
+  }
+
+  async function syncCampaignRepliesInBackground(rawRows) {
+    const rows = Array.isArray(rawRows) ? rawRows : [];
+    if (!rows.length) return { ok: true, campaigns: [], updated: false };
+    if (replySyncInFlight) return replySyncInFlight;
+
+    replySyncInFlight = (async () => {
+      await syncCampaignReplies(rows);
+      const loaded = await loadCampaignRows();
+      if (!loaded.ok) return { ok: false, error: loaded.error, campaigns: [], updated: false };
+      const campaigns = await campaignsFromRows(loaded.sb, loaded.userId, loaded.rows);
+      return { ok: true, campaigns, updated: true };
+    })().finally(() => { replySyncInFlight = null; });
+
+    return replySyncInFlight;
   }
 
   async function countCampaigns() {
@@ -906,6 +915,7 @@
 
   window.PeekdCampaigns = {
     fetchCampaigns,
+    syncCampaignRepliesInBackground,
     countCampaigns,
     createCampaign,
     updateCampaignStatus,

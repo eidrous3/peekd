@@ -23,8 +23,17 @@
       }
       setLoading(true);
       const res = await Store.fetchCampaigns();
-      if (res.ok) setCampaigns(res.campaigns);
-      else if (toast) toast(res.error || 'Could not load campaigns');
+      if (res.ok) {
+        setCampaigns(res.campaigns);
+        setLoading(false);
+        if (Store.syncCampaignRepliesInBackground) {
+          Store.syncCampaignRepliesInBackground(res.rawRows).then((next) => {
+            if (next?.ok && next.campaigns) setCampaigns(next.campaigns);
+          });
+        }
+        return;
+      }
+      if (toast) toast(res.error || 'Could not load campaigns');
       setLoading(false);
     }, [toast]);
 
