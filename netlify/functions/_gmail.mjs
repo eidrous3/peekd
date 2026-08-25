@@ -253,12 +253,23 @@ export async function fetchGmailMailboxCount(accessToken) {
 export async function fetchGmailThread(accessToken, threadId) {
   if (!accessToken || !threadId) return null;
 
+  const params = new URLSearchParams({
+    format: 'metadata',
+    metadataHeaders: 'From',
+  });
+  params.append('metadataHeaders', 'Date');
+  params.append('metadataHeaders', 'Sender');
+  params.append('metadataHeaders', 'Reply-To');
+
   const res = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=From&metadataHeaders=Date`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(threadId)}?${params}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.warn('[gmail] thread fetch failed', threadId, res.status, data.error?.message || '');
+    return null;
+  }
   return data;
 }
 
@@ -271,22 +282,33 @@ export function findReplyInThread(thread, { accountEmail, sentMessageId, sentInt
     (a, b) => Number(a.internalDate || 0) - Number(b.internalDate || 0),
   );
 
-  const sentMessage = messages.find((msg) => msg.id === sentMessageId);
+  const sentMessage = sentMessageId ? messages.find((msg) => msg.id === sentMessageId) : null;
+  const sentIndex = sentMessage ? messages.indexOf(sentMessage) : -1;
   const anchorDate = Number(sentMessage?.internalDate || sentInternalDate || 0);
   let latest = null;
 
-  for (const msg of messages) {
-    const msgDate = Number(msg.internalDate || 0);
-    if (!msgDate || msgDate <= anchorDate) continue;
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (sentMessageId && msg.id === sentMessageId) continue;
+    if (sentIndex >= 0 && i <= sentIndex) continue;
 
-    const from = parseEmailHeader(headerValue(msg.payload?.headers, 'From'));
+    const msgDate = Number(msg.internalDate || 0);
+    if (anchorDate && msgDate && msgDate <= anchorDate) continue;
+
+    const headers = msg.payload?.headers;
+    const from = parseEmailHeader(
+      headerValue(headers, 'From') || headerValue(headers, 'Sender') || headerValue(headers, 'Reply-To'),
+    );
     const fromEmail = normalizeEmail(from.email);
-    if (!fromEmail || fromEmail === sender) continue;
+    if (!fromEmail) continue;
     if (isAutomatedReplyEmail(fromEmail)) continue;
 
     const labels = msg.labelIds || [];
     const isIncoming = !labels.includes('SENT');
     const fromRecipient = recipient && fromEmail === recipient;
+    // Later campaign steps from us are SENT. Still count a self-reply when
+    // the tracked recipient is this same mailbox.
+    if (fromEmail === sender && !fromRecipient && !isIncoming) continue;
 
     if (fromRecipient || isIncoming) {
       latest = {
@@ -394,61 +416,68 @@ export async function enrichInboxWithReplies(accounts, messages) {
  */
 export async function syncRepliesForTrackedEmails(userId, trackedEmails) {
   const rows = (trackedEmails || []).filter((row) => row?.gmail_thread_id
-    && row?.gmail_message_id
     && (row.provider || 'gmail') === 'gmail');
   if (!userId || !rows.length) return { ok: true, updated: 0 };
 
-  const accounts = await getConnectedAccounts(userId);
+  const accounts = (await getConnectedAccounts(userId)).filter(
+    (account) => (account.provider || 'gmail') === 'gmail',
+  );
   if (!accounts.length) return { ok: true, updated: 0 };
 
-  const byFrom = new Map();
-  for (const row of rows) {
-    const from = normalizeEmail(row.from_email);
-    if (!from) continue;
-    if (!byFrom.has(from)) byFrom.set(from, []);
-    byFrom.get(from).push(row);
+  const tokenByEmail = new Map();
+  for (const account of accounts) {
+    const accessToken = await getValidAccessToken(account);
+    if (accessToken) tokenByEmail.set(normalizeEmail(account.email), { account, accessToken });
+  }
+  if (!tokenByEmail.size) return { ok: true, updated: 0 };
+
+  const threadCache = new Map();
+  async function threadFor(row) {
+    const cacheKey = String(row.gmail_thread_id);
+    if (threadCache.has(cacheKey)) return threadCache.get(cacheKey);
+
+    const preferred = normalizeEmail(row.from_email);
+    const order = [
+      ...[...tokenByEmail.entries()].filter(([email]) => email === preferred),
+      ...[...tokenByEmail.entries()].filter(([email]) => email !== preferred),
+    ];
+
+    for (const [, { account, accessToken }] of order) {
+      const thread = await fetchGmailThread(accessToken, row.gmail_thread_id);
+      if (thread) {
+        const found = { thread, account };
+        threadCache.set(cacheKey, found);
+        return found;
+      }
+    }
+    threadCache.set(cacheKey, null);
+    return null;
   }
 
   let updated = 0;
-  for (const account of accounts) {
-    const subset = byFrom.get(normalizeEmail(account.email));
-    if (!subset?.length) continue;
-
-    const accessToken = await getValidAccessToken(account);
-    if (!accessToken) continue;
-
-    const threadIds = [...new Set(subset.map((r) => r.gmail_thread_id).filter(Boolean))];
-    const threadById = new Map();
-    await Promise.all(threadIds.map(async (threadId) => {
-      const thread = await fetchGmailThread(accessToken, threadId);
-      if (thread) threadById.set(threadId, thread);
-    }));
-
-    for (const row of subset) {
-      const thread = threadById.get(row.gmail_thread_id);
-      if (!thread) continue;
-      const recipients = Array.isArray(row.tracked_recipients) ? row.tracked_recipients : [];
-      for (const recip of recipients) {
-        const recipientEmail = normalizeEmail(recip.email);
-        if (!recipientEmail) continue;
-        const reply = findReplyInThread(thread, {
-          accountEmail: account.email,
-          sentMessageId: row.gmail_message_id,
-          sentInternalDate: row.sent_at ? new Date(row.sent_at).getTime() : 0,
-          recipientEmail,
-        });
-        if (!reply) continue;
-        const prev = recip.replied_at ? new Date(recip.replied_at).getTime() : 0;
-        if (recip.is_replied && prev && reply.internalDate <= prev + 1000) continue;
-        // Always mark the tracked recipient (reply From may use an alias).
-        const res = await markRecipientReplied({
-          trackedEmailId: row.id,
-          gmailMessageId: row.gmail_message_id,
-          recipientEmail,
-          repliedAt: reply.internalDate,
-        });
-        if (res.ok) updated += 1;
-      }
+  for (const row of rows) {
+    const found = await threadFor(row);
+    if (!found?.thread) continue;
+    const recipients = Array.isArray(row.tracked_recipients) ? row.tracked_recipients : [];
+    for (const recip of recipients) {
+      const recipientEmail = normalizeEmail(recip.email);
+      if (!recipientEmail) continue;
+      const reply = findReplyInThread(found.thread, {
+        accountEmail: found.account.email,
+        sentMessageId: row.gmail_message_id,
+        sentInternalDate: row.sent_at ? new Date(row.sent_at).getTime() : 0,
+        recipientEmail,
+      });
+      if (!reply) continue;
+      const prev = recip.replied_at ? new Date(recip.replied_at).getTime() : 0;
+      if (recip.is_replied && prev && reply.internalDate <= prev + 1000) continue;
+      const res = await markRecipientReplied({
+        trackedEmailId: row.id,
+        gmailMessageId: row.gmail_message_id,
+        recipientEmail,
+        repliedAt: reply.internalDate,
+      });
+      if (res.ok) updated += 1;
     }
   }
 

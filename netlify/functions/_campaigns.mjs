@@ -157,7 +157,6 @@ async function syncCampaignReplies(campaign) {
     `tracked_emails?user_id=eq.${encodeURIComponent(userId)}`
       + `&campaign_id=eq.${encodeURIComponent(campaignId)}`
       + `&gmail_thread_id=not.is.null`
-      + `&gmail_message_id=not.is.null`
       + `&select=${encodeURIComponent(select)}`
       + `&limit=200`,
   );
@@ -173,7 +172,6 @@ async function syncCampaignReplies(campaign) {
         `tracked_emails?user_id=eq.${encodeURIComponent(userId)}`
           + `&subject=in.${postgrestInFilter(subjects)}`
           + `&gmail_thread_id=not.is.null`
-          + `&gmail_message_id=not.is.null`
           + `&select=${encodeURIComponent(select)}`
           + `&limit=200`,
       );
@@ -194,7 +192,7 @@ async function syncCampaignReplies(campaign) {
   // Re-read tracked recipients after sync (flags may have flipped).
   const refreshed = await dbRequest(
     `tracked_emails?id=in.${postgrestInFilter(trackedRes.data.map((r) => r.id))}`
-      + `&select=${encodeURIComponent('id,tracked_recipients(email,is_replied)')}`,
+      + `&select=${encodeURIComponent('id,campaign_id,tracked_recipients(email,is_replied,replied_at)')}`,
   );
   if (refreshed.ok && Array.isArray(refreshed.data)) {
     for (const te of refreshed.data) {

@@ -382,17 +382,24 @@ export async function markRecipientReplied({ trackedEmailId, gmailMessageId, rec
 
   const res = await dbRequest(
     `tracked_recipients?tracked_email_id=eq.${encodeURIComponent(emailId)}`
-      + `&email=eq.${encodeURIComponent(email)}`
-      + `&is_replied=eq.false`,
-    {
+      + `&select=id,email,is_replied`,
+  );
+  if (!res.ok || !Array.isArray(res.data)) {
+    return { ok: false, error: res.error || 'update_failed' };
+  }
+  const recipRow = res.data.find((r) => normalizeEmail(r.email) === email);
+  if (!recipRow) return { ok: false, error: 'recipient_not_found' };
+
+  let firstReply = null;
+  if (!recipRow.is_replied) {
+    const patch = await dbRequest(`tracked_recipients?id=eq.${encodeURIComponent(recipRow.id)}`, {
       method: 'PATCH',
       body: { is_replied: true, replied_at: repliedAtIso },
       prefer: 'return=representation',
-    },
-  );
-
-  if (!res.ok) return { ok: false, error: res.error || 'update_failed' };
-  const firstReply = Array.isArray(res.data) ? res.data[0] : null;
+    });
+    if (!patch.ok) return { ok: false, error: patch.error || 'update_failed' };
+    firstReply = Array.isArray(patch.data) ? patch.data[0] : null;
+  }
   if (firstReply && tracked?.user_id) {
     try {
       await notifyTrackingAlert({
@@ -413,6 +420,27 @@ export async function markRecipientReplied({ trackedEmailId, gmailMessageId, rec
   }
 
   return { ok: true };
+}
+
+export async function applyTrackedRepliesToCampaigns(trackedEmails) {
+  const seen = new Set();
+  for (const te of trackedEmails || []) {
+    const campaignId = te.campaign_id;
+    if (!campaignId) continue;
+    for (const recip of te.tracked_recipients || []) {
+      if (!recip.is_replied && !recip.replied_at) continue;
+      const email = normalizeEmail(recip.email);
+      if (!email) continue;
+      const key = `${campaignId}:${email}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await markCampaignRecipientReplied(
+        campaignId,
+        email,
+        recip.replied_at || new Date().toISOString(),
+      );
+    }
+  }
 }
 
 function postgrestInFilter(values) {

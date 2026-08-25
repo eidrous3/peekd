@@ -569,8 +569,9 @@ export async function fetchOutlookThreadForReply(accessToken, { threadId, messag
  * First inbound message in a conversation after our send — i.e. the reply.
  * Mirrors the Gmail heuristic: skip our own copies, drafts and automated senders.
  */
-export function findOutlookReply(messages, { accountEmail, sentAt }) {
+export function findOutlookReply(messages, { accountEmail, sentAt, recipientEmail }) {
   const own = normalizeEmail(accountEmail);
+  const target = normalizeEmail(recipientEmail);
   const sentMs = sentAt ? new Date(sentAt).getTime() : 0;
 
   const candidates = (messages || [])
@@ -590,7 +591,8 @@ export function findOutlookReply(messages, { accountEmail, sentAt }) {
   let latest = null;
   for (const msg of candidates) {
     if (sentMs && msg.at <= sentMs) continue;
-    if (msg.email === own) continue;
+    const fromRecipient = target && msg.email === target;
+    if (msg.email === own && !fromRecipient) continue;
     if (AUTOMATED_SENDER_RE.test(msg.email.split('@')[0] || '')) continue;
     latest = { email: msg.email, who: msg.name, repliedAt: new Date(msg.at).toISOString(), at: msg.at };
   }
@@ -603,59 +605,65 @@ export function findOutlookReply(messages, { accountEmail, sentAt }) {
  * so campaigns pause on reply without needing an inbox visit.
  */
 export async function syncOutlookRepliesForTrackedEmails(userId, trackedEmails) {
-  const rows = (trackedEmails || []).filter((row) => row?.provider === 'outlook' && row?.gmail_thread_id);
+  const rows = (trackedEmails || []).filter((row) => row?.gmail_thread_id
+    && (row.provider === 'outlook' || (row.provider !== 'gmail' && String(row.gmail_thread_id).length > 24)));
   if (!userId || !rows.length) return { ok: true, updated: 0 };
 
   const accounts = await getConnectedAccounts(userId, { provider: 'outlook' });
   if (!accounts.length) return { ok: true, updated: 0 };
 
-  const byFrom = new Map();
-  for (const row of rows) {
-    const from = normalizeEmail(row.from_email);
-    if (!from) continue;
-    if (!byFrom.has(from)) byFrom.set(from, []);
-    byFrom.get(from).push(row);
+  const ready = [];
+  for (const account of accounts) {
+    const accessToken = await getValidOutlookAccessToken(account);
+    if (accessToken) ready.push({ account, accessToken });
+  }
+  if (!ready.length) return { ok: true, updated: 0 };
+
+  const convoCache = new Map();
+  async function messagesFor(conversationId, preferredFrom) {
+    if (convoCache.has(conversationId)) return convoCache.get(conversationId);
+    const preferred = normalizeEmail(preferredFrom);
+    const order = [
+      ...ready.filter((item) => normalizeEmail(item.account.email) === preferred),
+      ...ready.filter((item) => normalizeEmail(item.account.email) !== preferred),
+    ];
+    for (const item of order) {
+      const messages = await fetchOutlookConversation(item.accessToken, conversationId);
+      if (messages?.length) {
+        const found = { messages, account: item.account };
+        convoCache.set(conversationId, found);
+        return found;
+      }
+    }
+    convoCache.set(conversationId, null);
+    return null;
   }
 
   let updated = 0;
-  for (const account of accounts) {
-    const subset = byFrom.get(normalizeEmail(account.email));
-    if (!subset?.length) continue;
+  for (const row of rows) {
+    const found = await messagesFor(row.gmail_thread_id, row.from_email);
+    if (!found?.messages?.length) continue;
 
-    const accessToken = await getValidOutlookAccessToken(account);
-    if (!accessToken) continue;
+    for (const recip of Array.isArray(row.tracked_recipients) ? row.tracked_recipients : []) {
+      const recipientEmail = normalizeEmail(recip.email);
+      if (!recipientEmail) continue;
 
-    const conversationIds = [...new Set(subset.map((r) => r.gmail_thread_id).filter(Boolean))];
-    const messagesByConversation = new Map();
-    await Promise.all(conversationIds.map(async (id) => {
-      messagesByConversation.set(id, await fetchOutlookConversation(accessToken, id));
-    }));
+      const reply = findOutlookReply(found.messages, {
+        accountEmail: found.account.email,
+        sentAt: row.sent_at,
+        recipientEmail,
+      });
+      if (!reply) continue;
+      const prev = recip.replied_at ? new Date(recip.replied_at).getTime() : 0;
+      const next = reply.at || (reply.repliedAt ? new Date(reply.repliedAt).getTime() : 0);
+      if (recip.is_replied && prev && next <= prev + 1000) continue;
 
-    for (const row of subset) {
-      const messages = messagesByConversation.get(row.gmail_thread_id);
-      if (!messages?.length) continue;
-
-      for (const recip of Array.isArray(row.tracked_recipients) ? row.tracked_recipients : []) {
-        const recipientEmail = normalizeEmail(recip.email);
-        if (!recipientEmail) continue;
-
-        const reply = findOutlookReply(messages, {
-          accountEmail: account.email,
-          sentAt: row.sent_at,
-          recipientEmail,
-        });
-        if (!reply) continue;
-        const prev = recip.replied_at ? new Date(recip.replied_at).getTime() : 0;
-        const next = reply.at || (reply.repliedAt ? new Date(reply.repliedAt).getTime() : 0);
-        if (recip.is_replied && prev && next <= prev + 1000) continue;
-
-        const res = await markRecipientReplied({
-          trackedEmailId: row.id,
-          recipientEmail,
-          repliedAt: reply.repliedAt,
-        });
-        if (res.ok) updated += 1;
-      }
+      const res = await markRecipientReplied({
+        trackedEmailId: row.id,
+        recipientEmail,
+        repliedAt: reply.repliedAt,
+      });
+      if (res.ok) updated += 1;
     }
   }
 

@@ -95,7 +95,7 @@
       if (!res.ok) { toast(res.error || 'Could not duplicate campaign'); return; }
       setCampaigns((prev) => [res.campaign, ...prev]);
       if (selId === id && res.campaign?.id) setSelId(res.campaign.id);
-      toast('Campaign duplicated · publish step 1 to send');
+      toast('1st email is set to be sent tomorrow, please edit campaign.');
     };
 
     const publishStep = async (campaignId, stepId) => {

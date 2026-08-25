@@ -461,11 +461,16 @@
 
     const rows = data || [];
     await syncCampaignReplies(rows);
-    const tracked = await fetchTrackedForCampaigns(sb, s.user.id, rows);
-    const openByCampaign = openStatsFromTracked(rows, tracked);
+
+    let fresh = rows;
+    const reload = await load();
+    if (!reload.error && Array.isArray(reload.data)) fresh = reload.data;
+
+    const tracked = await fetchTrackedForCampaigns(sb, s.user.id, fresh);
+    const openByCampaign = openStatsFromTracked(fresh, tracked);
 
     // Persist reply flags onto campaign_recipients when tracked sends show is_replied.
-    await Promise.all(rows.map(async (camp) => {
+    await Promise.all(fresh.map(async (camp) => {
       const stats = openByCampaign.get(camp.id);
       if (!stats?.repliedEmails?.length) return;
       // An unsubscribe is a stronger signal than a reply; don't overwrite it.
@@ -491,7 +496,7 @@
 
     return {
       ok: true,
-      campaigns: rows.map((row) => toUiCampaign(row, openByCampaign.get(row.id))),
+      campaigns: fresh.map((row) => toUiCampaign(row, openByCampaign.get(row.id))),
     };
   }
 
@@ -730,12 +735,13 @@
 
     if (error || !data) return { ok: false, error: error?.message || 'not_found' };
 
-    const steps = sortSteps(data.campaign_steps).map((s) => {
+    const steps = sortSteps(data.campaign_steps).map((s, i) => {
       const delayDays = s.delay_days || 0;
-      if (delayDays > 0) {
-        return { subject: s.subject, message: s.body_html, timing: 'after', days: delayDays };
+      // Copies never send on create. Step 1 waits until tomorrow so it can be edited first.
+      if (i === 0) {
+        return { subject: s.subject, message: s.body_html, timing: 'after', days: 1 };
       }
-      return { subject: s.subject, message: s.body_html, timing: 'now', days: 3 };
+      return { subject: s.subject, message: s.body_html, timing: 'after', days: delayDays > 0 ? delayDays : 1 };
     });
     const emails = (data.campaign_recipients || []).map((r) => r.email);
 

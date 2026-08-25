@@ -100,16 +100,25 @@ export async function enrichInboxRepliesForProviders(accounts, messages) {
   return enriched;
 }
 
+function inferMailProvider(row) {
+  const explicit = String(row?.provider || '').toLowerCase();
+  if (explicit === 'outlook' || explicit === 'gmail') return explicit;
+  const tid = String(row?.gmail_thread_id || '');
+  if (/^[0-9a-f]{10,}$/i.test(tid)) return 'gmail';
+  if (tid.length > 24) return 'outlook';
+  return 'gmail';
+}
+
 /**
  * Sync replies for a mixed set of tracked emails, routing each row to the API
- * that sent it. Rows without a provider are treated as Gmail (pre-migration data).
+ * that sent it. Rows without a provider are inferred from the thread id.
  */
 export async function syncRepliesForProvider(userId, trackedEmails) {
   const rows = Array.isArray(trackedEmails) ? trackedEmails : [];
   if (!userId || !rows.length) return { ok: true, updated: 0 };
 
-  const gmailRows = rows.filter((row) => (row?.provider || 'gmail') === 'gmail');
-  const outlookRows = rows.filter((row) => row?.provider === 'outlook');
+  const gmailRows = rows.filter((row) => inferMailProvider(row) === 'gmail');
+  const outlookRows = rows.filter((row) => inferMailProvider(row) === 'outlook');
 
   const [gmail, outlook] = await Promise.all([
     gmailRows.length ? syncRepliesForTrackedEmails(userId, gmailRows) : { updated: 0 },

@@ -6,8 +6,16 @@ export function normalizeEmail(email) {
 
 export function parseEmailHeader(raw) {
   const s = String(raw || '').trim();
-  const m = s.match(/^(?:"?([^"]*)"?\s)?<?([^>]+@[^>]+)>?$/);
-  if (m) return { name: (m[1] || m[2].split('@')[0] || '').trim(), email: m[2].trim().toLowerCase() };
+  if (!s) return { name: 'Unknown', email: '' };
+  const angle = s.match(/<([^>]+@[^>]+)>/);
+  if (angle) {
+    const email = angle[1].trim().toLowerCase();
+    const name = s.replace(angle[0], '').replace(/^["']|["']$/g, '').trim() || email.split('@')[0];
+    return { name, email };
+  }
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) {
+    return { name: s.split('@')[0], email: s.toLowerCase() };
+  }
   return { name: s.split('@')[0] || 'Unknown', email: s.toLowerCase() };
 }
 

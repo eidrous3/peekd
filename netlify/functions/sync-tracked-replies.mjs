@@ -1,6 +1,7 @@
 import { getUserFromToken } from './_gmail.mjs';
 import { getConnectedAccounts } from './_accounts.mjs';
 import { syncRepliesForProvider } from './_providers.mjs';
+import { applyTrackedRepliesToCampaigns } from './_tracking.mjs';
 import { dbRequest } from './_support.mjs';
 
 const cors = {
@@ -81,7 +82,6 @@ export default async (req) => {
       `tracked_emails?user_id=eq.${encodeURIComponent(user.id)}`
         + `&campaign_id=in.${postgrestInFilter(campaignIds)}`
         + `&gmail_thread_id=not.is.null`
-        + `&gmail_message_id=not.is.null`
         + `&select=${encodeURIComponent(selectWithCampaign)}`
         + `&limit=200`,
     );
@@ -95,7 +95,6 @@ export default async (req) => {
       `tracked_emails?user_id=eq.${encodeURIComponent(user.id)}`
         + `&subject=in.${postgrestInFilter(subjects)}`
         + `&gmail_thread_id=not.is.null`
-        + `&gmail_message_id=not.is.null`
         + `&select=${encodeURIComponent(selectBase)}`
         + `&order=sent_at.desc`
         + `&limit=200`,
@@ -106,7 +105,6 @@ export default async (req) => {
     await load(
       `tracked_emails?user_id=eq.${encodeURIComponent(user.id)}`
         + `&gmail_thread_id=not.is.null`
-        + `&gmail_message_id=not.is.null`
         + `&select=${encodeURIComponent(selectBase)}`
         + `&order=sent_at.desc`
         + `&limit=100`,
@@ -118,6 +116,21 @@ export default async (req) => {
     return json({ ok: true, updated: 0, reason: 'no_connected_account' });
   }
 
-  const sync = await syncRepliesForProvider(user.id, [...byId.values()]);
+  const rows = [...byId.values()];
+  const sync = await syncRepliesForProvider(user.id, rows);
+
+  const ids = rows.map((row) => row.id).filter(Boolean);
+  if (ids.length) {
+    const refreshed = await dbRequest(
+      `tracked_emails?id=in.${postgrestInFilter(ids)}`
+        + `&select=${encodeURIComponent('id,campaign_id,tracked_recipients(email,is_replied,replied_at)')}`,
+    );
+    if (refreshed.ok && Array.isArray(refreshed.data)) {
+      await applyTrackedRepliesToCampaigns(refreshed.data);
+    } else {
+      await applyTrackedRepliesToCampaigns(rows);
+    }
+  }
+
   return json({ ok: true, updated: sync.updated || 0 });
 };
