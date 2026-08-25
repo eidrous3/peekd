@@ -569,9 +569,8 @@ export async function fetchOutlookThreadForReply(accessToken, { threadId, messag
  * First inbound message in a conversation after our send — i.e. the reply.
  * Mirrors the Gmail heuristic: skip our own copies, drafts and automated senders.
  */
-export function findOutlookReply(messages, { accountEmail, sentAt, recipientEmail }) {
+export function findOutlookReply(messages, { accountEmail, sentAt }) {
   const own = normalizeEmail(accountEmail);
-  const target = normalizeEmail(recipientEmail);
   const sentMs = sentAt ? new Date(sentAt).getTime() : 0;
 
   const candidates = (messages || [])
@@ -593,7 +592,6 @@ export function findOutlookReply(messages, { accountEmail, sentAt, recipientEmai
     if (sentMs && msg.at <= sentMs) continue;
     if (msg.email === own) continue;
     if (AUTOMATED_SENDER_RE.test(msg.email.split('@')[0] || '')) continue;
-    if (target && msg.email !== target) continue;
     latest = { email: msg.email, who: msg.name, repliedAt: new Date(msg.at).toISOString(), at: msg.at };
   }
 

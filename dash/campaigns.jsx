@@ -94,7 +94,8 @@
       const res = await Store.duplicateCampaign(id);
       if (!res.ok) { toast(res.error || 'Could not duplicate campaign'); return; }
       setCampaigns((prev) => [res.campaign, ...prev]);
-      toast('Campaign duplicated ✓');
+      if (selId === id && res.campaign?.id) setSelId(res.campaign.id);
+      toast('Campaign duplicated · publish step 1 to send');
     };
 
     const publishStep = async (campaignId, stepId) => {
@@ -175,7 +176,7 @@
           setCampaigns((prev) => [res.campaign, ...prev]);
           setCreating(false);
           setSeedList(null);
-          toast('Campaign launched ✓');
+          toast('Campaign created · publish step 1 to send');
         },
       }),
     );
@@ -292,7 +293,7 @@
       const rel = index > 0 ? ' from the previous step' : '';
       return 'After ' + n + ' day' + (n === 1 ? '' : 's') + rel + ' · ' + when;
     }
-    return 'Immediately · ' + when;
+    return 'When you publish · not sent at launch';
   }
 
   function StepTiming({ step, index, onChange }) {
@@ -304,8 +305,8 @@
       onChange(patch);
     };
     return React.createElement('div', { className: 'seq-timing' },
-      index === 0 && React.createElement('label', { className: 'radio-line', onClick: () => setTiming('now') },
-        React.createElement('span', { className: 'radio-dot' + (timing === 'now' ? ' on' : '') }), 'Immediately'),
+        index === 0 && React.createElement('label', { className: 'radio-line', onClick: () => setTiming('now') },
+        React.createElement('span', { className: 'radio-dot' + (timing === 'now' ? ' on' : '') }), 'When I publish'),
       React.createElement('label', { className: 'radio-line', onClick: () => setTiming('after') },
         index === 0 && React.createElement('span', { className: 'radio-dot' + (timing === 'after' ? ' on' : '') }),
         'After ',
@@ -641,6 +642,7 @@
         return 'Scheduled · ' + d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
       }
     }
+    if (step.state === 'active' || step.status === 'pending') return 'Ready to publish · not sent yet';
     if (step.state === 'pending') return 'Scheduled · not sent yet';
     return 'Pending';
   }

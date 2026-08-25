@@ -326,27 +326,55 @@ export async function updateTrackedSendGmailIds(trackedEmailId, { gmailMessageId
   return { ok: true, trackedEmail: res.data[0] };
 }
 
+const TRACKED_EMAIL_SELECT = 'id,user_id,subject,campaign_id';
+const TRACKED_EMAIL_SELECT_LEGACY = 'id,user_id,subject';
+
+async function loadTrackedEmail({ trackedEmailId, gmailMessageId } = {}) {
+  async function query(path) {
+    let res = await dbRequest(`${path}&select=${encodeURIComponent(TRACKED_EMAIL_SELECT)}&limit=1`);
+    if (!res.ok && /campaign_id/.test(res.error || '')) {
+      res = await dbRequest(`${path}&select=${encodeURIComponent(TRACKED_EMAIL_SELECT_LEGACY)}&limit=1`);
+    }
+    return res.ok ? res.data?.[0] || null : null;
+  }
+
+  if (trackedEmailId) {
+    return query(`tracked_emails?id=eq.${encodeURIComponent(trackedEmailId)}`);
+  }
+  if (gmailMessageId) {
+    return query(`tracked_emails?gmail_message_id=eq.${encodeURIComponent(gmailMessageId)}`);
+  }
+  return null;
+}
+
+async function markCampaignRecipientReplied(campaignId, recipientEmail, repliedAtIso) {
+  const email = normalizeEmail(recipientEmail);
+  if (!campaignId || !email) return;
+
+  const listed = await dbRequest(
+    `campaign_recipients?campaign_id=eq.${encodeURIComponent(campaignId)}`
+      + `&select=id,email,status`,
+  );
+  if (!listed.ok || !Array.isArray(listed.data)) return;
+
+  const row = listed.data.find((r) => normalizeEmail(r.email) === email);
+  if (!row || row.status === 'unsubscribed' || row.status === 'replied') return;
+
+  await dbRequest(`campaign_recipients?id=eq.${encodeURIComponent(row.id)}`, {
+    method: 'PATCH',
+    body: { status: 'replied', replied_at: repliedAtIso },
+    prefer: 'return=minimal',
+  });
+}
+
 /** Mark a tracked recipient as replied (idempotent). */
 export async function markRecipientReplied({ trackedEmailId, gmailMessageId, recipientEmail, repliedAt } = {}) {
   const email = normalizeEmail(recipientEmail);
   if (!email) return { ok: false, error: 'email_required' };
 
-  let emailId = trackedEmailId || null;
-  let tracked = null;
-  if (!emailId && gmailMessageId) {
-    const lookup = await dbRequest(
-      `tracked_emails?gmail_message_id=eq.${encodeURIComponent(gmailMessageId)}&select=id,user_id,subject&limit=1`,
-    );
-    tracked = lookup.ok ? lookup.data?.[0] : null;
-    emailId = tracked?.id || null;
-  }
+  const tracked = await loadTrackedEmail({ trackedEmailId, gmailMessageId });
+  const emailId = tracked?.id || trackedEmailId || null;
   if (!emailId) return { ok: false, error: 'tracked_email_not_found' };
-  if (!tracked) {
-    const lookup = await dbRequest(
-      `tracked_emails?id=eq.${encodeURIComponent(emailId)}&select=id,user_id,subject&limit=1`,
-    );
-    tracked = lookup.ok ? lookup.data?.[0] : null;
-  }
 
   const repliedAtIso = repliedAt
     ? new Date(repliedAt).toISOString()
@@ -377,6 +405,13 @@ export async function markRecipientReplied({ trackedEmailId, gmailMessageId, rec
       console.error('[alert-email] reply failed', err);
     }
   }
+
+  // Pause the sequence even if this isn't the first tracked-recipient write
+  // (idempotent PATCH returns no row when is_replied was already true).
+  if (tracked?.campaign_id) {
+    await markCampaignRecipientReplied(tracked.campaign_id, email, repliedAtIso);
+  }
+
   return { ok: true };
 }
 

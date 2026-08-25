@@ -555,13 +555,12 @@
     if (campErr) return { ok: false, error: campErr.message };
 
     const stepRows = [];
-    const immediatePositions = new Set();
     // Cursor starts at client "now"; each follow-up adds its delay onto the prior step's send time.
+    // Step 1 with timing "now" stays unscheduled until the user clicks Publish — never auto-send.
     let scheduleCursor = new Date();
     for (let i = 0; i < stepsIn.length; i++) {
       const step = stepsIn[i];
       const position = i + 1;
-      // Only step 1 may send immediately; follow-ups always wait N days after the previous step.
       const isAfter = position > 1 || step.timing === 'after' || step.timing === 'wait';
       const afterDays = isAfter ? Math.max(position > 1 ? 1 : 0, parseInt(step.days, 10) || 0) : 0;
       let scheduledAt = null;
@@ -569,11 +568,6 @@
 
       if (isAfter) {
         scheduleCursor = addDaysToDate(scheduleCursor, afterDays);
-        scheduledAt = scheduleCursor.toISOString();
-        status = 'scheduled';
-      } else {
-        immediatePositions.add(position);
-        scheduleCursor = new Date();
         scheduledAt = scheduleCursor.toISOString();
         status = 'scheduled';
       }
@@ -611,32 +605,6 @@
       return { ok: false, error: recipErr.message };
     }
 
-    // Immediate steps go out right now via Gmail with the tracking pixel.
-    if (immediatePositions.size && fromEmail && window.PeekdGmail?.sendEmail) {
-      const toEmails = recipientRows.map((r) => r.email);
-      const sentStepIds = [];
-      for (const row of sortSteps(insertedSteps)) {
-        if (!immediatePositions.has(row.position)) continue;
-        const results = await Promise.all(toEmails.map((email) => window.PeekdGmail.sendEmail({
-          fromEmail,
-          to: [email],
-          subject: row.subject,
-          html: row.body_html,
-          trackLinks: true,
-          campaignId: campaign.id,
-          campaignStepId: row.id,
-        }).catch(() => ({ ok: false }))));
-        if (results.some((r) => r && r.ok)) sentStepIds.push(row.id);
-      }
-      if (sentStepIds.length) {
-        await sb
-          .from('campaign_steps')
-          .update({ status: 'sent', sent_at: new Date().toISOString() })
-          .in('id', sentStepIds)
-          .eq('campaign_id', campaign.id);
-      }
-    }
-
     const { data: full, error: fetchErr } = await sb
       .from('campaigns')
       .select(fetchSelect())
@@ -646,7 +614,7 @@
 
     if (fetchErr) {
       bumpNavCounts();
-      return { ok: true, campaign: toUiCampaign({ ...campaign, campaign_steps: stepRows, campaign_recipients: recipientRows }) };
+      return { ok: true, campaign: toUiCampaign({ ...campaign, campaign_steps: insertedSteps || stepRows, campaign_recipients: recipientRows }) };
     }
     const tracked = await fetchTrackedForCampaigns(sb, s.user.id, [full]);
     const openByCampaign = openStatsFromTracked([full], tracked);
@@ -804,7 +772,21 @@
       return { ok: false, error: 'campaign_paused' };
     }
 
-    const steps = sortSteps(data.campaign_steps);
+    await syncCampaignReplies([data]);
+
+    const reloaded = await sb
+      .from('campaigns')
+      .select(fetchSelect())
+      .eq('id', campaignId)
+      .eq('user_id', s.user.id)
+      .single();
+    const live = (!reloaded.error && reloaded.data) ? reloaded.data : data;
+
+    if (String(live.status || '').toLowerCase() === 'paused') {
+      return { ok: false, error: 'campaign_paused' };
+    }
+
+    const steps = sortSteps(live.campaign_steps);
     const step = steps.find((row) => row.id === stepId);
     if (!step) return { ok: false, error: 'step_not_found' };
     if (step.status === 'sent') return { ok: false, error: 'already_sent' };
@@ -812,11 +794,11 @@
     const currentPos = currentStepNumber(steps);
     if (step.position !== currentPos) return { ok: false, error: 'not_current_step' };
 
-    const fromEmail = normalizeEmail(data.from_email);
+    const fromEmail = normalizeEmail(live.from_email);
     if (!fromEmail) return { ok: false, error: 'from_required' };
 
     // Pause on reply: skip anyone who replied, unsubscribed, or was manually paused.
-    const recipients = data.campaign_recipients || [];
+    const recipients = live.campaign_recipients || [];
     const toEmails = [...new Set(recipients
       .filter((r) => !SKIP_STATUSES.includes(r.status))
       .map((r) => normalizeEmail(r.email))
@@ -850,7 +832,7 @@
         .single();
 
       if (fetchErr || !full) {
-        return { ok: true, sentCount: 0, finished: true, campaign: toUiCampaign({ ...data, status: 'completed' }) };
+        return { ok: true, sentCount: 0, finished: true, campaign: toUiCampaign({ ...live, status: 'completed' }) };
       }
       const tracked = await fetchTrackedForCampaigns(sb, s.user.id, [full]);
       const openByCampaign = openStatsFromTracked([full], tracked);
@@ -909,7 +891,7 @@
       .single();
 
     if (fetchErr || !full) {
-      return { ok: true, sentCount, campaign: toUiCampaign(data) };
+      return { ok: true, sentCount, campaign: toUiCampaign(live) };
     }
     const tracked = await fetchTrackedForCampaigns(sb, s.user.id, [full]);
     const openByCampaign = openStatsFromTracked([full], tracked);
