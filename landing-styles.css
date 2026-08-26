@@ -552,6 +552,26 @@ section{position:relative}
 .cta .btn-primary:hover{background:#f2f2f2}
 .cta .sub{font-size:13px;color:rgba(255,255,255,0.45);margin-top:18px}
 
+/* ── Legal pages (Privacy Policy / Terms) ─────────────────────── */
+.legal{padding:64px 0 100px}
+.legal-head{max-width:720px;margin:0 auto 48px;padding:0 8px}
+.legal-head h1{font-size:36px;font-weight:700;letter-spacing:-0.03em;line-height:1.15;color:var(--ink);margin:0 0 10px}
+.legal-head .updated{font-size:13px;color:var(--fg-mute)}
+.legal-body{max-width:720px;margin:0 auto;padding:0 8px;font-size:15.5px;color:var(--fg-dim);line-height:1.7}
+.legal-body h2{font-size:20px;font-weight:600;letter-spacing:-0.02em;color:var(--ink);margin:40px 0 12px}
+.legal-body h2:first-child{margin-top:0}
+.legal-body h3{font-size:16px;font-weight:600;color:var(--ink);margin:24px 0 8px}
+.legal-body p{margin:0 0 16px}
+.legal-body ul{margin:0 0 16px;padding-left:22px}
+.legal-body li{margin-bottom:8px}
+.legal-body a{color:var(--ink);text-decoration:underline;text-decoration-color:var(--line-2);text-underline-offset:2px}
+.legal-body a:hover{text-decoration-color:var(--ink)}
+.legal-body strong{color:var(--ink);font-weight:600}
+.legal-callout{background:var(--bg-1);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:0 0 16px;font-size:14.5px}
+.legal-toc{display:flex;flex-wrap:wrap;gap:8px 18px;margin:24px 0 0;padding:0;list-style:none}
+.legal-toc a{font-size:13.5px;color:var(--fg-dim);text-decoration:none;border-bottom:1px solid var(--line-2)}
+.legal-toc a:hover{color:var(--ink);border-color:var(--ink)}
+
 /* ── Footer ─────────────────────────────────────────────────── */
 .footer{border-top:1px solid var(--line);padding:56px 0 40px;background:var(--bg)}
 .footer-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px;margin-bottom:40px}
@@ -577,6 +597,8 @@ section{position:relative}
   .mk-list{display:none}
   .mk-stats{grid-template-columns:repeat(2,1fr)}
   .mk-stat:nth-child(2){border-right:none}
+  .legal-head,.legal-body{padding:0 20px}
+  .legal-head h1{font-size:28px}
   .platform{padding:64px 0 8px}
   .platform-head{padding:0 20px 36px}
   .platform-head h2{font-size:28px}
