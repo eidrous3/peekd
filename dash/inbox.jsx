@@ -470,27 +470,9 @@
     const [appTime, setAppTime] = useState('any');
     const searchRef = useRef(null);
     const filterRef = useRef(null);
+    const loadGen = useRef(0);
 
-    async function loadInbox(accountEmail, { silent = false } = {}) {
-      if (!window.PeekdGmail?.fetchInbox) {
-        if (!silent) setInboxStatus('error');
-        return;
-      }
-      if (!silent) setInboxStatus('loading');
-      const res = await window.PeekdGmail.fetchInbox({
-        accountEmail: accountEmail && accountEmail !== 'all' ? accountEmail : undefined,
-        labelIds: 'INBOX,SENT',
-        maxResults: 30,
-      });
-      if (!res.ok) {
-        if (silent) return;
-        const noAccount = res.error === 'no_connected_account' || res.error === 'no_gmail_account';
-        setEmails([]);
-        setMailAccounts(res.accounts || []);
-        setInboxStatus(noAccount ? 'no_account' : 'error');
-        if (!noAccount) toast('Could not load your mail. Try again.');
-        return;
-      }
+    function applyInboxResult(res, { silent = false } = {}) {
       setEmails(res.messages || []);
       setMailAccounts(res.accounts || []);
       setInboxStatus('ready');
@@ -501,7 +483,10 @@
           return current ?? res.messages[0].id;
         });
       } else if (res.messages?.length) {
-        setSel(res.messages[0].id);
+        setSel((current) => {
+          if (current && res.messages.some((m) => m.id === current)) return current;
+          return res.messages[0].id;
+        });
       } else {
         setSel(null);
       }
@@ -509,6 +494,66 @@
         const accountEmails = (res.accounts || []).map((a) => a.email);
         window.PeekdPeople.ensurePeopleFromInboxMessages(res.messages, { excludeEmails: accountEmails }).catch(() => {});
       }
+    }
+
+    async function loadInbox(accountEmail, { silent = false } = {}) {
+      if (!window.PeekdGmail?.fetchInbox) {
+        if (!silent) setInboxStatus('error');
+        return;
+      }
+      const gen = ++loadGen.current;
+      const filterEmail = accountEmail && accountEmail !== 'all' ? accountEmail : undefined;
+      let painted = false;
+
+      if (!silent && window.PeekdGmail.readInboxCache) {
+        const cached = await window.PeekdGmail.readInboxCache(accountEmail);
+        if (gen !== loadGen.current) return;
+        if (cached?.messages?.length) {
+          applyInboxResult(cached, { silent: true });
+          painted = true;
+        } else {
+          setInboxStatus('loading');
+        }
+      } else if (!silent) {
+        setInboxStatus('loading');
+      }
+
+      const res = await window.PeekdGmail.fetchInbox({
+        accountEmail: filterEmail,
+        labelIds: 'INBOX,SENT',
+        maxResults: 30,
+      });
+      if (gen !== loadGen.current) return;
+      if (!res.ok) {
+        if (silent) return;
+        const noAccount = res.error === 'no_connected_account' || res.error === 'no_gmail_account';
+        if (!painted) {
+          setEmails([]);
+          setMailAccounts(res.accounts || []);
+          setInboxStatus(noAccount ? 'no_account' : 'error');
+        }
+        if (!noAccount) toast('Could not load your mail. Try again.');
+        return;
+      }
+      applyInboxResult(res, { silent });
+      if (window.PeekdGmail.writeInboxCache) {
+        window.PeekdGmail.writeInboxCache(accountEmail, res);
+      }
+
+      if (silent || !res.messages?.length || !window.PeekdGmail.fetchInbox) return;
+      window.PeekdGmail.fetchInbox({
+        accountEmail: filterEmail,
+        labelIds: 'INBOX,SENT',
+        maxResults: 30,
+        enrichReplies: true,
+        messages: res.messages,
+      }).then((enriched) => {
+        if (gen !== loadGen.current || !enriched?.ok) return;
+        applyInboxResult(enriched, { silent: true });
+        if (window.PeekdGmail.writeInboxCache) {
+          window.PeekdGmail.writeInboxCache(accountEmail, enriched);
+        }
+      }).catch(() => {});
     }
 
     useEffect(() => { loadInbox(acct); }, [inboxRefreshKey]);

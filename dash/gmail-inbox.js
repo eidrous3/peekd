@@ -1,13 +1,55 @@
 (function () {
+  const INBOX_CACHE_PREFIX = 'peekd_inbox_v1:';
+
   async function session() {
     const Auth = window.PeekdAuth;
     if (!Auth?.ready()) return null;
     return Auth.ensureSession();
   }
 
-  async function fetchInbox({ accountEmail, labelIds, maxResults } = {}) {
+  function cacheAccountKey(accountEmail) {
+    return accountEmail && accountEmail !== 'all' ? String(accountEmail).trim().toLowerCase() : 'all';
+  }
+
+  function inboxCacheKey(userId, accountEmail) {
+    return INBOX_CACHE_PREFIX + userId + ':' + cacheAccountKey(accountEmail);
+  }
+
+  async function readInboxCache(accountEmail) {
+    const s = await session();
+    if (!s?.user?.id) return null;
+    try {
+      const raw = localStorage.getItem(inboxCacheKey(s.user.id, accountEmail));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.messages)) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  async function writeInboxCache(accountEmail, payload) {
+    const s = await session();
+    if (!s?.user?.id) return;
+    try {
+      localStorage.setItem(inboxCacheKey(s.user.id, accountEmail), JSON.stringify({
+        messages: payload.messages || [],
+        accounts: payload.accounts || [],
+        savedAt: Date.now(),
+      }));
+    } catch { /* quota / private mode */ }
+  }
+
+  async function fetchInbox({ accountEmail, labelIds, maxResults, enrichReplies, messages } = {}) {
     const s = await session();
     if (!s?.access_token) return { ok: false, error: 'no_session', messages: [] };
+
+    const body = { accountEmail, labelIds, maxResults };
+    if (enrichReplies === true) body.enrichReplies = true;
+    if (enrichReplies === true && Array.isArray(messages) && messages.length) {
+      body.messages = messages;
+    }
 
     const res = await fetch('/.netlify/functions/gmail-messages', {
       method: 'POST',
@@ -15,7 +57,7 @@
         Authorization: `Bearer ${s.access_token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ accountEmail, labelIds, maxResults }),
+      body: JSON.stringify(body),
     });
 
     const data = await res.json().catch(() => ({}));
@@ -114,5 +156,5 @@
     return { ok: true, messageId: data.messageId, threadId: data.threadId };
   }
 
-  window.PeekdGmail = { fetchInbox, fetchMailboxCount, fetchMessageBody, sendEmail };
+  window.PeekdGmail = { fetchInbox, fetchMailboxCount, fetchMessageBody, sendEmail, readInboxCache, writeInboxCache };
 })();

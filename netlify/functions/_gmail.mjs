@@ -333,10 +333,16 @@ export async function enrichMessagesWithReplies(accessToken, messages, accountEm
   const threadIds = [...new Set(sentMessages.map((msg) => msg.threadId).filter(Boolean))];
   const threadById = new Map();
 
-  await Promise.all(threadIds.map(async (threadId) => {
-    const thread = await fetchGmailThread(accessToken, threadId);
-    if (thread) threadById.set(threadId, thread);
-  }));
+  const concurrency = 5;
+  let cursor = 0;
+  async function worker() {
+    while (cursor < threadIds.length) {
+      const i = cursor++;
+      const thread = await fetchGmailThread(accessToken, threadIds[i]);
+      if (thread) threadById.set(threadIds[i], thread);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, threadIds.length) }, () => worker()));
 
   return Promise.all(messages.map(async (message) => {
     if (!(message.gmailLabelIds || []).includes('SENT') || !message.threadId) return message;
@@ -390,24 +396,19 @@ export async function enrichInboxWithReplies(accounts, messages) {
     byAccount.get(key).push(message);
   }
 
-  let enriched = messages;
-  for (const account of accounts || []) {
+  const patched = await Promise.all((accounts || []).map(async (account) => {
     const subset = byAccount.get(account.email);
-    if (!subset?.length) continue;
-
+    if (!subset?.length) return null;
     const accessToken = await getValidAccessToken(account);
-    if (!accessToken) continue;
-
+    if (!accessToken) return null;
     const updatedSubset = await enrichMessagesWithReplies(accessToken, subset, account.email);
-    const updatedById = new Map(updatedSubset.map((msg) => [msg.id, msg]));
-    enriched = enriched.map((msg) => (
-      msg.accountEmail === account.email && updatedById.has(msg.id)
-        ? updatedById.get(msg.id)
-        : msg
-    ));
-  }
+    return { email: account.email, byId: new Map(updatedSubset.map((msg) => [msg.id, msg])) };
+  }));
 
-  return enriched;
+  return messages.map((msg) => {
+    const match = patched.find((p) => p && p.email === msg.accountEmail && p.byId.has(msg.id));
+    return match ? match.byId.get(msg.id) : msg;
+  });
 }
 
 /**

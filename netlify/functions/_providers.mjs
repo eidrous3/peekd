@@ -94,10 +94,22 @@ export async function enrichInboxRepliesForProviders(accounts, messages) {
   const gmail = list.filter((a) => accountProvider(a) === 'gmail');
   const outlook = list.filter((a) => accountProvider(a) === 'outlook');
 
-  let enriched = messages;
-  if (gmail.length) enriched = await enrichInboxWithReplies(gmail, enriched);
-  if (outlook.length) enriched = await enrichOutlookInboxWithReplies(outlook, enriched);
-  return enriched;
+  const [gmailEnriched, outlookEnriched] = await Promise.all([
+    gmail.length ? enrichInboxWithReplies(gmail, messages) : messages,
+    outlook.length ? enrichOutlookInboxWithReplies(outlook, messages) : messages,
+  ]);
+
+  if (gmailEnriched === messages) return outlookEnriched;
+  if (outlookEnriched === messages) return gmailEnriched;
+
+  const outlookByKey = new Map(
+    outlookEnriched.map((msg) => [`${msg.accountEmail || ''}:${msg.id}`, msg]),
+  );
+  return gmailEnriched.map((msg) => {
+    const other = outlookByKey.get(`${msg.accountEmail || ''}:${msg.id}`);
+    if (other?.badge === 'REPLIED') return other;
+    return msg;
+  });
 }
 
 function inferMailProvider(row) {

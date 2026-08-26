@@ -35,13 +35,13 @@ export default async (req) => {
     return json({ ok: true, inbox: 0, accounts: [] });
   }
 
-  let inbox = 0;
-  for (const account of accounts) {
+  const counts = await Promise.all(accounts.map(async (account) => {
     const accessToken = await getValidTokenForAccount(account);
-    if (!accessToken) continue;
+    if (!accessToken) return 0;
     const result = await fetchProviderMailboxCount(accountProvider(account), accessToken);
-    if (result.ok) inbox += result.count || 0;
-  }
+    return result.ok ? (result.count || 0) : 0;
+  }));
+  const inbox = counts.reduce((sum, n) => sum + n, 0);
 
   return json({
     ok: true,

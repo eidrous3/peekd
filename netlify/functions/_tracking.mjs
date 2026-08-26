@@ -447,7 +447,7 @@ function postgrestInFilter(values) {
   return `(${values.map((v) => `"${String(v).replace(/"/g, '\\"')}"`).join(',')})`;
 }
 
-export async function getTrackingByMessageIds(userId, gmailMessageIds) {
+export async function getTrackingByMessageIds(userId, gmailMessageIds, { skipGeo = false } = {}) {
   const ids = [...new Set((gmailMessageIds || []).filter(Boolean))];
   if (!userId || !ids.length) return {};
 
@@ -459,7 +459,7 @@ export async function getTrackingByMessageIds(userId, gmailMessageIds) {
     'subject',
     'from_email',
     'sender_ip',
-    'tracked_recipients(id,email,email_open_events(id,opened_at,classification,user_agent,ip,location_label))',
+    'tracked_recipients(id,email,is_replied,replied_at,email_open_events(id,opened_at,classification,user_agent,ip,location_label))',
     'tracked_links(id,original_url,click_token,email_click_events(id,clicked_at,classification,user_agent,ip,location_label))',
   ].join(',');
 
@@ -470,11 +470,11 @@ export async function getTrackingByMessageIds(userId, gmailMessageIds) {
   if (!res.ok || !Array.isArray(res.data)) return {};
 
   const byMessageId = {};
-  for (const row of res.data) {
-    if (!row.gmail_message_id) continue;
-    await enrichTrackedEmailLocations(row);
+  await Promise.all(res.data.map(async (row) => {
+    if (!row.gmail_message_id) return;
+    if (!skipGeo) await enrichTrackedEmailLocations(row);
     byMessageId[row.gmail_message_id] = buildTrackingSummary(row);
-  }
+  }));
   return byMessageId;
 }
 
@@ -751,6 +751,8 @@ export function buildTrackingSummary(trackedEmailRow) {
       initials: initialsFromEmail(recipient.email),
       events,
       opens: countCountableOpens(events),
+      is_replied: !!recipient.is_replied,
+      replied_at: recipient.replied_at || null,
     };
   });
 
@@ -766,6 +768,7 @@ export function buildTrackingSummary(trackedEmailRow) {
   const opens = engagementAll.opens;
   const lastOpened = engagementAll.lastOpened;
   const hot = opens > 2;
+  const anyReplied = recipients.some((recipient) => recipient.is_replied);
 
   const recipientEngagement = recipients.map((recipient) => ({
     email: recipient.email,
@@ -794,7 +797,7 @@ export function buildTrackingSummary(trackedEmailRow) {
     recipientEngagement,
     openSeries,
     hot,
-    badge: opens > 0 ? 'OPENED' : 'SENT',
+    badge: anyReplied ? 'REPLIED' : (opens > 0 ? 'OPENED' : 'SENT'),
     timeline: buildTimelineFromEvents({
       sentAt: sentDate,
       recipients,
@@ -849,6 +852,21 @@ export function buildTimelineFromEvents({ sentAt, recipients, clickTimeline = []
     entries.push({
       ...clickEntry,
       sortAt: clickEntry.sortAt ?? new Date(clickEntry.clickedAt || 0).getTime(),
+    });
+  }
+
+  for (const recipient of recipients || []) {
+    if (!recipient.is_replied) continue;
+    const repliedDate = recipient.replied_at ? new Date(recipient.replied_at) : null;
+    entries.push({
+      type: 'replied',
+      who: recipient.name,
+      av: recipient.initials,
+      label: 'replied',
+      time: repliedDate && !Number.isNaN(repliedDate.getTime())
+        ? formatMessageTime(recipient.replied_at)
+        : '',
+      sortAt: repliedDate && !Number.isNaN(repliedDate.getTime()) ? repliedDate.getTime() : Date.now(),
     });
   }
 

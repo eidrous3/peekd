@@ -44,12 +44,18 @@ export default async (req) => {
   let accountId = '';
   let labelIds = DEFAULT_LABELS;
   let maxResults = 25;
+  let enrichReplies = false;
+  let listedMessages = null;
 
   if (req.method === 'POST') {
     try {
       const body = await req.json();
       accountEmail = body.accountEmail || '';
       accountId = body.accountId || '';
+      enrichReplies = body.enrichReplies === true;
+      if (Array.isArray(body.messages) && body.messages.length) {
+        listedMessages = body.messages.slice(0, 80);
+      }
       if (body.labelIds) {
         labelIds = Array.isArray(body.labelIds) ? body.labelIds : String(body.labelIds).split(',');
       }
@@ -59,6 +65,7 @@ export default async (req) => {
     const url = new URL(req.url);
     accountEmail = url.searchParams.get('accountEmail') || '';
     accountId = url.searchParams.get('accountId') || '';
+    enrichReplies = url.searchParams.get('enrichReplies') === '1';
     if (url.searchParams.get('labelIds')) {
       labelIds = url.searchParams.get('labelIds').split(',');
     }
@@ -72,31 +79,65 @@ export default async (req) => {
     return json({ ok: false, error: 'no_connected_account', messages: [] }, 404);
   }
 
-  const allMessages = [];
+  const accountPayload = accounts.map((a) => ({
+    id: a.id,
+    email: a.email,
+    provider: accountProvider(a),
+    is_primary: a.is_primary,
+  }));
+
+  // Background pass: reply-badge the rows the client already listed. Skip another
+  // mailbox round-trip so the first paint stays fast.
+  if (enrichReplies && listedMessages?.length) {
+    let messagesWithReplies = listedMessages;
+    try {
+      messagesWithReplies = await enrichInboxRepliesForProviders(accounts, listedMessages);
+    } catch {
+      /* keep the listed rows if thread walking fails */
+    }
+    return json({
+      ok: true,
+      messages: hideIncomingThreadReplies(messagesWithReplies),
+      accounts: accountPayload,
+    });
+  }
+
   const seen = new Set();
   let listError = null;
 
-  for (const account of accounts) {
+  const batches = await Promise.all(accounts.map(async (account) => {
     const provider = accountProvider(account);
     const accessToken = await getValidTokenForAccount(account);
     if (!accessToken) {
-      listError = listError || 'token_refresh_failed';
-      continue;
+      return { error: 'token_refresh_failed', messages: [] };
     }
 
-    for (const label of labels) {
-      const result = await fetchProviderInbox(provider, accessToken, { maxResults, label });
+    const results = await Promise.all(
+      labels.map((label) => fetchProviderInbox(provider, accessToken, { maxResults, label })),
+    );
+
+    const messages = [];
+    let error = null;
+    for (const result of results) {
       if (!result.ok) {
-        listError = listError || result.error;
+        error = error || result.error;
         continue;
       }
-
-      for (const msg of result.messages) {
-        const key = `${account.email}:${msg.id}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        allMessages.push({ ...msg, provider, accountEmail: account.email });
+      for (const msg of result.messages || []) {
+        messages.push({ ...msg, provider, accountEmail: account.email });
       }
+    }
+    return { error, messages };
+  }));
+
+  const allMessages = [];
+  for (const batch of batches) {
+    if (batch.error) listError = listError || batch.error;
+    for (const msg of batch.messages) {
+      const key = `${msg.accountEmail}:${msg.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      allMessages.push(msg);
     }
   }
 
@@ -115,7 +156,9 @@ export default async (req) => {
   const messageIds = allMessages.map(trackingKey).filter(Boolean);
   let trackingByMessageId = {};
   try {
-    trackingByMessageId = await getTrackingByMessageIds(user.id, messageIds);
+    trackingByMessageId = await getTrackingByMessageIds(user.id, messageIds, {
+      skipGeo: !enrichReplies,
+    });
   } catch {
     /* inbox must still load if tracking lookup fails */
   }
@@ -125,10 +168,12 @@ export default async (req) => {
   ));
 
   let messagesWithReplies = messages;
-  try {
-    messagesWithReplies = await enrichInboxRepliesForProviders(accounts, messages);
-  } catch {
-    /* inbox must still load if reply detection fails */
+  if (enrichReplies) {
+    try {
+      messagesWithReplies = await enrichInboxRepliesForProviders(accounts, messages);
+    } catch {
+      /* inbox must still load if reply detection fails */
+    }
   }
 
   const visibleMessages = hideIncomingThreadReplies(messagesWithReplies);
@@ -136,11 +181,6 @@ export default async (req) => {
   return json({
     ok: true,
     messages: visibleMessages,
-    accounts: accounts.map((a) => ({
-      id: a.id,
-      email: a.email,
-      provider: accountProvider(a),
-      is_primary: a.is_primary,
-    })),
+    accounts: accountPayload,
   });
 };

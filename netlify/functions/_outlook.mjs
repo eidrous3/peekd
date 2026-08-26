@@ -446,9 +446,16 @@ export async function enrichOutlookInboxWithReplies(accounts, messages) {
 
     const conversationIds = [...new Set(subset.map((msg) => msg.threadId))];
     const byConversation = new Map();
-    await Promise.all(conversationIds.map(async (id) => {
-      byConversation.set(id, await fetchOutlookConversation(accessToken, id));
-    }));
+    const concurrency = 5;
+    let cursor = 0;
+    async function worker() {
+      while (cursor < conversationIds.length) {
+        const i = cursor++;
+        const id = conversationIds[i];
+        byConversation.set(id, await fetchOutlookConversation(accessToken, id));
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(concurrency, conversationIds.length) }, () => worker()));
 
     for (const message of subset) {
       const reply = findOutlookReply(byConversation.get(message.threadId), {
