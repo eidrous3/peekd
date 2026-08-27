@@ -226,7 +226,7 @@ svg{display:block}
 @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
 
 /* Toast */
-.toast-wrap{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:90;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast-wrap{position:fixed;bottom:24px;right:24px;left:auto;z-index:96;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
 .toast{background:var(--fg);color:var(--bg);padding:11px 16px;border-radius:10px;font-size:13px;font-weight:500;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:8px;animation:toastIn .25s cubic-bezier(.2,.8,.3,1)}
 @keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 

@@ -244,7 +244,6 @@
     const [notifStatus, setNotifStatus] = useState('loading');
     const [savedNotif, setSavedNotif] = useState(null);
     const [notif, setNotif] = useState(() => ({ ...N.DEFAULTS }));
-    const [saving, setSaving] = useState(false);
     const [appInstalled] = useState(false);
 
     useEffect(() => {
@@ -269,31 +268,47 @@
       return () => { cancelled = true; };
     }, []);
 
-    const dirty = savedNotif && N && !N.settingsEqual(notif, savedNotif);
     const ready = notifStatus === 'ready';
+    const savedNotifRef = useRef(savedNotif);
+    const saveTimer = useRef(null);
+    const saveGen = useRef(0);
+    savedNotifRef.current = savedNotif;
 
-    async function handleSave() {
-      if (!dirty || saving || !N) return;
-      setSaving(true);
-      const res = await N.updateNotificationSettings(notif);
-      setSaving(false);
-      if (!res.ok) {
-        toast('Could not save notification settings. Try again.');
+    const SETTING_LABEL = {
+      opens: 'Email opens',
+      links: 'Link clicks',
+      reply: 'Reply read',
+      desktop: 'Desktop alerts',
+      sound: 'Notification sound',
+      email: 'Alert emails',
+      mobile: 'Mobile push',
+      digest: 'Digest',
+      digestFrequency: 'Digest',
+    };
+
+    function toastWhatSaved(prev, next) {
+      if (!prev || !next) {
+        toast('Notification settings saved');
         return;
       }
-      setSavedNotif(res.settings);
-      setNotif(res.settings);
-      // Let the running dashboard pick the new toggles up without a reload.
-      window.dispatchEvent(new CustomEvent('peekd:notification-settings', { detail: res.settings }));
-      toast('Notification settings saved ✓');
+      const parts = [];
+      for (const key of Object.keys(N.DEFAULTS)) {
+        if (prev[key] === next[key]) continue;
+        if (key === 'digestFrequency') {
+          parts.push('Digest set to ' + (next.digestFrequency === 'weekly' ? 'weekly' : 'daily'));
+        } else if (key === 'digest') {
+          parts.push(next.digest
+            ? 'Digest on — ' + (next.digestFrequency === 'weekly' ? 'weekly' : 'daily')
+            : 'Digest off');
+        } else {
+          parts.push((SETTING_LABEL[key] || key) + ' ' + (next[key] ? 'on' : 'off'));
+        }
+      }
+      toast(parts.length ? 'Saved: ' + parts.join(', ') : 'Notification settings saved');
     }
 
-    // Apply the channel immediately (don't wait for Save) and preview it.
-    function toggleChannel(key) {
-      const next = { ...notif, [key]: !notif[key] };
-      setNotif(next);
-      window.dispatchEvent(new CustomEvent('peekd:notification-settings', { detail: next }));
-      if (!next[key]) return;
+    function previewChannel(key, enabled) {
+      if (!enabled) return;
       if (key === 'desktop') {
         window.dispatchEvent(new CustomEvent('peekd:preview-alert', {
           detail: { type: 'open', who: 'Peekd', text: 'will show alerts here', time: 'Just now' },
@@ -306,6 +321,41 @@
       }
     }
 
+    function queueSave(next) {
+      if (!N) return;
+      clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(async () => {
+        const baseline = savedNotifRef.current;
+        if (baseline && N.settingsEqual(next, baseline)) return;
+        const gen = ++saveGen.current;
+        const res = await N.updateNotificationSettings(next);
+        if (gen !== saveGen.current) return;
+        if (!res.ok) {
+          if (baseline) {
+            setNotif(baseline);
+            window.dispatchEvent(new CustomEvent('peekd:notification-settings', { detail: baseline }));
+          }
+          toast('Could not save notification settings. Try again.', 'error');
+          return;
+        }
+        setSavedNotif(res.settings);
+        setNotif(res.settings);
+        window.dispatchEvent(new CustomEvent('peekd:notification-settings', { detail: res.settings }));
+        toastWhatSaved(baseline, res.settings);
+      }, 280);
+    }
+
+    useEffect(() => () => clearTimeout(saveTimer.current), []);
+
+    function changeNotif(patch, previewKey) {
+      if (!ready || !N) return;
+      const next = { ...notif, ...patch };
+      setNotif(next);
+      window.dispatchEvent(new CustomEvent('peekd:notification-settings', { detail: next }));
+      if (previewKey) previewChannel(previewKey, next[previewKey]);
+      queueSave(next);
+    }
+
     return React.createElement('div', null,
       React.createElement('h2', null, 'Notifications'),
       React.createElement('div', { className: 'sp-sub' }, 'Choose what Peekd alerts you about'),
@@ -314,19 +364,19 @@
       notifStatus === 'error' && React.createElement('p', { className: 'dim', style: { marginBottom: 16, color: 'var(--danger)' } }, 'Could not load notification settings. Try refreshing.'),
       ready && React.createElement('div', null,
         React.createElement(SetSection, { label: 'Tracking alerts' }),
-        React.createElement(ToggleRow, { title: 'Email opens', desc: 'Push alert when a recipient reads your email', on: notif.opens, onToggle: () => setNotif({ ...notif, opens: !notif.opens }) }),
-        React.createElement(ToggleRow, { title: 'Link clicks', badge: 'NEW', desc: 'Push alert when a recipient clicks a link', on: notif.links, onToggle: () => setNotif({ ...notif, links: !notif.links }) }),
-        React.createElement(ToggleRow, { title: 'Reply read', desc: 'When someone opens a reply you sent (Re:)', on: notif.reply, onToggle: () => setNotif({ ...notif, reply: !notif.reply }) }),
+        React.createElement(ToggleRow, { title: 'Email opens', desc: 'Push alert when a recipient reads your email', on: notif.opens, onToggle: () => changeNotif({ opens: !notif.opens }) }),
+        React.createElement(ToggleRow, { title: 'Link clicks', badge: 'NEW', desc: 'Push alert when a recipient clicks a link', on: notif.links, onToggle: () => changeNotif({ links: !notif.links }) }),
+        React.createElement(ToggleRow, { title: 'Reply read', desc: 'When someone opens a reply you sent (Re:)', on: notif.reply, onToggle: () => changeNotif({ reply: !notif.reply }) }),
         React.createElement(SetSection, { label: 'Delivery channels' }),
-        React.createElement(ToggleRow, { title: 'Desktop (Browser)', desc: 'Pop-up alerts in the bottom-right while Peekd is open', on: notif.desktop, onToggle: () => toggleChannel('desktop') }),
-        React.createElement(ToggleRow, { title: 'Notification sound', desc: 'Subtle chime on new alert', on: notif.sound, onToggle: () => toggleChannel('sound') }),
-        React.createElement(ToggleRow, { title: 'Email', desc: 'Instant alert email when someone opens, clicks, or replies — not the digest', on: notif.email, onToggle: () => setNotif({ ...notif, email: !notif.email }) }),
+        React.createElement(ToggleRow, { title: 'Desktop (Browser)', desc: 'Pop-up alerts in the bottom-right while Peekd is open', on: notif.desktop, onToggle: () => changeNotif({ desktop: !notif.desktop }, 'desktop') }),
+        React.createElement(ToggleRow, { title: 'Notification sound', desc: 'Subtle chime on new alert', on: notif.sound, onToggle: () => changeNotif({ sound: !notif.sound }, 'sound') }),
+        React.createElement(ToggleRow, { title: 'Email', desc: 'Instant alert email when someone opens, clicks, or replies — not the digest', on: notif.email, onToggle: () => changeNotif({ email: !notif.email }) }),
         React.createElement(SetSection, { label: 'Mobile app' }),
         React.createElement('p', { className: 'mobile-note' }, 'Get Peekd on your phone for instant alerts.'),
         React.createElement('div', { className: 'store-row' },
           React.createElement(StoreBtn, { icon: React.createElement(AppleMark, null), top: 'Download on the', bottom: 'App Store (coming soon)', disabled: true }),
           React.createElement(StoreBtn, { icon: React.createElement(AndroidMark, null), top: 'GET IT ON', bottom: 'Google Play (coming soon)', disabled: true })),
-        React.createElement(ToggleRow, { title: 'Mobile push', desc: 'Push notifications to your phone', on: notif.mobile, disabled: !appInstalled, tip: 'Install the app first', onToggle: () => setNotif({ ...notif, mobile: !notif.mobile }) }),
+        React.createElement(ToggleRow, { title: 'Mobile push', desc: 'Push notifications to your phone', on: notif.mobile, disabled: !appInstalled, tip: 'Install the app first', onToggle: () => changeNotif({ mobile: !notif.mobile }) }),
         React.createElement(SetSection, { label: 'Digest' }),
         React.createElement(ToggleRow, {
           title: 'Digest',
@@ -336,7 +386,7 @@
               : 'Daily digest, sent on 8 am')
             : 'Receive daily or weekly digest',
           on: notif.digest,
-          onToggle: () => setNotif({ ...notif, digest: !notif.digest }),
+          onToggle: () => changeNotif({ digest: !notif.digest }),
         }),
         notif.digest && React.createElement('div', { className: 'digest-freq' },
           React.createElement('div', { className: 'tabs' },
@@ -344,14 +394,12 @@
               React.createElement('button', {
                 key: id,
                 className: 'tab' + ((notif.digestFrequency === 'weekly' ? 'weekly' : 'daily') === id ? ' active' : ''),
-                onClick: () => setNotif({ ...notif, digestFrequency: id }),
+                onClick: () => {
+                  const current = notif.digestFrequency === 'weekly' ? 'weekly' : 'daily';
+                  if (current === id) return;
+                  changeNotif({ digestFrequency: id });
+                },
               }, label)))),
-        dirty && React.createElement('button', {
-          className: 'btn btn-primary',
-          style: { marginTop: 4, paddingRight: 15, marginRight: 15 },
-          onClick: handleSave,
-          disabled: saving,
-        }, saving ? 'Saving…' : 'Save changes'),
       ),
     );
   }
